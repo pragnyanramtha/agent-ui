@@ -9,7 +9,7 @@ import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
 import { carryOver } from "@/lib/client/storage";
 import { serverId, useSession } from "@/lib/client/useSession";
-import { postReliably } from "@/lib/client/send";
+import { postReliably, transient } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { HandoffDialog } from "./HandoffDialog";
@@ -207,7 +207,7 @@ export function SessionScreen({
           onNavigate(res.id);
         }
       } catch (err) {
-        updatePending(localId, { state: "failed", error: err instanceof ApiError && err.status < 500 ? err.message : OFFLINE });
+        updatePending(localId, { state: "failed", error: err instanceof ApiError && !transient(err) ? err.message : OFFLINE });
         /* the terminal refused the keystrokes: show it, so the reason is visible */
         if (err instanceof ApiError && ["agent_focus", "has_text", "no_prompt"].includes(err.code ?? "")) setPeek(true);
       }

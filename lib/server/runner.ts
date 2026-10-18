@@ -6,17 +6,29 @@ const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
 import type { ResolvedProfile } from "./profiles";
 
-/** "--flag value" / "--flag" pairs as the SDK's extraArgs */
-function extraArgs(args: string[]): Record<string, string | null> {
-  const out: Record<string, string | null> = {};
+/** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
+ * The SDK writes every extraArgs key as "--key", so short flags go in executableArgs, which it puts before its own
+ * args when the CLI is a native binary (for a .js CLI they would go to node instead, so they are dropped there). */
+export function profileArgs(args: string[], bin?: string | null): { extraArgs?: Record<string, string | null>; executableArgs?: string[] } {
+  const extra: Record<string, string | null> = {};
+  const short: string[] = [];
   for (let i = 0; i < args.length; i++) {
-    if (!args[i].startsWith("--")) continue;
-    const [k, v] = args[i].slice(2).split(/=(.*)/s);
-    if (v !== undefined) out[k] = v;
-    else if (args[i + 1] !== undefined && !args[i + 1].startsWith("--")) out[k] = args[++i];
-    else out[k] = null;
+    if (args[i].startsWith("--")) {
+      const [k, v] = args[i].slice(2).split(/=(.*)/s);
+      if (v !== undefined) extra[k] = v;
+      else if (args[i + 1] !== undefined && !args[i + 1].startsWith("--")) extra[k] = args[++i];
+      else extra[k] = null;
+    } else if (/^-[^-]/.test(args[i])) {
+      short.push(args[i]);
+      if (args[i + 1] !== undefined && !args[i + 1].startsWith("-")) short.push(args[++i]);
+    }
   }
-  return out;
+  const jsCli = /\.(m?js|jsx|tsx?)$/.test(bin ?? "");
+  if (short.length && jsCli) console.warn(`profile args ${short.join(" ")} skipped: short flags need a native claude binary`);
+  return {
+    ...(Object.keys(extra).length ? { extraArgs: extra } : {}),
+    ...(short.length && !jsCli ? { executableArgs: short } : {}),
+  };
 }
 
 /* A web run drives one `claude` process through the Agent SDK in streaming
@@ -119,7 +131,7 @@ export class Run {
         systemPrompt: { type: "preset", preset: "claude_code" },
         pathToClaudeCodeExecutable: (p?.bin ? p.binPath : null) ?? CLAUDE_BIN,
         ...(p && Object.keys(p.env).length ? { env: { ...process.env, ...p.env } } : {}),
-        ...(p?.args.length ? { extraArgs: extraArgs(p.args) } : {}),
+        ...(p?.args.length ? profileArgs(p.args, (p.bin ? p.binPath : null) ?? CLAUDE_BIN) : {}),
         canUseTool: this.canUseTool,
         stderr: (data) => process.stderr.write(`[claude ${this.state.sessionId.slice(0, 8)}] ${data}`),
       },

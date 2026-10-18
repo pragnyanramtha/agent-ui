@@ -155,7 +155,7 @@ async function sendNow(agent: AgentId, native: string, text: string, o: { id?: s
   try {
     await withProfile(profile, () => a.send(native, text, { model: o.model || profile.defaultModel || profile.models?.[0] || undefined, mode: o.mode }));
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err), status: 502 };
+    return { ok: false, error: err instanceof Error ? err.message : String(err), status: 500 };
   }
   setSessionProfile(key, profile.id);
   guardTurn({ key, text, mode: o.mode, model: o.model, profile });
@@ -252,6 +252,13 @@ export async function agentEvents(req: NextRequest, agent: AgentId, native: stri
           /* already closed */
         }
       }, { once: true });
+      /* the client may have left during the setup above; then cancel() never runs and the listener never fires */
+      if (req.signal.aborted) {
+        cleanup();
+        try {
+          controller.close();
+        } catch {}
+      }
     },
     cancel() {
       cleanup();
@@ -280,7 +287,7 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
       return NextResponse.json({ id: key, via: "terminal", queued });
     } catch (err) {
       if (err instanceof InputRefused) return NextResponse.json({ error: err.message, code: err.code }, { status: 409 });
-      return NextResponse.json({ error: `Couldn't send to the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}` }, { status: 502 });
+      return NextResponse.json({ error: `Couldn't send to the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}` }, { status: 500 });
     }
   }
   const model = str(body.model) || undefined;
@@ -327,7 +334,7 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
     guardTurn({ key, text, mode, model, profile });
     return NextResponse.json({ id: key });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }
 

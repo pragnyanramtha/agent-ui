@@ -170,7 +170,7 @@ describe("non-Claude message queue", () => {
   it("a send that fails to start reports the error and doesn't leave the session stuck", async () => {
     fake.failOn = "boom";
     const res = await agentMessage("cursor", session, { text: "boom now", clientId: "boom-now-1" });
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(500);
     expect((await res.json()).error).toMatch(/refused boom now/);
     fake.failOn = null;
     expect(await send("after")).toMatchObject({ via: "web" });

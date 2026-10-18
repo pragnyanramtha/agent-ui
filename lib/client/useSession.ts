@@ -35,6 +35,7 @@ const wake = (ms: number, signal: AbortSignal) =>
       clearTimeout(t);
       window.removeEventListener("online", done);
       document.removeEventListener("visibilitychange", onVisible);
+      signal.removeEventListener("abort", done);
       resolve();
     };
     const onVisible = () => document.visibilityState === "visible" && done();

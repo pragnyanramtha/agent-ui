@@ -118,6 +118,7 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
     run.state = { ...run.state, status: "error", error: err.message, pending: [] };
     run.deltas.clear();
     emit();
+    release(run);
   });
   /* stdout can still deliver the last lines (a final error or result) after "exit"; "close" waits for them,
    * but an orphaned helper holding stdout open would keep it from ever firing */
@@ -144,9 +145,22 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
         : { ...run.state, status: "error", error: lastLine(run.stderr) || `Exited with code ${code}`, pending: [] };
     run.deltas.clear();
     emit();
+    release(run);
   };
   emit();
   return run;
+}
+
+/** a turn that ended cleanly shows as no run at all (toRunState), so it can go */
+const forgettable = (run: Run) => run.state.status === "idle" && !run.state.error;
+
+/* Adapters still read a finished run's state and stderr for a moment (start promises, close handlers), so this
+ * waits. Failures stay in the map: their error is shown and notified until the next turn. */
+function release(run: Run) {
+  setTimeout(() => {
+    run.stderr = "";
+    if (forgettable(run) && !run.listeners.size && runs.get(run.key) === run) runs.delete(run.key);
+  }, 5000).unref();
 }
 
 const lastLine = (s: string) => s.trim().split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 300) ?? "";
@@ -233,8 +247,8 @@ export function onTurn(key: string, fn: (s: CliRunState) => void) {
     r.listeners.delete(fn);
     /* a rekey moved this listener onto the run that took the key */
     runs.get(r.key)?.listeners.delete(fn);
-    /* a placeholder for a session someone only looked at goes once nobody listens */
-    if (!r.child && !r.listeners.size && runs.get(r.key) === r) runs.delete(r.key);
+    /* a placeholder for a session someone only looked at, or a finished turn, goes once nobody listens */
+    if ((!r.child || forgettable(r)) && !r.listeners.size && runs.get(r.key) === r) runs.delete(r.key);
   };
 }
 

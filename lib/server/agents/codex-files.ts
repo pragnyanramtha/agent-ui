@@ -178,6 +178,9 @@ export async function threadNames(): Promise<Map<string, string>> {
 
 type Listener = (entries: Entry[], end: number) => void;
 
+/** most bytes one live-tail step reads, so a big backlog doesn't land in memory at once */
+const LIVE_STEP = 8 * 1024 * 1024;
+
 /** Follows one rollout from `from`; waits for the file if the session was just started. */
 export function tailRollout(locate: () => Promise<string | null>, from: number, ctx: ParseCtx, fn: Listener) {
   let offset = from;
@@ -215,12 +218,23 @@ export function tailRollout(locate: () => Promise<string | null>, from: number, 
         if (!file) break;
         attach();
         const stat = await fs.stat(file).catch(() => null);
-        if (!stat || closed) break;
+        if (closed) break;
+        if (!stat) {
+          /* moved (archived_sessions) or deleted: find it again next time */
+          file = null;
+          watcher?.close();
+          watcher = null;
+          break;
+        }
         if (stat.size < offset) offset = 0;
         if (stat.size === offset) continue;
-        const { lines, end } = await readRecords(file, offset, stat.size);
+        const stop = Math.min(stat.size, offset + LIVE_STEP);
+        let { lines, end } = await readRecords(file, offset, stop);
+        /* one record longer than a step */
+        if (end <= offset && stop < stat.size) ({ lines, end } = await readRecords(file, offset, stat.size));
         if (end <= offset) continue;
         offset = end;
+        if (stop < stat.size) dirty = true;
         const entries = parseLines(lines, ctx);
         if (!closed) fn(entries, end);
       } while (dirty && !closed);

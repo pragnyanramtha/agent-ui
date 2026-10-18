@@ -80,6 +80,8 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   const raced = getRun(id);
   if (raced) {
     raced.send(text);
+    setSessionProfile(id, (raced.profile ?? profile).id);
+    guardTurn({ key: id, text, mode: raced.state.permissionMode, model, profile: raced.profile ?? profile });
     return NextResponse.json({ id: raced.state.sessionId, via: "web" });
   }
 

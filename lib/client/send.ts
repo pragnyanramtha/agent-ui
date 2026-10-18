@@ -5,13 +5,16 @@ import { api, ApiError } from "./api";
 
 export const newClientId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
-/** the tunnel or app is restarting, or the request never got an answer */
-const transient = (err: unknown) => !(err instanceof ApiError) || [502, 503, 504, 520, 521, 522, 523, 524, 530].includes(err.status);
+/** the tunnel or app is restarting, or the request never got an answer. A JSON `error` came from the app itself
+ * (api() only falls back to "Request failed (status)" without one), so it is final whatever the status. */
+export const transient = (err: unknown) =>
+  !(err instanceof ApiError) || (err.message === `Request failed (${err.status})` && [502, 503, 504, 520, 521, 522, 523, 524, 530].includes(err.status));
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
+    const done = () => (clearTimeout(t), signal?.removeEventListener("abort", done), resolve());
+    const t = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
   });
 
 /* navigator.onLine can be wrong (some VPNs), so waiting for "online" is capped and the request is tried anyway */
@@ -20,7 +23,7 @@ const backOnline = (signal?: AbortSignal, maxMs = 15_000) =>
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
         const t = setTimeout(() => done(), maxMs);
-        const done = () => (clearTimeout(t), window.removeEventListener("online", done), resolve());
+        const done = () => (clearTimeout(t), window.removeEventListener("online", done), signal?.removeEventListener("abort", done), resolve());
         window.addEventListener("online", done);
         signal?.addEventListener("abort", done, { once: true });
       });

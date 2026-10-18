@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Entry, PermissionMode } from "@/lib/types";
-import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run } from "./cli-run";
+import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run, type SpawnSpec } from "./cli-run";
 import { profileBin } from "../profiles";
 import {
   devinDataDir,
@@ -251,13 +251,28 @@ function argsFor(text: string, mode: PermissionMode, model: string | undefined, 
   return args;
 }
 
+/* a folder of its own per prompt (mkdtemp is 0700), so no other user can plant or swap the file */
 function promptFile(text: string): string {
-  const dir = path.join(os.tmpdir(), "agent-u-prompts");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, `devin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.md`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-u-"));
+  const file = path.join(dir, "devin-prompt.md");
   fs.writeFileSync(file, text, { mode: 0o600 });
-  setTimeout(() => fs.rm(file, { force: true }, () => undefined), 30 * 60_000).unref();
+  setTimeout(() => fs.rm(dir, { recursive: true, force: true }, () => undefined), 30 * 60_000).unref();
   return file;
+}
+
+/** startTurn; a prompt file's folder goes when the turn's process does */
+function startDevinTurn(key: string, spec: SpawnSpec, onChunk: (chunk: string) => void): Run {
+  const i = spec.args.indexOf("--prompt-file");
+  const drop = () => i >= 0 && fs.rm(path.dirname(spec.args[i + 1]), { recursive: true, force: true }, () => undefined);
+  try {
+    const run = startTurn(key, spec, undefined, onChunk);
+    run.child.once("close", drop);
+    run.child.once("error", drop);
+    return run;
+  } catch (err) {
+    drop();
+    throw err;
+  }
 }
 
 async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
@@ -269,7 +284,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
   const t0 = Date.now();
   const tempKey = `devin:pending-${t0.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let onChunk: (chunk: string) => void = () => {};
-  const run = startTurn(tempKey, { cmd: bin, args: argsFor(promptFor(opts.text, opts.mode, null), opts.mode, opts.model, null), cwd: opts.cwd }, undefined, (c) => onChunk(c));
+  const run = startDevinTurn(tempKey, { cmd: bin, args: argsFor(promptFor(opts.text, opts.mode, null), opts.mode, opts.model, null), cwd: opts.cwd }, (c) => onChunk(c));
   onChunk = liveText(run);
   const rootPid = run.child.pid ?? -1;
 
@@ -345,7 +360,7 @@ async function send(id: string, text: string, opts: { model?: string; mode: Perm
   if (!row) throw new Error("Devin session not found.");
   const cwd = row.cwd && fs.existsSync(row.cwd) ? row.cwd : os.homedir();
   let onChunk: (chunk: string) => void = () => {};
-  const run = startTurn(keyOf(id), { cmd: bin, args: argsFor(promptFor(text, opts.mode, row.agentMode), opts.mode, opts.model, id), cwd }, undefined, (c) => onChunk(c));
+  const run = startDevinTurn(keyOf(id), { cmd: bin, args: argsFor(promptFor(text, opts.mode, row.agentMode), opts.mode, opts.model, id), cwd }, (c) => onChunk(c));
   onChunk = liveText(run);
   if (run.child.pid) pids.set(keyOf(id), run.child.pid);
 }
