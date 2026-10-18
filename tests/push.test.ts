@@ -65,6 +65,17 @@ describe("push store", () => {
     expect(sent.find((s) => s.endpoint.endsWith("/flaky"))?.subject).toMatch(/^mailto:/);
   });
 
+  it("sees subscriptions another bundle wrote to the file", () => {
+    const before = push.subscriptionCount();
+    const onDisk = JSON.parse(fs.readFileSync(file, "utf8"));
+    onDisk.subs.push(sub("https://push.example/other-bundle"));
+    fs.writeFileSync(`${file}.x`, JSON.stringify(onDisk));
+    fs.renameSync(`${file}.x`, file);
+    expect(push.subscriptionCount()).toBe(before + 1);
+    push.unsubscribe("https://push.example/other-bundle");
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).subs).toHaveLength(before);
+  });
+
   it("can send to one browser only", async () => {
     sent.length = 0;
     await push.pushAll(msg, "https://push.example/a");

@@ -12,26 +12,43 @@ type Store = { publicKey: string; privateKey: string; subs: Subscription[] };
 export const PUSH_PATH = process.env.AGENT_U_PUSH || path.join(CONFIG_DIR, "push.json");
 const MAX_SUBS = 20;
 
-let cache: Store | null = null;
+/* instrumentation (notify) and the route handlers are separate bundles with their own module state: share the cache
+ * through globalThis, and re-read the file whenever another writer replaced it */
+const g = globalThis as typeof globalThis & { __agentuPush?: { cache: Store | null; stamp: string } };
+const held = (g.__agentuPush ??= { cache: null, stamp: "" });
+
+function stampOf() {
+  try {
+    const st = fs.statSync(PUSH_PATH);
+    return `${st.ino}:${st.size}:${st.mtimeMs}`;
+  } catch {
+    return "";
+  }
+}
 
 function load(): Store {
-  if (cache) return cache;
+  const stamp = stampOf();
+  if (held.cache && stamp && stamp === held.stamp) return held.cache;
   try {
     const raw = JSON.parse(fs.readFileSync(PUSH_PATH, "utf8")) as Partial<Store>;
-    if (raw.publicKey && raw.privateKey) return (cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
+    if (raw.publicKey && raw.privateKey) {
+      held.stamp = stamp;
+      return (held.cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
+    }
   } catch {}
   const keys = webpush.generateVAPIDKeys();
-  cache = { ...keys, subs: [] };
+  held.cache = { ...keys, subs: [] };
   write();
-  return cache;
+  return held.cache;
 }
 
 function write() {
-  if (!cache) return;
+  if (!held.cache) return;
   fs.mkdirSync(path.dirname(PUSH_PATH), { recursive: true, mode: 0o700 });
-  const tmp = `${PUSH_PATH}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2), { mode: 0o600 });
+  const tmp = `${PUSH_PATH}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(held.cache, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, PUSH_PATH);
+  held.stamp = stampOf();
 }
 
 export const vapidPublicKey = () => load().publicKey;
@@ -78,7 +95,9 @@ export async function pushAll(msg: PushMessage, only?: string) {
     }),
   );
   if (gone.length) {
-    store.subs = store.subs.filter((s) => !gone.includes(s.endpoint));
+    /* reloaded: a browser may have subscribed while these were in flight */
+    const now = load();
+    now.subs = now.subs.filter((s) => !gone.includes(s.endpoint));
     write();
   }
   return { sent, dropped: gone.length };
@@ -86,5 +105,6 @@ export async function pushAll(msg: PushMessage, only?: string) {
 
 /** test hook */
 export const resetPushCache = () => {
-  cache = null;
+  held.cache = null;
+  held.stamp = "";
 };
