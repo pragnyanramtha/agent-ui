@@ -173,7 +173,8 @@ function attachForSession(sessionId) {
 
 /* ── tmux ─────────────────────────────────────────────────── */
 
-const tmux = (args) => execFileSync(TMUX, args, { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] });
+/* -u: without a UTF-8 locale (a bare service env) tmux prints the tabs in -F output as "_" */
+const tmux = (args) => execFileSync(TMUX, ["-u", ...args], { encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "pipe"] });
 const tmuxHas = (name) => {
   if (!TMUX) return false;
   try {
@@ -222,21 +223,39 @@ function tmuxList() {
 const shellQuote = (s) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 const LOGIN_SHELL = process.env.SHELL || "/bin/bash";
 /** through a login shell, so the agent sees the same PATH and profile as an ssh session */
-const loginArgv = (cmd, args) => [LOGIN_SHELL, "-lc", `exec ${[cmd, ...args].map(shellQuote).join(" ")}`];
+const loginArgv = (cmd, args, prelude = "") => [LOGIN_SHELL, "-lc", `${prelude}exec ${[cmd, ...args].map(shellQuote).join(" ")}`];
+/** tmux reads an argument ending in ";" as a command separator; "\;" is a literal one */
+const tmuxArg = (s) => (s.endsWith(";") ? `${s.slice(0, -1)}\\;` : s);
 
 function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, rows }) {
   const name = `${TMUX_PREFIX}${randomBytes(4).toString("hex")}`;
-  const line = loginArgv(cmd, args).map(shellQuote).join(" ");
+  /* profile secrets would show in /proc/<pid>/cmdline as `-e KEY=value` (tmux has no value-less -e), so the shell
+   * reads them from a private file and deletes it */
+  let envDir = null;
+  let prelude = "";
+  if (Object.keys(env).length) {
+    envDir = fs.mkdtempSync(path.join(os.tmpdir(), "agentu-env-"));
+    const file = path.join(envDir, "env");
+    fs.writeFileSync(file, Object.entries(env).map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join(""), { mode: 0o600 });
+    prelude = `. ${shellQuote(file)}; rm -rf ${shellQuote(envDir)}; `;
+  }
+  const dropEnv = () => envDir && fs.rmSync(envDir, { recursive: true, force: true });
+  const line = loginArgv(cmd, args, prelude).map(shellQuote).join(" ");
   /* the pane starts with remain-on-exit already set (via the chained commands), so a crash at startup stays readable */
-  const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", cwd];
-  for (const [k, v] of Object.entries(env)) argv.push("-e", `${k}=${v}`);
-  argv.push(line);
+  const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd), tmuxArg(line)];
   const meta = { label, kind, cwd, profile, session, created: Date.now() };
-  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, String(v));
+  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, tmuxArg(String(v)));
   /* phones can't spare a status bar's worth of rows; the mouse wheel scrolls tmux history */
   argv.push(";", "set-option", "-w", "remain-on-exit", "on", ";", "set-option", "status", "off", ";", "set-option", "mouse", "on");
   const [bin, all] = SYSTEMD_RUN ? [SYSTEMD_RUN, ["--user", "--scope", "--quiet", "--collect", TMUX, ...argv]] : [TMUX, argv];
-  execFileSync(bin, all, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TERM: "xterm-256color" } });
+  try {
+    execFileSync(bin, all, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TERM: "xterm-256color" } });
+  } catch (err) {
+    dropEnv();
+    throw err;
+  }
+  /* in case the shell never got as far as deleting it */
+  if (envDir) setTimeout(dropEnv, 120_000).unref();
   return name;
 }
 
