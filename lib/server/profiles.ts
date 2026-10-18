@@ -43,8 +43,8 @@ export const CONFIG_DIR = process.env.AGENT_U_HOME || path.join(process.env.XDG_
 export const CONFIG_PATH = process.env.AGENT_U_CONFIG || path.join(CONFIG_DIR, "config.json");
 const STATE_PATH = path.join(CONFIG_DIR, "state.json");
 
-const DEFAULT_BIN: Record<AgentId, string> = { claude: "claude", codex: "codex", opencode: "opencode", cursor: "cursor-agent", devin: "devin", kimi: "kimi" };
-const BIN_ENV: Record<AgentId, string> = { claude: "CLAUDE_BIN", codex: "CODEX_BIN", opencode: "OPENCODE_BIN", cursor: "CURSOR_AGENT_BIN", devin: "DEVIN_BIN", kimi: "KIMI_BIN" };
+const DEFAULT_BIN: Record<AgentId, string> = { claude: "claude", codex: "codex", opencode: "opencode", cursor: "cursor-agent", devin: "devin", kimi: "kimi", gemini: "gemini", antigravity: "agy" };
+const BIN_ENV: Record<AgentId, string> = { claude: "CLAUDE_BIN", codex: "CODEX_BIN", opencode: "OPENCODE_BIN", cursor: "CURSOR_AGENT_BIN", devin: "DEVIN_BIN", kimi: "KIMI_BIN", gemini: "GEMINI_BIN", antigravity: "AGY_BIN" };
 
 /** where CLIs usually land; services often run with a short PATH */
 const EXTRA_DIRS = [".local/bin", ".local/npm-global/bin", ".npm-global/bin", ".opencode/bin", ".kimi-code/bin", ".bun/bin", ".cargo/bin", ".local/share/pnpm/bin"].map((d) => path.join(home, d));

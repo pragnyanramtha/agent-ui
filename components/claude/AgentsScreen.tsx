@@ -389,7 +389,7 @@ function ProfileEditor({
             ))}
           </select>,
         )}
-        {row("Binary", "Name on PATH or absolute path. Empty for default.", <input value={d.bin} onChange={(e) => set({ bin: e.target.value })} className={`${field} font-mono`} placeholder={d.agent === "cursor" ? "cursor-agent" : d.agent} spellCheck={false} autoCapitalize="off" />)}
+        {row("Binary", "Name on PATH or absolute path. Empty for default.", <input value={d.bin} onChange={(e) => set({ bin: e.target.value })} className={`${field} font-mono`} placeholder={d.agent === "cursor" ? "cursor-agent" : d.agent === "antigravity" ? "agy" : d.agent} spellCheck={false} autoCapitalize="off" />)}
         {row("Arguments", "One per line, before the agent's own", <textarea rows={3} value={d.args} onChange={(e) => set({ args: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
         {row("Environment", "KEY=value per line. ${VAR} reads .env.local.", <textarea rows={3} value={d.env} onChange={(e) => set({ env: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" placeholder={"OPENAI_BASE_URL=https://proxy.example/v1\nOPENAI_API_KEY=${PROXY_KEY}"} />)}
         {row("Models", "Comma separated", <input value={d.models} onChange={(e) => set({ models: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}

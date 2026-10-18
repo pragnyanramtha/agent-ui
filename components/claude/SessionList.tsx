@@ -35,6 +35,8 @@ export const AGENT_TONE: Record<AgentId, string> = {
   cursor: "bg-agent-cursor",
   devin: "bg-agent-devin",
   kimi: "bg-agent-kimi",
+  gemini: "bg-agent-gemini",
+  antigravity: "bg-agent-antigravity",
 };
 
 /** A tiny colored dot that names the agent for screen readers and on hover. */

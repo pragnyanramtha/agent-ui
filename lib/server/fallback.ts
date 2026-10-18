@@ -46,7 +46,7 @@ export function postNotice(key: string, text: string, tone: "info" | "warn" = "i
 /* ── continuing a turn elsewhere when it hits a usage limit ── */
 
 /** env vars that pick where an agent keeps its sessions: profiles that differ here can't resume each other's */
-const STORE_VARS = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "KIMI_CODE_HOME", "CURSOR_CONFIG_DIR", "XDG_DATA_HOME", "HOME"];
+const STORE_VARS = ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "KIMI_CODE_HOME", "GEMINI_CLI_HOME", "CURSOR_CONFIG_DIR", "XDG_DATA_HOME", "HOME"];
 export const sameStore = (a: ResolvedProfile, b: ResolvedProfile) => a.agent === b.agent && STORE_VARS.every((k) => (a.env[k] ?? "") === (b.env[k] ?? ""));
 
 const usable = (p: ResolvedProfile) => Boolean(p.binPath) || (p.agent === "claude" && !p.bin);

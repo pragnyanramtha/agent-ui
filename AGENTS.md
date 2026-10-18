@@ -1,7 +1,7 @@
 # agent-u
 
 Self-hosted, mobile-friendly web UI for coding-agent CLI sessions running on a server (Claude Code first; Codex,
-OpenCode, Cursor CLI, Devin CLI and Kimi Code through adapters). Built on Beautiful UI (Next.js 15, React 19, Tailwind v4, pnpm).
+OpenCode, Cursor CLI, Devin CLI, Kimi Code, Gemini CLI and Antigravity through adapters). Built on Beautiful UI (Next.js 15, React 19, Tailwind v4, pnpm).
 Watch live sessions, type into the terminal they run in, start/resume sessions from the browser, and open a full web terminal.
 
 ## Commands
@@ -16,7 +16,7 @@ All machine-specific values live in gitignored env files; `.env.example` documen
 - `.env.local` on the server (chmod 600): `UI_PASSWORD` (plain) or `UI_PASSWORD_HASH` (`scrypt:salt:hash`, colon-separated
   because Next's dotenv expands `$`; wins if both are set), `UI_SECRET` (32+ chars, signs the session cookie), optional `CLAUDE_BIN`, `CLAUDE_HOME`, `HIDE_PROJECTS`,
  `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
- `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`), `AGENT_U_HOME`,
+ `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
  `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
 - Optional, also on your machine and gitignored: `.env.server` (KEY=value lines `scripts/setup.sh` merges into the server's
@@ -35,7 +35,7 @@ All machine-specific values live in gitignored env files; `.env.example` documen
      "env": { "ANTHROPIC_BASE_URL": "https://proxy.example/v1", "ANTHROPIC_AUTH_TOKEN": "${CLAUDE_PROXY_KEY}" } }
  ] }
  ```
- Fields: `id` (lowercase, `.`, `_`, `-`), `label`, `agent` (claude, codex, opencode, cursor, devin, kimi), `bin` (name on PATH
+ Fields: `id` (lowercase, `.`, `_`, `-`), `label`, `agent` (claude, codex, opencode, cursor, devin, kimi, gemini, antigravity), `bin` (name on PATH
  or absolute path), `args` (before the agent's own), `env` (`${VAR}` reads the server environment, so keys stay in
  `.env.local`), `models` (offered in the composer; first is default unless `defaultModel`), `fallback` (profile ids tried in
  order when a turn hits a usage limit), `launchArgs` (interactive launches only), `hidden`, `notes`.
@@ -55,7 +55,7 @@ When asked to set agent-u up on a server, you only need the ssh target and which
 
 ## Server setup (manual, what setup.sh does)
 Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web terminal), the agent CLIs you use
-(`claude`, `codex`, `opencode`, `cursor-agent`, `devin`, `kimi`), tmux (recommended) or zellij, and `cloudflared` for public access.
+(`claude`, `codex`, `opencode`, `cursor-agent`, `devin`, `kimi`, `gemini`, `agy`), tmux (recommended) or zellij, and `cloudflared` for public access.
 1. `scripts/deploy.sh` (copies code, installs, builds). First time, also create `.env.local` in `DEPLOY_DIR` from `.env.example`.
 2. Install the user units from `deploy/` into `~/.config/systemd/user/`: `agent-u.service` (app on 127.0.0.1:3311),
    `agent-u-pty.service` (web terminal backend on 127.0.0.1:3312). `systemctl --user daemon-reload && systemctl --user enable --now agent-u agent-u-pty`.
@@ -67,7 +67,8 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 4. Codex sandbox on Ubuntu 24.04+: install `deploy/apparmor-codex-bwrap` as `/etc/apparmor.d/codex-bwrap` (fill in the user)
    and `sudo apparmor_parser -r` it, otherwise workspace-write mode fails with bwrap uid-map/loopback errors.
 5. Agent logins happen on the server in a terminal (or the web terminal): `claude` (login), `codex login`,
-   `opencode auth login`, `cursor-agent login`, `devin` login, `kimi` then `/login`.
+   `opencode auth login`, `cursor-agent login`, `devin` login, `kimi` then `/login`, `agy` once (signs in interactively).
+   `gemini` needs `GEMINI_API_KEY` in `.env.local` (or Vertex AI / Code Assist settings): Google account sign-in moved to Antigravity.
 
 ## Security model
 - One password for everything; the site can open a shell on the server, so treat the password like an SSH key.
@@ -90,7 +91,10 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
   `lib/server/agents/routes.ts`. Codex turns use `codex app-server` (JSON-RPC, streams; `CODEX_WEB_DRIVER=exec` falls back
   to `codex exec --json`); OpenCode turns start a private `opencode serve` and `opencode run --attach` (its `/event` stream
   gives deltas); Cursor uses `cursor-agent -p --output-format stream-json --stream-partial-output`; Devin streams stdout of
-  `devin -p`. Codex approvals (Ask first, Accept edits) come from the app server and show as cards (`askUser` /
+  `devin -p`; Gemini CLI runs `gemini -p "" --output-format stream-json` (prompt on stdin, `--session-id <our uuid>` or
+  `--resume`, history folded from `~/.gemini/tmp/<project>/chats/*.jsonl`); Antigravity runs `agy -p --output-format
+  stream-json` (`--conversation` to continue; list from `~/.gemini/antigravity-cli/conversation_summaries.db`, history from
+  `brain/<id>/.system_generated/logs/transcript_full.jsonl`). Codex approvals (Ask first, Accept edits) come from the app server and show as cards (`askUser` /
  `answerTurn` in `cli-run.ts`); the other agents' print modes can't ask, so they default to Bypass in the UI.
 - Markdown: `components/claude/Markdown.tsx` renders with Streamdown (lazy-loaded; KaTeX only when a message has math;
   raw HTML is never rendered; code blocks use CodeCard). Live text uses the same renderer in streaming mode.

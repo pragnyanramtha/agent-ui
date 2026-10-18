@@ -32,11 +32,11 @@ export type TerminalInfo = {
 };
 
 /** Which coding agent a session belongs to. Plain session ids are Claude; others are "<agent>:<id>". */
-export type AgentId = "claude" | "codex" | "opencode" | "cursor" | "devin" | "kimi";
+export type AgentId = "claude" | "codex" | "opencode" | "cursor" | "devin" | "kimi" | "gemini" | "antigravity";
 
-export const AGENT_IDS: AgentId[] = ["claude", "codex", "opencode", "cursor", "devin", "kimi"];
+export const AGENT_IDS: AgentId[] = ["claude", "codex", "opencode", "cursor", "devin", "kimi", "gemini", "antigravity"];
 
-export const AGENT_LABEL: Record<AgentId, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", cursor: "Cursor", devin: "Devin", kimi: "Kimi" };
+export const AGENT_LABEL: Record<AgentId, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", cursor: "Cursor", devin: "Devin", kimi: "Kimi", gemini: "Gemini CLI", antigravity: "Antigravity" };
 
 /** An agent profile as the browser sees it (secrets masked). */
 export type ProfileInfo = {

@@ -46,6 +46,10 @@ export function interactiveArgs(agent: AgentId, o: { session?: string | null; mo
       return [...(s ? ["--resume", s] : []), ...(m ? ["--model", m] : [])];
     case "kimi":
       return [...(s ? ["-S", s] : []), ...(m ? ["-m", m] : [])];
+    case "gemini":
+      return [...(s ? ["--resume", s] : []), ...(m ? ["-m", m] : [])];
+    case "antigravity":
+      return [...(s ? ["--conversation", s] : []), ...(m ? ["--model", m] : [])];
   }
 }
 
