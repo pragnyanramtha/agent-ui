@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const session = req.nextUrl.searchParams.get("session") ?? "";
   try {
     const cwd = await sessionCwd(session);
-    if (!cwd) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const st = await status(cwd);
     if (!st) return NextResponse.json({ repo: null, cwd });
     return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session) });
@@ -28,18 +28,18 @@ export async function POST(req: NextRequest) {
   const session = str(body.session) ?? "";
   try {
     const cwd = await sessionCwd(session);
-    if (!cwd) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const id = str(body.id) ?? "";
     switch (body.action) {
       case "checkpoint": {
-        const cp = await checkpoint(cwd, session, str(body.message) || "Saved by hand");
-        if (!cp) throw new GitError(`${cwd} isn't in a git repository.`, 404);
+        const cp = await checkpoint(cwd, session, str(body.message) || "Manual checkpoint");
+        if (!cp) throw new GitError(`${cwd} isn't a git repository.`, 404);
         return NextResponse.json({ checkpoint: cp });
       }
       case "since":
         return NextResponse.json({ files: await sinceCheckpoint(cwd, session, id) });
       case "rewind":
-        if (await turnRunning(session)) throw new GitError("Stop the running turn first; the agent is still writing files.", 409);
+        if (await turnRunning(session)) throw new GitError("Stop the turn first.", 409);
         return NextResponse.json(await rewind(cwd, session, id));
       case "commit":
         return NextResponse.json({ commit: await commitAll(cwd, str(body.message) ?? "") });
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       case "pr":
         return NextResponse.json({ url: await pullRequest(cwd, str(body.title)) });
       default:
-        return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+        return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }
   } catch (err) {
     return fail(err);

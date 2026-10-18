@@ -1,8 +1,9 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
  * throwaway index so HEAD, the branch and the staging area are never touched), rewinding to one, the branch's
@@ -41,7 +42,7 @@ export async function repoRoot(cwd: string): Promise<string | null> {
 
 async function needRoot(cwd: string) {
   const root = await repoRoot(cwd);
-  if (!root) throw new GitError(`${cwd} isn't in a git repository.`, 404);
+  if (!root) throw new GitError(`${cwd} isn't a git repository.`, 404);
   return root;
 }
 
@@ -128,6 +129,163 @@ export async function sinceCheckpoint(cwd: string, session: string, id: string):
   return numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, now]));
 }
 
+/* ── diffs ───────────────────────────────────────────── */
+
+export type DiffScope = "uncommitted" | "checkpoint" | "branch";
+export type GitDiff = {
+  scope: DiffScope;
+  /** the commit or tree the working tree is compared with */
+  base: string;
+  baseLabel: string;
+  files: PatchFile[];
+  additions: number;
+  deletions: number;
+  /** the patch hit the size cap, or some files were too large to include */
+  truncated: boolean;
+};
+
+const DIFF_CAP = 2 * 1024 * 1024;
+const HUGE_FILE_LINES = 4000;
+const MAX_EXCLUDES = 1000;
+
+/** stdout up to `cap` bytes; the process is stopped once it's reached */
+function gitCapped(cwd: string, args: string[], cap: number): Promise<{ out: string; cut: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }, stdio: ["ignore", "pipe", "pipe"] });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let cut = false;
+    let stderr = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+    child.stdout.on("data", (b: Buffer) => {
+      if (cut) return;
+      if (size + b.length >= cap) {
+        chunks.push(b.subarray(0, cap - size));
+        size = cap;
+        cut = true;
+        child.kill("SIGKILL");
+        return;
+      }
+      chunks.push(b);
+      size += b.length;
+    });
+    child.stderr.on("data", (b: Buffer) => void (stderr.length < 4000 && (stderr += b.toString())));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(new GitError(err.message));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      let out = Buffer.concat(chunks).toString("utf8");
+      /* a cut can land mid-line (or mid-character); the parser only sees whole lines */
+      if (cut) out = out.slice(0, out.lastIndexOf("\n") + 1);
+      if (code === 0 || cut) resolve({ out, cut });
+      else reject(new GitError(stderr.trim().split("\n").slice(-3).join(" ") || "git diff failed"));
+    });
+  });
+}
+
+type Stat = { path: string; oldPath?: string; status: PatchStatus; additions: number; deletions: number };
+
+/** `--raw --numstat -z`: status letters first, then counts (files with no change left under -w have no counts) */
+function rawNumstat(out: string): Stat[] {
+  const t = out.split("\0");
+  const kinds = new Map<string, string>();
+  const stats: Stat[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const tok = t[i];
+    if (!tok) continue;
+    if (tok.startsWith(":")) {
+      const letter = tok.split(" ").pop()?.[0] ?? "M";
+      const two = letter === "R" || letter === "C";
+      const p = two ? t[i + 2] : t[i + 1];
+      i += two ? 2 : 1;
+      kinds.set(p, letter);
+      continue;
+    }
+    const [a, d, name] = tok.split("\t");
+    let p = name;
+    let oldPath: string | undefined;
+    if (!name) {
+      oldPath = t[i + 1];
+      p = t[i + 2];
+      i += 2;
+    }
+    const k = kinds.get(p) ?? "M";
+    const status: PatchStatus = a === "-" ? "binary" : k === "A" ? "added" : k === "D" ? "deleted" : oldPath ? "renamed" : "modified";
+    stats.push({ path: p, oldPath, status, additions: a === "-" ? 0 : Number(a), deletions: d === "-" ? 0 : Number(d) });
+  }
+  return stats;
+}
+
+async function emptyTree(root: string) {
+  return (await git(root, ["hash-object", "-t", "tree", "/dev/null"])).trim();
+}
+
+/** the default branch to compare a branch with: origin's HEAD, else main or master */
+async function defaultBase(root: string): Promise<string | null> {
+  const originHead = (await git(root, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]).catch(() => "")).trim();
+  for (const ref of [originHead, "origin/main", "origin/master", "main", "master"]) {
+    if (!ref) continue;
+    const ok = await git(root, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]).then(() => true, () => false);
+    if (ok) return ref;
+  }
+  return null;
+}
+
+/** The folder as it is now (untracked files in, ignored ones out) against HEAD, a checkpoint of this session, or where the branch left the default branch. */
+export async function diff(cwd: string, session: string, opts: { scope: DiffScope; checkpoint?: string; ignoreWhitespace?: boolean; maxBytes?: number }): Promise<GitDiff> {
+  const root = await needRoot(cwd);
+  const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
+  let base: string;
+  let baseLabel: string;
+  if (opts.scope === "checkpoint") {
+    const cp = (await listCheckpoints(root, session)).find((c) => c.id === opts.checkpoint);
+    if (!cp) throw new GitError("That checkpoint is gone.", 404);
+    base = cp.tree;
+    baseLabel = cp.label;
+  } else if (opts.scope === "branch") {
+    if (!head) throw new GitError("The repository has no commits yet.");
+    const ref = await defaultBase(root);
+    if (!ref) throw new GitError("No main or master branch to compare with.", 404);
+    base = (await git(root, ["merge-base", "HEAD", ref]).catch(() => "")).trim();
+    if (!base) throw new GitError(`This branch shares no history with ${ref}.`);
+    baseLabel = ref;
+  } else {
+    base = head || (await emptyTree(root));
+    baseLabel = head ? "HEAD" : "Empty repository";
+  }
+  const now = await snapshotTree(root);
+  const flags = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", ...(opts.ignoreWhitespace ? ["-w"] : [])];
+  const stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", base, now], { timeout: 60_000 }));
+  const huge = stats.filter((s) => s.additions + s.deletions > HUGE_FILE_LINES);
+  const excludes = huge.length <= MAX_EXCLUDES ? huge.flatMap((s) => [s.path, ...(s.oldPath ? [s.oldPath] : [])]).map((p) => `:(exclude,literal)${p}`) : [];
+  const patch = await gitCapped(root, [...flags, "--src-prefix=a/", "--dst-prefix=b/", "-U3", base, now, "--", ...(excludes.length ? [":/", ...excludes] : [])], opts.maxBytes ?? DIFF_CAP);
+  const files = parseUnifiedPatch(patch.out);
+  if (patch.cut && files.length) files[files.length - 1].truncated = true;
+  const seen = new Set(files.map((f) => f.path));
+  for (const s of stats) if (!seen.has(s.path)) files.push({ ...s, hunks: [], truncated: true });
+  /* counts come from numstat, which sees whole files even when the patch was cut */
+  const byPath = new Map(stats.map((s) => [s.path, s]));
+  for (const f of files) {
+    const s = byPath.get(f.path);
+    if (s && f.truncated) {
+      f.additions = s.additions;
+      f.deletions = s.deletions;
+    }
+  }
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return {
+    scope: opts.scope,
+    base,
+    baseLabel,
+    files,
+    additions: files.reduce((n, f) => n + f.additions, 0),
+    deletions: files.reduce((n, f) => n + f.deletions, 0),
+    truncated: patch.cut || files.some((f) => f.truncated),
+  };
+}
+
 /** Puts the folder's files back the way they were at a checkpoint. The state before is saved first, so this can be undone. */
 export async function rewind(cwd: string, session: string, id: string) {
   const root = await needRoot(cwd);
@@ -210,7 +368,7 @@ export async function commitAll(cwd: string, message: string) {
     await git(root, ["commit", "-m", msg]);
   } catch (err) {
     const m = (err as Error).message;
-    if (/Please tell me who you are|user\.email|user\.name/.test(m)) throw new GitError("Git doesn't know who you are on the server. Set user.name and user.email (git config --global) in a terminal first.");
+    if (/Please tell me who you are|user\.email|user\.name/.test(m)) throw new GitError("Set git user.name and user.email on the server first.");
     if (/nothing to commit/.test(m)) throw new GitError("Nothing to commit.");
     throw err;
   }
@@ -228,7 +386,7 @@ export async function push(cwd: string) {
 
 export async function pullRequest(cwd: string, title?: string) {
   const root = await needRoot(cwd);
-  if (!(await hasGh())) throw new GitError("Creating a pull request needs the GitHub CLI (gh) on the server.");
+  if (!(await hasGh())) throw new GitError("Install the GitHub CLI (gh) on the server.");
   await push(root);
   const args = ["pr", "create", ...(title?.trim() ? ["--title", title.trim(), "--body", ""] : ["--fill"])];
   try {
@@ -238,7 +396,7 @@ export async function pullRequest(cwd: string, title?: string) {
     const m = (err as Error).message;
     const existing = /(https:\/\/\S+\/pull\/\d+)/.exec(m)?.[1];
     if (existing) return existing;
-    if (/auth login|not logged/i.test(m)) throw new GitError("gh isn't signed in on the server. Run gh auth login in a terminal.");
+    if (/auth login|not logged/i.test(m)) throw new GitError("gh isn't logged in. Run gh auth login on the server.");
     throw err;
   }
 }
@@ -251,7 +409,7 @@ export const WORKTREE_ROOT = process.env.AGENT_U_WORKTREES || path.join(process.
 export async function newWorktree(cwd: string, name: string) {
   const root = await needRoot(cwd);
   const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
-  if (!head) throw new GitError("The repository has no commits yet, so there's nothing to branch from.");
+  if (!head) throw new GitError("No commits yet.");
   const slug =
     name
       .toLowerCase()
