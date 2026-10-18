@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +23,8 @@ export async function GET(req: NextRequest) {
     const st = await fs.stat(p);
     const parent = path.dirname(p) === p ? null : path.dirname(p);
     if (!st.isDirectory()) {
+      /* opening a FIFO blocks until a writer shows up, pinning a threadpool thread */
+      if (!st.isFile()) return NextResponse.json({ kind: "file", path: p, parent, home, size: st.size, mtime: st.mtimeMs, mime: mimeOf(p), text: false });
       const h = await fs.open(p, "r");
       const head = Buffer.alloc(Math.min(st.size, 8192));
       await h.read(head, 0, head.length, 0).finally(() => h.close());
@@ -74,14 +77,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
     if (action === "write") {
-      const p = absPath(target);
+      const abs = absPath(target);
       const text = typeof body.text === "string" ? body.text : null;
       if (text === null || text.length > 5_000_000) throw new FsError("File too large (max 5 MB).", 400);
-      const tmp = `${p}.agentu-${process.pid}.tmp`;
+      /* renaming over a symlink would replace the link instead of updating what it points to */
+      const p = await fs.realpath(abs).catch(() => abs);
+      const tmp = `${p}.agentu-${process.pid}-${crypto.randomBytes(6).toString("hex")}.tmp`;
       const mode = await fs.stat(p).then((s) => s.mode & 0o777).catch(() => 0o644);
       await fs.writeFile(tmp, text, { mode });
       await fs.rename(tmp, p);
-      return NextResponse.json({ path: p });
+      return NextResponse.json({ path: abs });
     }
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (err) {
