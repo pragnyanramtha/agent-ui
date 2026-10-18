@@ -53,7 +53,7 @@ async function subscription(publicKey: string) {
 /** Asks for permission (call from a tap), subscribes, and has the server send a test notification. */
 export async function enablePush() {
   registerWorker();
-  if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site. Allow them in the browser's site settings.");
+  if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked. Allow them in site settings.");
   const { publicKey } = await api<{ publicKey: string }>("/api/push");
   const sub = await subscription(publicKey);
   await api("/api/push", { subscription: sub.toJSON(), test: true });

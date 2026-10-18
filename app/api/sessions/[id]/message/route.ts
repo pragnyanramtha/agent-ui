@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id: raw } = await params;
   const body = await readJson(req);
   const key = parseSessionKey(decodeURIComponent(raw));
-  if (!key) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  if (!key) return NextResponse.json({ error: "Session not found." }, { status: 404 });
   const text = str(body.text)?.trim();
   const checkpointFirst = async () => text && (await beforeTurn(decodeURIComponent(raw), text));
   if (key.agent !== "claude") return once(body.clientId, async () => (await checkpointFirst(), agentMessage(key.agent, key.native, body)));
@@ -33,11 +33,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 async function claudeMessage(id: string, body: Record<string, unknown>) {
   const text = str(body.text)?.trim();
-  if (!text) return NextResponse.json({ error: "Message is empty." }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   const before = pickProfile("claude", null, id);
   const profile = pickProfile("claude", body.profile, id);
   if (!sameStore(before, profile)) {
-    return NextResponse.json({ error: `${profile.label} keeps its sessions elsewhere. Use "Continue in" to move this session there.`, code: "other_store" }, { status: 409 });
+    return NextResponse.json({ error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
   }
   const model = str(body.model) || undefined;
 
@@ -54,13 +54,13 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   }
 
   const [ctx, terminal] = await Promise.all([sessionContext(id), liveTerminals(0).then((t) => t.get(id))]);
-  if (!ctx && !terminal) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  if (!ctx && !terminal) return NextResponse.json({ error: "Session not found." }, { status: 404 });
 
   if (terminal) {
     const target = await inputTarget(terminal.pid);
     if (!target) {
       return NextResponse.json(
-        { error: `This session is running in ${terminal.multiplexer ?? "a terminal"} that the web can't type into. Reply there, or open it in zellij or tmux.`, code: "no_pane" },
+        { error: "Can't send to this terminal. Reply there.", code: "no_pane" },
         { status: 409 },
       );
     }
@@ -70,12 +70,12 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
       ({ queued, cleared } = await typeIntoTerminal(target, text));
     } catch (err) {
       if (err instanceof InputRefused) return NextResponse.json({ error: err.message, code: err.code }, { status: 409 });
-      return NextResponse.json({ error: `Couldn't type into the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}`, code: "terminal_error" }, { status: 500 });
+      return NextResponse.json({ error: `Couldn't send to the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}`, code: "terminal_error" }, { status: 500 });
     }
     return NextResponse.json({ id, via: "terminal", queued, cleared });
   }
 
-  if (!ctx) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  if (!ctx) return NextResponse.json({ error: "Session not found." }, { status: 404 });
   /* another request may have started a run while we were awaiting */
   const raced = getRun(id);
   if (raced) {

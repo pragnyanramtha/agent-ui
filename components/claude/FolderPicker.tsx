@@ -277,7 +277,7 @@ export function FolderPicker({
             aria-autocomplete="list"
             aria-activedescendant={current >= 0 ? optId(current) : undefined}
             aria-label="Search folders or type a path"
-            placeholder="Search, or type a path like ~/code"
+            placeholder="Search or type a path"
             enterKeyHint="go"
             autoComplete="off"
             autoCorrect="off"
@@ -367,7 +367,7 @@ export function FolderPicker({
           ) : !data ? (
             <p className="px-2.5 py-3 text-[13px] text-ink-3">Loading folders…</p>
           ) : null}
-          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-[12px] text-ink-3">Showing the first 500 folders. Type to narrow.</p>}
+          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-[12px] text-ink-3">First 500 shown. Type to filter.</p>}
         </div>
 
         <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-4">

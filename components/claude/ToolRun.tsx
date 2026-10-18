@@ -334,7 +334,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     return item.text.trim() ? (
       <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-2 [overflow-wrap:anywhere]">{item.text}</p>
     ) : (
-      <p className="text-[12px] text-ink-3">The model kept this reasoning private.</p>
+      <p className="text-[12px] text-ink-3">Reasoning hidden.</p>
     );
   }
   const input = item.input;

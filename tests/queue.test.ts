@@ -155,7 +155,7 @@ describe("non-Claude message queue", () => {
     await drained(2);
     await idle();
     expect(sent()).toEqual(["ok1", "ok2"]);
-    expect(notices.join("\n")).toMatch(/Couldn't send a queued message \("BAD message"\)/);
+    expect(notices.join("\n")).toMatch(/Queued message not sent \("BAD message"\)/);
   });
 
   it("each queued message keeps its own model", async () => {
@@ -186,7 +186,7 @@ describe("non-Claude message queue", () => {
     await idle();
     await vi.waitFor(() => expect(events.some((x) => x.e.type === "unsent")).toBe(true), { timeout: 6000, interval: 100 });
     const u = [...events].reverse().find((x) => x.e.type === "unsent")!.e as Extract<ServerEvent, { type: "unsent" }>;
-    expect(u.items).toEqual([{ id: "never-saved-1", text: "never saved", error: expect.stringContaining("never read this") }]);
+    expect(u.items).toEqual([{ id: "never-saved-1", text: "never saved", error: expect.stringContaining("Not delivered") }]);
   });
 
   it("a stopped turn whose prompt was saved, or a turn nobody stopped, isn't reported", async () => {

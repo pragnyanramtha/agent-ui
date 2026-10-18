@@ -117,7 +117,7 @@ describe("cli turns", () => {
   });
 
   it("refuse an argument too long for the kernel with a readable error, before spawning", () => {
-    expect(() => startTurn("t:e2big", sh(`echo ${"x".repeat(200 * 1024)}`))).toThrow(/too long to hand to sh/);
+    expect(() => startTurn("t:e2big", sh(`echo ${"x".repeat(200 * 1024)}`))).toThrow(/Message too long \(200 KB\)/);
     expect(turnState("t:e2big")).toBeNull();
   });
 

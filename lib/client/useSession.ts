@@ -226,7 +226,7 @@ export function reducer(state: SessionView, action: Action): SessionView {
         /* a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
         const failed = e.run?.status === "error";
         const pending = failed
-          ? state.pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: e.run?.error ?? "The run stopped before it read this." } : p))
+          ? state.pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: e.run?.error ?? "Not delivered. The turn ended first." } : p))
           : state.pending;
         return { ...state, run: e.run, streams: ended ? [] : state.streams, pending };
       }
@@ -413,7 +413,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     restored.current = true;
     try {
       const saved = JSON.parse(load(pendingKey(id)) ?? "[]") as Pending[];
-      if (saved.length) dispatch({ type: "restorePending", pending: saved.map((p) => (p.state === "sending" ? { ...p, state: "failed", error: "The page reloaded before this was confirmed. Retry is safe: it won't send twice." } : p)) });
+      if (saved.length) dispatch({ type: "restorePending", pending: saved.map((p) => (p.state === "sending" ? { ...p, state: "failed", error: "Not confirmed. Retry is safe." } : p)) });
     } catch {
       /* corrupt entry: ignore */
     }

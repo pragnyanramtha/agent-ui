@@ -51,33 +51,33 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
   let key: string | null = null;
   if (raw) {
     const k = parseSessionKey(raw);
-    if (!k) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!k) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     key = sessionKey(k.agent, k.native);
     native = k.native;
     /* already open somewhere: rejoin that instead of resuming a second copy */
     const kept = (await listTerminals().catch(() => null))?.terminals.find((t) => t.session === key && t.exited === null);
     if (kept) return NextResponse.json({ ...kept, label: kept.label });
     if (k.agent === "claude") {
-      if (getRun(k.native)?.state.status === "running") return NextResponse.json({ error: "Claude is working on a message from the web. Open the terminal once it's done.", code: "busy" }, { status: 409 });
+      if (getRun(k.native)?.state.status === "running") return NextResponse.json({ error: "Claude is busy. Try again when the turn ends.", code: "busy" }, { status: 409 });
       cwd = (await sessionContext(k.native))?.cwd ?? cwd;
     } else {
       const a = await adapterFor(k.agent);
-      if (a?.runState(k.native)?.status === "running") return NextResponse.json({ error: `${a.label} is working on a message from the web. Open the terminal once it's done.`, code: "busy" }, { status: 409 });
+      if (a?.runState(k.native)?.status === "running") return NextResponse.json({ error: `${a.label} is busy. Try again when the turn ends.`, code: "busy" }, { status: 409 });
       cwd = (await a?.get(k.native))?.cwd ?? cwd;
     }
     profile = pickProfile(k.agent, str(body.profile), key);
     const live = await terminalForKey(key);
     if (live) {
       return NextResponse.json(
-        { error: live.multiplexer ? `This session is already open in ${live.multiplexer}. Open that instead.` : "This session is already running in another terminal or program. Continue it there.", code: "live_terminal" },
+        { error: live.multiplexer ? "This session is already open in a terminal." : "This session is running elsewhere. Continue it there.", code: "live_terminal" },
         { status: 409 },
       );
     }
   }
-  if (!profile) return NextResponse.json({ error: "Pick an agent profile." }, { status: 400 });
+  if (!profile) return NextResponse.json({ error: "Choose a profile." }, { status: 400 });
   if (cwd === "~" || cwd.startsWith("~/")) cwd = path.join(os.homedir(), cwd.slice(1));
   if (!cwd || !path.isAbsolute(cwd) || !(await fs.stat(cwd).then((s) => s.isDirectory()).catch(() => false))) {
-    return NextResponse.json({ error: `No folder at ${cwd || "(empty)"} on the server.` }, { status: 400 });
+    return NextResponse.json({ error: cwd ? `Folder not found: ${cwd}` : "Choose a folder." }, { status: 400 });
   }
   /* the idle web run hands the session over only once the launch can actually happen */
   if (key && native && parseSessionKey(key)?.agent === "claude") getRun(native)?.close();

@@ -110,7 +110,7 @@ export function guardTurn(t: GuardedTurn) {
         if (hit?.kind === "notice") error = hit.text;
       }
       if (error) await failover(t, error);
-    })().catch((err) => postNotice(t.key, `Couldn't continue on a fallback profile: ${err instanceof Error ? err.message : err}`, "warn"));
+    })().catch((err) => postNotice(t.key, `Fallback failed: ${err instanceof Error ? err.message : err}`, "warn"));
     }),
   );
 }
@@ -118,8 +118,8 @@ export function guardTurn(t: GuardedTurn) {
 async function failover(t: GuardedTurn, error: string) {
   const tried = [...(t.tried ?? []), t.profile.id];
   const next = nextProfile(t.profile, tried);
-  if (!next) return postNotice(t.key, `${t.profile.label} hit a limit (${short(error)}). No fallback profile left to continue on.`, "warn");
-  postNotice(t.key, `${t.profile.label} hit a limit (${short(error)}). Continuing on ${next.label}…`, "warn");
+  if (!next) return postNotice(t.key, `${t.profile.label} hit a usage limit (${short(error)}). No fallback left.`, "warn");
+  postNotice(t.key, `${t.profile.label} hit a usage limit (${short(error)}). Switching to ${next.label}…`, "warn");
   const k = parseSessionKey(t.key)!;
   const go = { ...t, profile: next, tried, model: undefined };
 
@@ -145,7 +145,7 @@ async function failover(t: GuardedTurn, error: string) {
   const last = src.entries.findLastIndex((e) => e.kind === "user" && e.text.trim() === t.text.trim());
   if (last >= 0) src.entries = src.entries.slice(0, last);
   const key = await handoff(src, { text: t.text, mode: t.mode, profile: next });
-  postNotice(t.key, `Continued on ${next.label} in a new session.`);
+  postNotice(t.key, `Switched to ${next.label} in a new session.`);
   postToSession(t.key, { type: "redirect", sessionId: key });
   guardTurn({ ...go, key });
 }

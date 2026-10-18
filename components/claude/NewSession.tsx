@@ -136,7 +136,7 @@ export function NewSession({
     setError(null);
     if (!cwd.trim()) {
       setFolderInvalid(true);
-      setError(`Choose a folder for ${name} to work in.`);
+      setError("Choose a folder.");
       setPicker(true);
       return false;
     }
@@ -147,7 +147,7 @@ export function NewSession({
       return true;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Couldn't start the session.";
-      if (/^No folder at/.test(msg)) setFolderInvalid(true);
+      if (/^(Folder not found|Choose a folder)/.test(msg)) setFolderInvalid(true);
       setError(msg);
       return false;
     }
@@ -158,7 +158,7 @@ export function NewSession({
     setError(null);
     if (!cwd.trim()) {
       setFolderInvalid(true);
-      setError(`Choose a folder for ${name} to work in.`);
+      setError("Choose a folder.");
       setPicker(true);
       return;
     }
@@ -191,14 +191,14 @@ export function NewSession({
           {/* phones: the question sits in the middle, the composer at the bottom (where the reply composer lives) */}
           <div className="order-1 flex flex-1 flex-col justify-center py-8 sm:flex-none sm:py-0">
             <h1 className="home-reveal text-center text-[24px] leading-8 font-normal tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9" style={reveal(stage >= 1)}>
-              What should we build?
+              New session
             </h1>
           </div>
 
           <div className="home-reveal relative z-10 order-3 sm:order-2 sm:mt-7" style={reveal(stage >= 2)}>
             <Composer
               draftKey="new"
-              placeholder={`Ask ${name}`}
+              placeholder={`Message ${name}…`}
               onSend={start}
               running={false}
               slashCommands={[]}
@@ -235,13 +235,13 @@ export function NewSession({
                     localStorage.setItem("cui:worktree", worktree ? "0" : "1");
                   } catch {}
                 }}
-                title="Start on a new branch in its own folder, so the main checkout stays as it is"
+                title="New branch in a separate folder"
                 className={`tap relative inline-flex items-center gap-1.5 rounded-chip px-1 text-[12.5px] transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
               >
                 <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
                   {worktree && <Check width={10} height={10} strokeWidth={3} />}
                 </span>
-                New git worktree
+                New worktree
               </button>
               <button
                 type="button"
@@ -249,13 +249,13 @@ export function NewSession({
                 disabled={launching}
                 className="tap relative rounded-chip px-1 text-[12.5px] text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
               >
-                {launching ? `Opening ${profileInfo?.label ?? name}…` : `Or open ${profileInfo?.label ?? name} in a terminal on the server`}
+                {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
               </button>
             </div>
           </div>
 
           {rows.length > 0 && (
-            <nav aria-label="Pick up where you left off" className="home-reveal order-2 mb-3 sm:order-3 sm:mt-5 sm:mb-0" style={reveal(stage >= 3)}>
+            <nav aria-label="Recent sessions" className="home-reveal order-2 mb-3 sm:order-3 sm:mt-5 sm:mb-0" style={reveal(stage >= 3)}>
               <ul className="flex flex-col">
                 {rows.map((s) => {
                   const live = isLive(s);
@@ -278,7 +278,7 @@ export function NewSession({
                           </span>
                         </span>
                         <span className="shrink-0 text-[12px] text-ink-3">
-                          {waiting ? <span className="text-orange-ink">Needs you</span> : live ? (s.web ? "Open" : s.terminal?.multiplexer ?? "Open") : now ? timeAgo(s.mtime, now) : null}
+                          {waiting ? <span className="text-orange-ink">Needs you</span> : live ? "Open" : now ? timeAgo(s.mtime, now) : null}
                         </span>
                       </button>
                     </li>

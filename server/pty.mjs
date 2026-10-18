@@ -358,7 +358,7 @@ const sendJson = (ws, msg) => ws.readyState === ws.OPEN && ws.send(JSON.stringif
 const BEHIND_BYTES = 4 * 1024 * 1024;
 function sendBytes(ws, chunk) {
   if (ws.readyState !== ws.OPEN) return;
-  if (ws.bufferedAmount > BEHIND_BYTES) return ws.close(4090, "Fell behind; reconnecting.");
+  if (ws.bufferedAmount > BEHIND_BYTES) return ws.close(4090, "Reconnecting…");
   ws.send(chunk, { binary: true });
 }
 
@@ -473,31 +473,31 @@ function start(ws, url) {
   const termId = q.get("term");
   if (termId) {
     const t = TERM_ID.test(termId) ? terms.get(termId) : null;
-    if (!t) return ws.close(4404, "That terminal has closed.");
+    if (!t) return ws.close(4404, "That terminal has ended.");
     return attachKept(ws, t, Number(q.get("since") ?? 0), cols, rows);
   }
   const name = q.get("tmux");
   if (name) {
-    if (!TMUX_NAME.test(name) || !tmuxHas(name)) return ws.close(4404, "That tmux session has ended.");
+    if (!TMUX_NAME.test(name) || !tmuxHas(name)) return ws.close(4404, "That terminal has ended.");
     const info = tmuxList().find((x) => x.tmux === name);
     return attachOnce(ws, ["tmux", "attach-session", "-t", `=${name}`], cols, rows, { id: name, kind: info?.kind ?? "tmux", label: info?.label ?? name, cwd: info?.cwd ?? "", backing: "tmux" });
   }
   const pid = Number(q.get("pid"));
   if (Number.isInteger(pid) && pid > 1 && fs.existsSync(`/proc/${pid}`)) {
     const cmd = attachForPid(pid);
-    if (!cmd) return ws.close(4404, "That session isn't running in zellij or tmux.");
+    if (!cmd) return ws.close(4404, "This session can't be opened in a terminal.");
     return attachOnce(ws, cmd, cols, rows, { id: `pid-${pid}`, kind: "attach", label: cmd.slice(-1)[0], cwd: "", backing: cmd[0] });
   }
   const session = q.get("session");
   if (session) {
     const cmd = SESSION_ID.test(session) ? attachForSession(session) : null;
-    if (!cmd) return ws.close(4404, "That session isn't open in zellij or tmux.");
+    if (!cmd) return ws.close(4404, "This session isn't open in a terminal.");
     return attachOnce(ws, cmd, cols, rows, { id: `session-${session}`, kind: "attach", label: cmd.slice(-1)[0], cwd: "", backing: cmd[0] });
   }
   if (terms.size >= MAX_TERMINALS) return ws.close(4429, "Too many terminals are open. Close one first.");
   const want = q.get("cwd");
   const cwd = want && path.isAbsolute(want) && fs.existsSync(want) && fs.statSync(want).isDirectory() ? want : os.homedir();
-  const t = createTerm({ cmd: [process.env.SHELL || "/bin/bash", "-l"], cwd, cols, rows, label: `shell in ${cwd.replace(os.homedir(), "~")}`, kind: "shell" });
+  const t = createTerm({ cmd: [process.env.SHELL || "/bin/bash", "-l"], cwd, cols, rows, label: `Shell: ${cwd.replace(os.homedir(), "~")}`, kind: "shell" });
   attachKept(ws, t, 0, cols, rows);
 }
 
@@ -550,7 +550,7 @@ async function internal(req, res, url) {
     const cmd = typeof body.cmd === "string" ? body.cmd : "";
     const cwd = typeof body.cwd === "string" && path.isAbsolute(body.cwd) && fs.existsSync(body.cwd) ? body.cwd : null;
     if (!cmd) return reply(res, 400, { error: "No command to run." });
-    if (!cwd) return reply(res, 400, { error: `No folder at ${body.cwd || "(empty)"} on the server.` });
+    if (!cwd) return reply(res, 400, { error: body.cwd ? `Folder not found: ${body.cwd}` : "Choose a folder." });
     const spec = {
       cmd,
       args: strList(body.args),
@@ -570,7 +570,7 @@ async function internal(req, res, url) {
       const t = createTerm({ ...spec, cmd: loginArgv(spec.cmd, spec.args) });
       return reply(res, 200, { id: t.id, backing: "pty" });
     } catch (err) {
-      return reply(res, 500, { error: `Couldn't start it: ${String(err?.stderr || err?.message || err).trim().slice(0, 300)}` });
+      return reply(res, 500, { error: `Couldn't start: ${String(err?.stderr || err?.message || err).trim().slice(0, 300)}` });
     }
   }
   if (req.method === "POST" && url.pathname === "/internal/kill") {
@@ -618,7 +618,7 @@ server.on("upgrade", (req, socket, head) => {
   if (url.pathname !== "/pty") return refuse(404, "Not Found");
   if (!sameOrigin(req)) return refuse(403, "Bad Origin");
   /* past the origin check, refusals go over the socket: a browser only sees a raw HTTP refusal as a network error */
-  const why = !validCookie(req.headers.cookie) ? [4401, "Signed out. Reload the page and log in again."] : sockets >= MAX_SOCKETS ? [4429, "Too many terminals are open. Close one first."] : null;
+  const why = !validCookie(req.headers.cookie) ? [4401, "Signed out. Reload to sign in."] : sockets >= MAX_SOCKETS ? [4429, "Too many terminals are open. Close one first."] : null;
   wss.handleUpgrade(req, socket, head, (ws) => {
     if (why) return ws.close(why[0], why[1]);
     try {

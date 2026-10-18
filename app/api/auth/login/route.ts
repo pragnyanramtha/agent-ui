@@ -23,7 +23,7 @@ async function checkPassword(password: string) {
   const stored = process.env.UI_PASSWORD_HASH ?? "";
   /* ":"-separated: Next's .env loader expands "$" sequences */
   const [scheme, salt, hash] = stored.split(":");
-  if (scheme !== "scrypt" || !salt || !hash) throw new Error("UI_PASSWORD_HASH is not configured");
+  if (scheme !== "scrypt" || !salt || !hash) throw new Error("No password set. Add UI_PASSWORD to .env.local.");
   const expected = Buffer.from(hash, "base64url");
   const actual = await scryptAsync(password, Buffer.from(salt, "base64url"), expected.length, { N: 16384, r: 8, p: 1 });
   return timingSafeEqual(actual, expected);
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
   const password = str((await readJson(req)).password);
   if (!password || password.length > 1024 || !(await checkPassword(password))) {
-    return NextResponse.json({ error: "That password didn't match." }, { status: 401 });
+    return NextResponse.json({ error: "Wrong password." }, { status: 401 });
   }
 
   attempts.delete(ip);

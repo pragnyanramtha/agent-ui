@@ -207,7 +207,7 @@ const pids = (() => {
   return (gg.__devinTurnPids ??= new Map());
 })();
 
-const LOGIN_HINT = "Devin isn't logged in on this server. Run `devin auth login --force-manual-token-flow` there (as the user running this UI), then try again.";
+const LOGIN_HINT = "Devin isn't logged in. Run devin auth login --force-manual-token-flow on the server.";
 
 function friendly(err: string | null): string | null {
   if (!err) return err;
@@ -262,7 +262,7 @@ function promptFile(text: string): string {
 
 async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
   const bin = await profileBin(findBinary);
-  if (!bin) throw new Error("Devin isn't installed on the server.");
+  if (!bin) throw new Error("Devin isn't installed.");
   if (!hasCredentials()) throw new Error(LOGIN_HINT);
   const db = openDb();
   const known = new Set(db ? listAllIds(db) : []);
@@ -305,7 +305,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
       }
       if (Date.now() > deadline) {
         stopTurn(tempKey);
-        return reject(new Error("Devin didn't report a session id in time."));
+        return reject(new Error("Devin didn't start a session in time."));
       }
       setTimeout(tick, 300);
     };
@@ -339,7 +339,7 @@ function listAllIds(db: NonNullable<ReturnType<typeof openDb>>): string[] {
 
 async function send(id: string, text: string, opts: { model?: string; mode: PermissionMode }): Promise<void> {
   const bin = await profileBin(findBinary);
-  if (!bin) throw new Error("Devin isn't installed on the server.");
+  if (!bin) throw new Error("Devin isn't installed.");
   const db = openDb();
   const row = db ? getSession(db, id) : null;
   if (!row) throw new Error("Devin session not found.");

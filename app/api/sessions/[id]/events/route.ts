@@ -43,7 +43,7 @@ async function stream(req: NextRequest, id: string, fromParam: string | null) {
   const run = getRun(id);
   const initialTerminal = await terminalFor(id, Boolean(run));
   const cwd = ctx?.cwd ?? run?.cwd ?? initialTerminal?.cwd;
-  if (!ctx && !cwd) return new Response("Session not found", { status: 404 });
+  if (!ctx && !cwd) return new Response("Session not found.", { status: 404 });
 
   const file = ctx?.file ?? path.join(projectDirFor(cwd!), `${id}.jsonl`);
   /* `from`: the client already loaded history over a plain fetch (large SSE frames stall behind some proxies) */

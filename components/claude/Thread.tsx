@@ -191,7 +191,7 @@ const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }:
         {handoff && (
           <span className="text-[12px] font-medium text-ink-3">
             Continued from {handoff.from}
-            {handoff.title ? `: ${handoff.title}` : ""}. The earlier conversation is attached{expanded ? " below" : ""}.
+            {handoff.title ? `: ${handoff.title}` : ""}
           </span>
         )}
         {handoff && !expanded && handoff.next && <UserText text={handoff.next} />}
@@ -431,7 +431,7 @@ export function Thread({
       {!atBottom && (
         <button
           type="button"
-          aria-label={footer ? `${agentName} needs you: jump to the request` : "Jump to latest"}
+          aria-label={footer ? `${agentName} needs you` : "Jump to latest"}
           onClick={() => {
             stickRef.current = true;
             scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });

@@ -163,15 +163,15 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
     cleared ??= shown;
   }
   if (!before.ok) {
-    if (before.code === "agent_focus") throw new InputRefused(`The terminal is focused on agent @${before.agent}, not this session. Switch it back to main in the terminal first.`, before.code);
-    if (before.code === "has_text") throw new InputRefused(`Couldn't clear the terminal's prompt ("${before.text.slice(0, 60)}"). Check the terminal view.`, before.code);
-    throw new InputRefused("The terminal isn't showing Claude's prompt right now (a dialog or menu may be open). Check the terminal view.", before.code);
+    if (before.code === "agent_focus") throw new InputRefused(`@${before.agent} has focus in the terminal. Switch to main first.`, before.code);
+    if (before.code === "has_text") throw new InputRefused(`Unsent text in the terminal prompt ("${before.text.slice(0, 60)}"). Send or clear it first.`, before.code);
+    throw new InputRefused("A dialog is open in the terminal. Answer it first.", before.code);
   }
   try {
     await keys(target, typeable(text));
   } catch (err) {
     /* the prompt was already emptied: say what was in it, or it's lost without a word */
-    if (cleared && err instanceof Error) err.message = `${err.message}. The terminal's prompt held "${cleared.slice(0, 80)}", which was cleared.`;
+    if (cleared && err instanceof Error) err.message = `${err.message}. Cleared unsent text: "${cleared.slice(0, 80)}".`;
     throw err;
   }
   /* a busy Claude keeps a submitted message in its prompt area as queued, so text still showing isn't a failure;

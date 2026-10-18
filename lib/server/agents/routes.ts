@@ -14,7 +14,7 @@ import { pickProfile, setSessionProfile, withProfile } from "../profiles";
 /* Route handlers for non-Claude sessions (ids "<agent>:<nativeId>").
  * Same wire shapes as the Claude routes, so the client doesn't care which agent it is. */
 
-const notFound = () => NextResponse.json({ error: "Session not found" }, { status: 404 });
+const notFound = () => NextResponse.json({ error: "Session not found." }, { status: 404 });
 const modes = new Map<string, PermissionMode>();
 /** their print modes can't ask for approval on the web, so unattended turns may act (the UI shows Bypass) */
 const DEFAULT_MODE: PermissionMode = "bypassPermissions";
@@ -63,7 +63,7 @@ async function checkLanding(agent: AgentId, native: string, id: string, text: st
     const page = await a.history(native, null).catch(() => null);
     const want = squash(text);
     if (!page || page.entries.some((e) => e.kind === "user" && squash(e.text).includes(want))) return;
-    unsent.set(key, [...(unsent.get(key) ?? []).filter((u) => u.id !== id), { id, text, error: `Stopped before ${a.label} saved it, so ${a.label} never read this.` }].slice(-20));
+    unsent.set(key, [...(unsent.get(key) ?? []).filter((u) => u.id !== id), { id, text, error: `Not delivered. The turn stopped before ${a.label} saved it.` }].slice(-20));
     postToSession(key, unsentEvent(key));
   };
   /* another turn's state, emitted while this listener was being added, isn't this turn ending */
@@ -108,7 +108,7 @@ async function drain(agent: AgentId, native: string) {
       if (!next) break;
       const res = await sendNow(agent, native, next.text, next);
       if (res.ok) break;
-      postNotice(key, `Couldn't send a queued message ("${next.text.slice(0, 60)}"): ${res.error}`, "warn");
+      postNotice(key, `Queued message not sent ("${next.text.slice(0, 60)}"): ${res.error}`, "warn");
     }
   } finally {
     sending.delete(key);
@@ -147,11 +147,11 @@ async function sendQueuedNow(agent: AgentId, native: string, id: string) {
 
 async function sendNow(agent: AgentId, native: string, text: string, o: { id?: string; model?: string; mode: PermissionMode; profile: unknown }): Promise<{ ok: true } | { ok: false; error: string; status: number; code?: string }> {
   const a = await adapterFor(agent);
-  if (!a) return { ok: false, error: "Session not found", status: 404 };
+  if (!a) return { ok: false, error: "Session not found.", status: 404 };
   const key = sessionKey(agent, native);
   const before = pickProfile(agent, null, key);
   const profile = pickProfile(agent, o.profile, key);
-  if (!sameStore(before, profile)) return { ok: false, error: `${profile.label} keeps its sessions elsewhere. Use "Continue in" to move this session there.`, status: 409, code: "other_store" };
+  if (!sameStore(before, profile)) return { ok: false, error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, status: 409, code: "other_store" };
   try {
     await withProfile(profile, () => a.send(native, text, { model: o.model || profile.defaultModel || profile.models?.[0] || undefined, mode: o.mode }));
   } catch (err) {
@@ -191,7 +191,7 @@ export async function agentHistory(agent: AgentId, native: string, before: strin
 
 export async function agentEvents(req: NextRequest, agent: AgentId, native: string, from: string | null) {
   const a = await adapterFor(agent);
-  if (!a) return new Response("Session not found", { status: 404 });
+  if (!a) return new Response("Session not found.", { status: 404 });
   const key = sessionKey(agent, native);
   const encoder = new TextEncoder();
   let closed = false;
@@ -265,7 +265,7 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
   const a = await adapterFor(agent);
   if (!a) return notFound();
   const text = str(body.text)?.trim();
-  if (!text) return NextResponse.json({ error: "Message is empty." }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   const key = sessionKey(agent, native);
   const mode = parseMode(body.permissionMode) ?? modes.get(key) ?? DEFAULT_MODE;
   modes.set(key, mode);
@@ -273,21 +273,22 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
   const terminal = await terminalOf(a, native);
   if (terminal) {
     const target = await inputTarget(terminal.pid);
-    if (!target) return NextResponse.json({ error: `This ${a.label} session runs in a terminal the web can't type into.`, code: "no_pane" }, { status: 409 });
+    if (!target) return NextResponse.json({ error: "Can't send here. Reply in its terminal.", code: "no_pane" }, { status: 409 });
     try {
       /* the prompt check reads Claude's input box; other TUIs look different, so type directly */
       const { queued } = await typeIntoTerminal(target, text, { checkPrompt: false });
       return NextResponse.json({ id: key, via: "terminal", queued });
     } catch (err) {
       if (err instanceof InputRefused) return NextResponse.json({ error: err.message, code: err.code }, { status: 409 });
-      return NextResponse.json({ error: `Couldn't type into the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}` }, { status: 502 });
+      return NextResponse.json({ error: `Couldn't send to the terminal: ${err instanceof Error ? err.message.slice(0, 160) : err}` }, { status: 502 });
     }
   }
   const model = str(body.model) || undefined;
   if (busy(a, native, key) || queues.get(key)?.length) {
     const before = pickProfile(agent, null, key);
-    if (!sameStore(before, pickProfile(agent, body.profile, key))) {
-      return NextResponse.json({ error: `That profile keeps its sessions elsewhere. Use "Continue in" to move this session there.`, code: "other_store" }, { status: 409 });
+    const next = pickProfile(agent, body.profile, key);
+    if (!sameStore(before, next)) {
+      return NextResponse.json({ error: `Can't switch this session to ${next.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
     }
     enqueue(agent, native, { id: str(body.clientId) || `q${Date.now().toString(36)}`, text, model, mode, profile: body.profile });
     /* the turn may have ended while this was queued */
@@ -305,12 +306,12 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
   const a = await adapterFor(agent);
   if (!a) return NextResponse.json({ error: "Unknown agent." }, { status: 400 });
   const chosen = pickProfile(agent, body.profile, null);
-  if (!(chosen.bin ? chosen.binPath : await a.binary())) return NextResponse.json({ error: `${chosen.label} isn't installed on the server.` }, { status: 400 });
+  if (!(chosen.bin ? chosen.binPath : await a.binary())) return NextResponse.json({ error: `${chosen.label} isn't installed.` }, { status: 400 });
   const text = str(body.text)?.trim();
   const cwd = str(body.cwd)?.trim();
-  if (!text) return NextResponse.json({ error: "Write a first message to start the session." }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   if (!cwd || !path.isAbsolute(cwd) || !(await fs.stat(cwd).then((s) => s.isDirectory()).catch(() => false))) {
-    return NextResponse.json({ error: `No folder at ${cwd || "(empty)"} on the server.` }, { status: 400 });
+    return NextResponse.json({ error: cwd ? `Folder not found: ${cwd}` : "Choose a folder." }, { status: 400 });
   }
   const mode = parseMode(body.permissionMode) ?? DEFAULT_MODE;
   const profile = chosen;
@@ -318,7 +319,7 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
   try {
     const { id } = await Promise.race([
       withProfile(profile, () => a.start({ cwd, text, model, mode })),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${a.label} didn't start within 90 seconds.`)), 90_000)),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${a.label} didn't start in time.`)), 90_000)),
     ]);
     const key = sessionKey(agent, id);
     modes.set(key, mode);
@@ -339,7 +340,7 @@ export async function agentControl(agent: AgentId, native: string, body: Record<
   else if (body.action === "sendQueued") await sendQueuedNow(agent, native, str(body.value) ?? "");
   else if (body.action === "mode") {
     const mode = parseMode(body.value);
-    if (!mode) return NextResponse.json({ error: "Unknown permission mode." }, { status: 400 });
+    if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
     modes.set(key, mode);
   } else if (body.action !== "model") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   return NextResponse.json({ ok: true });

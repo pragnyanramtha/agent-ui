@@ -11,18 +11,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id: raw } = await params;
   const body = await readJson(req);
   const key = parseSessionKey(decodeURIComponent(raw));
-  if (!key) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  if (!key) return NextResponse.json({ error: "Session not found." }, { status: 404 });
   if (key.agent !== "claude") return agentControl(key.agent, key.native, body);
   const id = key.native;
   const run = getRun(id);
-  if (!run) return NextResponse.json({ error: "No web run for this session." }, { status: 404 });
+  if (!run) return NextResponse.json({ error: "Nothing is running." }, { status: 404 });
 
   try {
     if (body.action === "interrupt") await run.interrupt();
     else if (body.action === "stop") run.close();
     else if (body.action === "mode") {
       const mode = parseMode(body.value);
-      if (!mode) return NextResponse.json({ error: "Unknown permission mode." }, { status: 400 });
+      if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
       await run.setPermissionMode(mode);
     } else if (body.action === "model") await run.setModel(str(body.value) || undefined);
     else return NextResponse.json({ error: "Unknown action." }, { status: 400 });

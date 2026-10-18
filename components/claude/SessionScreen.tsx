@@ -556,7 +556,7 @@ export function SessionScreen({
         <div className="pointer-events-none absolute inset-x-0 top-full h-3 bg-gradient-to-b from-page to-transparent" aria-hidden />
         <FindBar scope={sectionRef} />
       </header>
-      {peek && terminal && !run && <TerminalPeek id={id} pid={terminal.pid} where={where ?? "terminal"} onClose={() => setPeek(false)} />}
+      {peek && terminal && !run && <TerminalPeek id={id} pid={terminal.pid} where={`${agentName}: ${view.title || "session"}`} onClose={() => setPeek(false)} />}
 
       <Thread
         view={view}

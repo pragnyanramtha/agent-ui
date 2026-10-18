@@ -71,7 +71,7 @@ function userEntries(p: Payload, id: string, ts: string): Entry[] {
   const text = texts.join("\n\n").trim();
   if (!text && !images) return [];
   if (INJECTED.test(text)) return [];
-  if (text.startsWith("<turn_aborted>")) return [{ kind: "notice", id, ts, tone: "warn", text: "Interrupted" }];
+  if (text.startsWith("<turn_aborted>")) return [{ kind: "notice", id, ts, tone: "warn", text: "Stopped" }];
   const shell = /^<user_shell_command>([\s\S]*?)<\/user_shell_command>/.exec(text);
   if (shell) {
     const cmd = /<command>([\s\S]*?)<\/command>/.exec(shell[1])?.[1]?.trim();
@@ -452,7 +452,7 @@ export function parseRecord(rec: CodexRecord, base: string, ctx: ParseCtx): Entr
       const msg = str(p.message);
       return msg && pt === "error" ? [{ kind: "notice", id: base, ts, tone: "warn", text: errorText(msg) }] : [];
     }
-    if (pt === "turn_aborted") return [{ kind: "notice", id: base, ts, tone: "warn", text: "Interrupted" }];
+    if (pt === "turn_aborted") return [{ kind: "notice", id: base, ts, tone: "warn", text: "Stopped" }];
     return [];
   }
 

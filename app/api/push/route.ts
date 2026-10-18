@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   subscribe({ endpoint, keys: { p256dh, auth }, origin, ua: (req.headers.get("user-agent") ?? "").slice(0, 200), at: Date.now() });
   if (body.test !== true) return NextResponse.json({ ok: true });
   const res = await pushAll({ kind: "test", title: "Notifications are on", body: "You'll hear when an agent finishes, needs you, or fails.", tag: "test", url: "/" }, endpoint);
-  if (!res.sent) return NextResponse.json({ error: "The browser's push service refused the test notification." }, { status: 502 });
+  if (!res.sent) return NextResponse.json({ error: "Test notification failed." }, { status: 502 });
   return NextResponse.json({ ok: true });
 }
 

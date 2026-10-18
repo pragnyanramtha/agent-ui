@@ -53,14 +53,6 @@ export function HandoffDialog({
     }
   };
 
-  const how = !chosen
-    ? ""
-    : chosen.agent === "claude"
-      ? "Claude gets the conversation as its own history."
-      : chosen.agent === "codex"
-        ? "Codex gets the conversation injected as its thread history."
-        : `${AGENT_LABEL[chosen.agent]} gets the conversation as context in its first message.`;
-
   return (
     <Sheet
       title="Continue in another agent"
@@ -76,11 +68,11 @@ export function HandoffDialog({
         </>
       }
     >
-      <p className="pb-3 text-[13px] text-ink-3">The conversation so far carries over to a new session. This one stays as it is.</p>
+      <p className="pb-3 text-[13px] text-ink-3">Starts a new session with this history. This one is kept.</p>
       {profiles === null ? (
         <p className="py-4 text-[13px] text-ink-3">Loading profiles…</p>
       ) : choices.length === 0 ? (
-        <p className="py-4 text-[13px] text-ink-3">No other agent or profile is installed. Add one under Agents.</p>
+        <p className="py-4 text-[13px] text-ink-3">No other profiles. Add one under Agents.</p>
       ) : (
         <div className="flex flex-col gap-3">
           <div role="radiogroup" aria-label="Continue on" className="flex flex-col gap-0.5">
@@ -103,14 +95,13 @@ export function HandoffDialog({
           </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-ink-3">Model (optional)</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} list="handoff-models" placeholder={chosen?.defaultModel ?? "The profile's default"} className={field} autoComplete="off" spellCheck={false} />
+            <input value={model} onChange={(e) => setModel(e.target.value)} list="handoff-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
             <datalist id="handoff-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-ink-3">Next message (optional)</span>
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Carry on where it left off" className={area} />
           </label>
-          <p className="text-[12px] text-ink-3">{how}</p>
         </div>
       )}
       {error && (

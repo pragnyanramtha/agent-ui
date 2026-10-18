@@ -78,7 +78,7 @@ export function appServerTurn(o: AppTurnOptions): Run {
       if (run.child.exitCode === null && run.child.signalCode === null) killGroup(run.child);
     }, 5000);
   }
-  const fail = (m: Msg, what: string) => finish(errorText(m.error?.message || `${what} failed`));
+  const fail = (m: Msg, what: string) => finish(errorText(m.error?.message || what));
 
   function onLine(line: string) {
     if (!line.startsWith("{")) return;
@@ -147,7 +147,7 @@ export function appServerTurn(o: AppTurnOptions): Run {
         break;
       case "turn/completed": {
         const turn = obj(p.turn);
-        finish(turn.status === "failed" ? errorText(str(obj(turn.error).message) || failure || "The Codex turn failed") : null);
+        finish(turn.status === "failed" ? errorText(str(obj(turn.error).message) || failure || "Codex turn failed.") : null);
         break;
       }
     }
@@ -162,18 +162,18 @@ export function appServerTurn(o: AppTurnOptions): Run {
   });
 
   request("initialize", { clientInfo: { name: "agent-u", title: "agent-u", version: "1.0.0" }, capabilities: null }, (m) => {
-    if (m.error) return fail(m, "Starting the Codex app server");
+    if (m.error) return fail(m, "Couldn't start Codex.");
     write({ method: "initialized" });
     const onThreadReady = (r: Msg) => {
-      if (r.error) return fail(r, o.threadId ? "Resuming the Codex session" : "Starting a Codex session");
+      if (r.error) return fail(r, o.threadId ? "Couldn't resume the session." : "Couldn't start the session.");
       threadId = str(obj(obj(r.result).thread).id) || threadId;
-      if (!threadId) return finish("Codex didn't report a session id.");
+      if (!threadId) return finish("Codex didn't start a session.");
       o.onThread?.(threadId);
       const turn = () =>
         request("turn/start", { threadId, input: [{ type: "text", text: o.text, text_elements: [] }] }, (t) => {
-          if (t.error) fail(t, "Starting the turn");
+          if (t.error) fail(t, "Couldn't start the turn.");
         });
-      if (o.inject?.length && !o.threadId) request("thread/inject_items", { threadId, items: o.inject }, (r) => (r.error ? fail(r, "Importing the earlier conversation") : turn()));
+      if (o.inject?.length && !o.threadId) request("thread/inject_items", { threadId, items: o.inject }, (r) => (r.error ? fail(r, "Couldn't import history.") : turn()));
       else turn();
     };
     if (o.threadId) request("thread/resume", { threadId: o.threadId, excludeTurns: true, ...threadSettings(o.mode, o.model) }, onThreadReady);

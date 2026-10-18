@@ -49,7 +49,7 @@ export function InboxScreen({
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-[820px] flex-col gap-7 px-3 pt-2 pb-16 sm:px-6">
           {sessions === null && <p className="py-10 text-center text-[13px] text-ink-3">Loading…</p>}
-          {empty && <p className="py-16 text-center text-[13.5px] text-ink-3">Nothing is waiting on you. Approvals, failures and finished turns from every session land here.</p>}
+          {empty && <p className="py-16 text-center text-[13.5px] text-ink-3">Nothing needs you.</p>}
 
           {needs.length > 0 && (
             <Group title="Needs you" count={needs.length}>
@@ -138,7 +138,7 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
   if (ask.kind === "question") {
     return (
       <div className="rounded-[10px] bg-inset px-3 py-2 shadow-hairline">
-        <p className="text-[13px] text-ink">{ask.questions[0]?.question ?? "A question"}</p>
+        <p className="text-[13px] text-ink">{ask.questions[0]?.question ?? "Question"}</p>
         <button type="button" onClick={onOpen} className="mt-1.5 text-[12.5px] font-medium text-accent-ink hover:underline">
           Answer in the session
         </button>

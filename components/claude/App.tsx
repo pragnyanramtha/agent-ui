@@ -21,6 +21,7 @@ import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
 import { registerWorker, resyncPush } from "@/lib/client/push";
+import { shortPath } from "@/lib/client/api";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
@@ -206,7 +207,7 @@ export function App() {
       e.preventDefault();
       e.stopPropagation();
       if (!terminal) {
-        window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `shell in ${activeCwd}` : "shell" } }));
+        window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `Shell: ${shortPath(activeCwd)}` : "Shell" } }));
       } else if (!docked) setDock(true);
       else setTermHidden((h) => !h);
     };

@@ -95,7 +95,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       try {
         let replace = false;
         if (listing?.entries.some((e) => e.name === f.name)) {
-          if (!(await confirmAsk({ title: `Replace ${f.name}?`, body: "A file with this name is already in the folder.", confirm: "Replace" }))) {
+          if (!(await confirmAsk({ title: `Replace ${f.name}?`, body: "A file with this name exists.", confirm: "Replace" }))) {
             setUploads((u) => u.filter((x) => x.id !== id));
             continue;
           }
@@ -129,7 +129,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
     if (name && name !== it.name) void act({ action: "rename", path: it.path, name }, () => file?.path === it.path && setFile(null));
   };
   const remove = async (it: { path: string; name: string; type?: string }) => {
-    const ok = await confirmAsk({ title: `Delete ${it.name}?`, body: `${it.type === "dir" ? "The folder and everything in it are" : "It is"} removed from the server. This can't be undone.`, confirm: "Delete", danger: true });
+    const ok = await confirmAsk({ title: `Delete ${it.name}?`, body: it.type === "dir" ? "Deletes everything inside. This can't be undone." : "This can't be undone.", confirm: "Delete", danger: true });
     if (ok) void act({ action: "delete", path: it.path }, () => file?.path === it.path && setFile(null));
   };
 
@@ -205,7 +205,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
           }}
           aria-pressed={hidden}
           aria-label={hidden ? "Hide hidden files" : "Show hidden files"}
-          data-tip={hidden ? "Hide dotfiles" : "Show dotfiles"}
+          data-tip={hidden ? "Hide hidden files" : "Show hidden files"}
           className={iconBtn}
         >
           {hidden ? <Eye width={17} height={17} strokeWidth={1.8} /> : <EyeClosed width={17} height={17} strokeWidth={1.8} />}
@@ -262,7 +262,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         {listing === null && !error ? (
           <p className="px-3 py-6 text-[13px] text-ink-3">Loading files…</p>
         ) : listing?.entries.length === 0 ? (
-          <p className="px-3 py-6 text-[13px] text-ink-3">Empty folder{listing.hiddenCount ? ` (${listing.hiddenCount} hidden)` : ""}. Drop files here or use Upload.</p>
+          <p className="px-3 py-6 text-[13px] text-ink-3">Empty folder{listing.hiddenCount ? ` (${listing.hiddenCount} hidden)` : ""}</p>
         ) : (
           <ul className="flex flex-col">
             {listing?.entries.map((it) => (
@@ -378,7 +378,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
         setText({ text: await r.text(), partial: file.size > PREVIEW_BYTES });
       })
-      .catch((err) => !ctl.signal.aborted && setText({ error: err instanceof Error ? err.message : "Couldn't load it." }));
+      .catch((err) => !ctl.signal.aborted && setText({ error: err instanceof Error ? err.message : "Couldn't load file." }));
     return () => ctl.abort();
   }, [file.path, file.mtime, file.size, kind]);
 
@@ -405,7 +405,6 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
     if (kind === "pdf")
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <p className="text-[13px] text-ink-3">PDFs open in the browser&apos;s own viewer.</p>
           <a href={raw(file.path)} target="_blank" rel="noopener" className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-page">
             <OpenNewWindow width={15} height={15} /> Open PDF
           </a>
@@ -414,7 +413,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
     if (kind === "binary")
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <p className="text-[13px] text-ink-3">No preview for this kind of file.</p>
+          <p className="text-[13px] text-ink-3">No preview available.</p>
           <a href={raw(file.path, true)} download={name} className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-page">
             <Download width={15} height={15} /> Download {formatBytes(file.size)}
           </a>
@@ -449,7 +448,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1 sm:px-3">
-        <button type="button" onClick={onClose} aria-label="Back to the folder" className="icon-btn md:hidden">
+        <button type="button" onClick={onClose} aria-label="Back" className="icon-btn md:hidden">
           <NavArrowLeft width={18} height={18} strokeWidth={1.8} />
         </button>
         <div className="flex min-w-0 flex-1 flex-col px-1">

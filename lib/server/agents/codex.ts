@@ -183,7 +183,7 @@ function trackErrors(run: Run) {
 
 async function requireBinary() {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("Codex CLI isn't installed (no `codex` on PATH or in ~/.local/bin).");
+  if (!bin) throw new Error("Codex isn't installed.");
   return bin;
 }
 

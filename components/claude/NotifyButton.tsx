@@ -6,8 +6,8 @@ import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/clie
 import { IconButton } from "./SessionList";
 
 const HINT: Partial<Record<PushStatus, string>> = {
-  install: "On iPhone and iPad, notifications need agent-u on the Home Screen: Share, then Add to Home Screen.",
-  denied: "Notifications are blocked for this site. Allow them in the browser's site settings.",
+  install: "On iPhone and iPad, add agent-u to the Home Screen first.",
+  denied: "Notifications are blocked. Allow them in site settings.",
   unsupported: "This browser can't show notifications.",
 };
 
@@ -32,7 +32,7 @@ export function NotifyButton() {
       if (status === "on") await disablePush();
       else {
         await enablePush();
-        setNote("Notifications are on. A test one is on its way.");
+        setNote("Notifications on. Test sent.");
       }
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));

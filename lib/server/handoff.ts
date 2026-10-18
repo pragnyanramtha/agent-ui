@@ -99,7 +99,7 @@ export type HandoffOptions = { text: string; mode: PermissionMode; model?: strin
 /** Starts a session under `profile` that carries on from `src`. Resolves with the new session key. */
 export async function handoff(src: Source, o: HandoffOptions): Promise<string> {
   const target = o.profile.agent;
-  if (!src.cwd) throw new Error("The session has no folder to continue in.");
+  if (!src.cwd) throw new Error("This session has no folder.");
   if (target === "claude") {
     const id = await writeClaudeTranscript(src);
     const run = startRun({ resume: id, cwd: src.cwd, model: o.model, permissionMode: o.mode, profile: o.profile });

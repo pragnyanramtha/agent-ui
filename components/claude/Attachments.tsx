@@ -70,7 +70,7 @@ export function useAttachments() {
           break;
         }
         if (f.size > MAX_BYTES) {
-          note = `${f.name} is over ${formatBytes(MAX_BYTES)}. Put it on the server with Files instead.`;
+          note = `${f.name} is over ${formatBytes(MAX_BYTES)}. Upload it in Files.`;
           continue;
         }
         /* pasted screenshots all arrive as image.png */

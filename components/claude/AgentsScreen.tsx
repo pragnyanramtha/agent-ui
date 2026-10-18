@@ -85,7 +85,7 @@ function Launcher({ projects }: { projects: string[] }) {
   return (
     <section aria-labelledby="launch-h">
       <H>
-        <span id="launch-h">Start an agent on the server</span>
+        <span id="launch-h">Start an agent</span>
       </H>
       <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
@@ -117,14 +117,14 @@ function Launcher({ projects }: { projects: string[] }) {
           </button>
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: cwd || undefined, label: `shell in ${shortPath(cwd || "~")}` } }))}
+            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: cwd || undefined, label: `Shell: ${shortPath(cwd || "~")}` } }))}
             className={secondaryBtn}
           >
             Shell
           </button>
         </div>
       </div>
-      <p className="px-1 pt-1.5 text-[12px] text-ink-3">It runs in a terminal the server keeps: close the tab or turn the laptop off and it carries on.</p>
+      <p className="px-1 pt-1.5 text-[12px] text-ink-3">Keeps running after you close the tab.</p>
       {error && <p className="mt-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
       <FolderPicker open={picker} value={cwd} recent={projects} onPick={setCwd} onClose={() => setPicker(false)} />
     </section>
@@ -150,7 +150,7 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   }, [load]);
 
   const stop = async (t: ServerTerminal) => {
-    if (!t.exited && !(await confirmAsk({ title: `Stop ${t.label}?`, body: "Whatever runs in it is ended. The session's history stays.", confirm: "Stop", danger: true }))) return;
+    if (!t.exited && !(await confirmAsk({ title: `Stop ${t.label}?`, body: "Ends what's running. History stays.", confirm: "Stop", danger: true }))) return;
     await fetch("/api/terminals", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id }) });
     void load();
   };
@@ -159,13 +159,13 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   return (
     <section aria-labelledby="terms-h">
       <H aside={data && !data.tmux ? <span className="text-[12px] text-ink-3">Install tmux so these survive restarts</span> : null}>
-        <span id="terms-h">Running on the server</span>
+        <span id="terms-h">Running</span>
       </H>
       {data?.error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{data.error}</p>}
       {data === null ? (
         <p className="px-1 text-[13px] text-ink-3">Loading terminals…</p>
       ) : data.terminals.length === 0 ? (
-        <p className="px-1 text-[13px] text-ink-3">Nothing yet. Agents and shells you start here show up in this list.</p>
+        <p className="px-1 text-[13px] text-ink-3">Nothing running.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {data.terminals.map((t) => (
@@ -174,7 +174,7 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-[13.5px] text-ink">{t.label}</span>
                 <span className="truncate text-[12px] text-ink-3" translate="no">
-                  {[t.cwd && shortPath(t.cwd), t.backing, t.exited ? `exited ${t.exited.code}` : t.clients ? `${t.clients} watching` : "running", t.createdAt ? timeAgo(t.createdAt, now) : ""].filter(Boolean).join(" · ")}
+                  {[t.cwd && shortPath(t.cwd), t.exited ? `Exited (${t.exited.code})` : t.clients ? `${t.clients} watching` : "Running", t.createdAt ? timeAgo(t.createdAt, now) : ""].filter(Boolean).join(" · ")}
                 </span>
               </div>
               {t.session && (
@@ -262,13 +262,13 @@ function Profiles() {
     if (!edit) return;
     const p = fromDraft(edit.draft);
     const renamed = !edit.isNew && edit.from && edit.from !== p.id ? edit.from : null;
-    if ((edit.isNew || renamed) && (profiles ?? []).some((x) => x.id === p.id && (x.custom || x.builtin))) return setError(`There's already a profile called ${p.id}.`);
+    if ((edit.isNew || renamed) && (profiles ?? []).some((x) => x.id === p.id && (x.custom || x.builtin))) return setError(`Profile ${p.id} already exists.`);
     /* a rename replaces the old entry; its masked secrets are looked up under the old id */
     const rest = custom.filter((c) => c.id !== p.id && c.id !== renamed).map(stored);
     void save([...rest, renamed ? { ...p, previousId: renamed } : p]);
   };
   const reset = async (p: ProfileInfo) => {
-    const ok = await confirmAsk(p.builtin ? { title: `Reset ${p.label}?`, body: "Your changes to this built-in profile are dropped.", confirm: "Reset" } : { title: `Delete ${p.label}?`, body: "Sessions that used it go back to the built-in profile.", confirm: "Delete", danger: true });
+    const ok = await confirmAsk(p.builtin ? { title: `Reset ${p.label}?`, body: "Your changes will be lost.", confirm: "Reset" } : { title: `Delete ${p.label}?`, body: "Its sessions switch to the built-in profile.", confirm: "Delete", danger: true });
     if (!ok) return;
     void save(custom.filter((c) => c.id !== p.id).map(stored));
   };
@@ -286,14 +286,14 @@ function Profiles() {
           </button>
         }
       >
-        <span id="profiles-h">Profiles: accounts, proxies and wrappers</span>
+        <span id="profiles-h">Profiles</span>
       </H>
       <p className="px-1 pb-2 text-[12px] text-ink-3">
-        A profile is an agent CLI with its own binary, flags, environment and models, like Codex through a proxy or a second Claude account. Stored in{" "}
+        Accounts, proxies and wrappers per agent. Stored in{" "}
         <code className="font-mono" translate="no">
           {shortPath(configPath)}
         </code>
-        , so an agent on the server can set them up too.
+        .
       </p>
       {error && !edit && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
       {profiles === null ? (
@@ -306,7 +306,7 @@ function Profiles() {
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className={`truncate text-[13.5px] ${p.hidden ? "text-ink-3" : "text-ink"}`}>
                   {p.label}
-                  <span className="text-ink-3"> · {p.id === p.agent ? "built in" : AGENT_LABEL[p.agent]}</span>
+                  <span className="text-ink-3"> · {p.id === p.agent ? "Built-in" : AGENT_LABEL[p.agent]}</span>
                 </span>
                 <span className="truncate font-mono text-[11.5px] text-ink-3" translate="no">
                   {p.installed ? shortPath(p.binPath ?? p.bin ?? p.agent) : `${p.bin || p.agent} not found`}
@@ -380,7 +380,7 @@ function ProfileEditor({
         {row("Name", "", <input value={d.label} onChange={(e) => set({ label: e.target.value })} className={field} placeholder="Codex via proxy" />)}
         {row(
           "Agent",
-          "Which CLI's sessions and output format this is",
+          "",
           <select value={d.agent} onChange={(e) => set({ agent: e.target.value as AgentId })} disabled={builtin} className={field}>
             {AGENT_IDS.map((a) => (
               <option key={a} value={a}>
@@ -389,21 +389,21 @@ function ProfileEditor({
             ))}
           </select>,
         )}
-        {row("Binary", "A name on PATH or an absolute path; empty for the agent's own", <input value={d.bin} onChange={(e) => set({ bin: e.target.value })} className={`${field} font-mono`} placeholder={d.agent === "cursor" ? "cursor-agent" : d.agent} spellCheck={false} autoCapitalize="off" />)}
-        {row("Arguments", "One per line, put before the agent's own (e.g. -c then model_provider=\"proxy\")", <textarea rows={3} value={d.args} onChange={(e) => set({ args: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
-        {row("Environment", "KEY=value per line. ${VAR} reads the server's .env.local, so keys stay out of the file", <textarea rows={3} value={d.env} onChange={(e) => set({ env: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" placeholder={"OPENAI_BASE_URL=https://proxy.example/v1\nOPENAI_API_KEY=${PROXY_KEY}"} />)}
-        {row("Models", "Comma separated, offered in the composer", <input value={d.models} onChange={(e) => set({ models: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}
+        {row("Binary", "Name on PATH or absolute path. Empty for default.", <input value={d.bin} onChange={(e) => set({ bin: e.target.value })} className={`${field} font-mono`} placeholder={d.agent === "cursor" ? "cursor-agent" : d.agent} spellCheck={false} autoCapitalize="off" />)}
+        {row("Arguments", "One per line, before the agent's own", <textarea rows={3} value={d.args} onChange={(e) => set({ args: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
+        {row("Environment", "KEY=value per line. ${VAR} reads .env.local.", <textarea rows={3} value={d.env} onChange={(e) => set({ env: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" placeholder={"OPENAI_BASE_URL=https://proxy.example/v1\nOPENAI_API_KEY=${PROXY_KEY}"} />)}
+        {row("Models", "Comma separated", <input value={d.models} onChange={(e) => set({ models: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}
         {row("Default model", "", <input value={d.defaultModel} onChange={(e) => set({ defaultModel: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}
         {row(
-          "When it hits a limit, continue on",
-          `Profile ids, comma separated, tried in order. Known: ${profiles.filter((p) => p.id !== d.id).map((p) => p.id).join(", ")}`,
+          "Fallback profiles",
+          `Comma separated, used in order on a usage limit. Known: ${profiles.filter((p) => p.id !== d.id).map((p) => p.id).join(", ")}`,
           <input value={d.fallback} onChange={(e) => set({ fallback: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />,
         )}
-        {row("Terminal arguments", "Only for interactive launches, one per line", <textarea rows={2} value={d.launchArgs} onChange={(e) => set({ launchArgs: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
+        {row("Terminal arguments", "One per line, terminal only", <textarea rows={2} value={d.launchArgs} onChange={(e) => set({ launchArgs: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
         {row("Notes", "", <input value={d.notes} onChange={(e) => set({ notes: e.target.value })} className={field} />)}
         <label className="flex items-center gap-2 self-end pb-2 text-[13px] text-ink-2">
           <input type="checkbox" checked={d.hidden} onChange={(e) => set({ hidden: e.target.checked })} />
-          Hide from pickers
+          Hide from menus
         </label>
       </div>
     </Sheet>

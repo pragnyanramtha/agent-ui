@@ -69,14 +69,14 @@ export async function POST(req: NextRequest) {
     }
     if (action === "delete") {
       const p = absPath(target);
-      if (p === "/" || p === os.homedir()) throw new FsError(`Won't delete ${p}.`, 400);
+      if (p === "/" || p === os.homedir()) throw new FsError(`Can't delete ${p}.`, 400);
       await fs.rm(p, { recursive: true });
       return NextResponse.json({ ok: true });
     }
     if (action === "write") {
       const p = absPath(target);
       const text = typeof body.text === "string" ? body.text : null;
-      if (text === null || text.length > 5_000_000) throw new FsError("Send the file's text (up to 5 MB).", 400);
+      if (text === null || text.length > 5_000_000) throw new FsError("File too large (max 5 MB).", 400);
       const tmp = `${p}.agentu-${process.pid}.tmp`;
       const mode = await fs.stat(p).then((s) => s.mode & 0o777).catch(() => 0o644);
       await fs.writeFile(tmp, text, { mode });

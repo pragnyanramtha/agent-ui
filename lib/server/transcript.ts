@@ -75,12 +75,12 @@ function userString(rec: Rec, text: string, id: string, ts: string): Entry[] {
   }
   const bash = tag(text, "bash-input");
   if (bash) return [{ kind: "user", id, ts, text: `! ${bash}`, images: 0 }];
-  if (text.startsWith("[Request interrupted by user")) return [{ kind: "notice", id, ts, tone: "warn", text: "Interrupted" }];
+  if (text.startsWith("[Request interrupted by user")) return [{ kind: "notice", id, ts, tone: "warn", text: "Stopped" }];
   if (/^<(task-notification|local-command-caveat|user-memory-input)>/.test(text) || rec.isCompactSummary) return [];
   const imported = text.startsWith("<imported-session>") ? tag(text, "imported-session") : null;
   if (imported !== null) {
     const from = /moved here from (.+?) \(/.exec(imported)?.[1];
-    return [{ kind: "notice", id, ts, tone: "info", text: from ? `Continued from ${from}. The turns before this point happened there; tool runs show as text.` : imported }];
+    return [{ kind: "notice", id, ts, tone: "info", text: from ? `Continued from ${from}` : imported }];
   }
   const clean = text.replace(SYSTEM_REMINDER, "").trim();
   return clean ? [{ kind: "user", id, ts, text: clean, images: 0 }] : [];
@@ -136,7 +136,7 @@ export function parseRecord(rec: Rec): Entry[] {
     if (synthetic && rec.isApiErrorMessage) {
       const said = content.map((b) => (b.type === "text" ? b.text ?? "" : "")).join(" ").trim();
       const auth = rec.error === "authentication_failed" || /authenticat|log ?in|oauth/i.test(said);
-      return [{ kind: "notice", id: base, ts, tone: "warn", text: auth ? `${said ? said.replace(/[^.!?]$/, "$&.") : "Claude couldn't sign in."} Log in again on the server: run claude, then /login.` : said || "The API returned an error." }];
+      return [{ kind: "notice", id: base, ts, tone: "warn", text: auth ? `${said ? said.replace(/[^.!?]$/, "$&.") : "Claude couldn't sign in."} Log in again on the server: run claude, then /login.` : said || "API error." }];
     }
     /* the acknowledgement written after an imported session's preamble */
     if (synthetic && msgId.startsWith("msg_import_") && content.length === 1 && content[0].text === "Understood.") return [];

@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import type { PendingAsk, StreamDelta } from "@/lib/types";
 import { activeProfile } from "../profiles";
@@ -69,7 +68,7 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
   /* Linux caps one argument at 128 KiB (and all of them at a few MB); spawn would fail with a bare E2BIG */
   const big = Math.max(0, ...spec.args.map((a) => Buffer.byteLength(a)));
   if (big > MAX_ARG || spec.args.reduce((n, a) => n + Buffer.byteLength(a), 0) > MAX_ARGS) {
-    throw new Error(`This message is too long to hand to ${path.basename(spec.cmd)} (${Math.round(big / 1024)} KB). Shorten it, or put the long part in a file and point the agent at it.`);
+    throw new Error(`Message too long (${Math.round(big / 1024)} KB). Shorten it or attach a file.`);
   }
   const piped = spec.keepStdin || spec.stdin !== undefined;
   /* a profile (another backend, an API key, a proxy) adds its global flags and environment */

@@ -19,10 +19,10 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    throw new Error("The terminal backend isn't running (agent-u-pty).");
+    throw new Error("Terminal service isn't running (agent-u-pty).");
   }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Terminal backend: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(data.error ?? `Terminal service error (${res.status}).`);
   return data;
 }
 
@@ -55,7 +55,7 @@ export type Launch = { profile: ResolvedProfile; cwd: string; session?: string |
 export async function launchAgent(l: Launch) {
   const p = l.profile;
   const bin = p.bin ? p.binPath : (p.binPath ?? (p.agent === "claude" ? "claude" : null));
-  if (!bin) throw new Error(`${p.label} isn't installed on the server.`);
+  if (!bin) throw new Error(`${p.label} isn't installed.`);
   const args = [...p.args, ...(p.launchArgs ?? []), ...interactiveArgs(p.agent, { session: l.session, model: l.model ?? p.defaultModel ?? null, cwd: l.cwd })];
   const where = l.cwd.split("/").filter(Boolean).pop() ?? l.cwd;
   return call<{ id: string; backing: "tmux" | "pty" }>("POST", "/internal/launch", {

@@ -341,7 +341,7 @@ export class Run {
         /* sends queued mid-turn run next without new input: still busy until session_state_changed says idle */
         status: m.queued_turn_count ? "running" : "idle",
         costUsd: m.total_cost_usd ?? this.state.costUsd,
-        error: !m.is_error || stopped ? null : m.subtype === "success" ? m.result.slice(0, 300) || "The turn failed." : `Run ended: ${m.subtype.replace(/_/g, " ")}`,
+        error: !m.is_error || stopped ? null : m.subtype === "success" ? m.result.slice(0, 300) || "The turn failed." : `Turn ended: ${m.subtype.replace(/_/g, " ")}`,
       });
     }
   }

@@ -104,14 +104,14 @@ export function ContextRing({ usage, costUsd = null, cost = null }: { usage: Con
           </dl>
           {shown && (
             <div className="mt-1.5 flex justify-between text-[12.5px]">
-              <span className="text-ink-3">{cost ? "Session cost" : "Web run cost"}</span>
-              <span className="text-ink-2 tabular-nums" title={shown.estimated ? "Estimated from token counts at list prices" : "Reported by the run"}>
+              <span className="text-ink-3">Cost</span>
+              <span className="text-ink-2 tabular-nums" title={shown.estimated ? "Estimate at list prices" : "Reported"}>
                 {fmtUsd(shown.usd)}
                 {shown.estimated && <span className="ml-1 text-ink-3">est.</span>}
               </span>
             </div>
           )}
-          {pct >= 0.8 && <p className="mt-1.5 text-[12px] text-orange-ink">Getting full. /compact frees space.</p>}
+          {pct >= 0.8 && <p className="mt-1.5 text-[12px] text-orange-ink">Almost full. Run /compact.</p>}
           <div className="mt-2.5 flex items-center gap-2">
             <p className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-3">{usage.model}</p>
             <button

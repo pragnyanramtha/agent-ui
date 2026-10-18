@@ -312,7 +312,7 @@ async function liveProcesses(): Promise<Map<string, { pid: number }>> {
 
 /* ---------- turns ---------- */
 
-const LOGIN_HINT = "Kimi has no model configured on this server. Run `kimi` there and /login, or use a profile with KIMI_API_KEY (and KIMI_CODE_BASE_URL for a proxy).";
+const LOGIN_HINT = "Kimi isn't logged in. Run kimi, then /login, on the server.";
 
 function friendly(err: string | null): string | null {
   if (!err) return err;
@@ -348,7 +348,7 @@ function onLine(run: Parameters<typeof liveStream>[0], learn?: (id: string) => v
 
 async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("Kimi isn't installed on the server.");
+  if (!bin) throw new Error("Kimi isn't installed.");
   const known = new Set(index().keys());
   const t0 = Date.now();
   const tempKey = `kimi:pending-${t0.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -369,7 +369,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
       if (run.state.status !== "running") return reject(new Error(friendly(run.state.error ?? lastStderr(run.stderr)) || "Kimi exited before it created a session."));
       if (Date.now() - t0 > 85_000) {
         stopTurn(tempKey);
-        return reject(new Error("Kimi didn't report a session id in time."));
+        return reject(new Error("Kimi didn't start a session in time."));
       }
       setTimeout(tick, 300);
     };
@@ -381,7 +381,7 @@ const lastStderr = (s: string) => s.trim().split("\n").filter(Boolean).slice(-1)
 
 async function send(id: string, text: string, opts: { model?: string; mode: PermissionMode }): Promise<void> {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("Kimi isn't installed on the server.");
+  if (!bin) throw new Error("Kimi isn't installed.");
   const m = index().get(id);
   if (!m) throw new Error("Kimi session not found.");
   const cwd = m.cwd && fs.existsSync(m.cwd) ? m.cwd : os.homedir();

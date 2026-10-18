@@ -36,7 +36,7 @@ async function startWithGit(body: Record<string, unknown>) {
     try {
       worktree = await newWorktree(cwd, text.slice(0, 40));
     } catch (err) {
-      return NextResponse.json({ error: `Couldn't make a worktree: ${(err as Error).message}` }, { status: err instanceof GitError ? err.status : 500 });
+      return NextResponse.json({ error: `Couldn't create worktree: ${(err as Error).message}` }, { status: err instanceof GitError ? err.status : 500 });
     }
     body = { ...body, cwd: worktree.dir };
   }
@@ -61,9 +61,9 @@ async function start(body: Record<string, unknown>) {
   if (agent && agent !== "claude") return agentStart(agent, body);
   const text = str(body.text)?.trim();
   const cwd = str(body.cwd)?.trim();
-  if (!text) return NextResponse.json({ error: "Write a first message to start the session." }, { status: 400 });
+  if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   if (!cwd || !path.isAbsolute(cwd) || !(await fs.stat(cwd).then((s) => s.isDirectory()).catch(() => false))) {
-    return NextResponse.json({ error: `No folder at ${cwd || "(empty)"} on the server.` }, { status: 400 });
+    return NextResponse.json({ error: cwd ? `Folder not found: ${cwd}` : "Choose a folder." }, { status: 400 });
   }
   const profile = pickProfile("claude", body.profile, null);
   const model = str(body.model) || undefined;
@@ -73,7 +73,7 @@ async function start(body: Record<string, unknown>) {
   const id = await Promise.race([run.sessionId(), new Promise<string>((r) => setTimeout(() => r(""), 90_000))]);
   if (!id) {
     run.close();
-    return NextResponse.json({ error: run.state.error ?? "Claude didn't start within 90 seconds." }, { status: 502 });
+    return NextResponse.json({ error: run.state.error ?? "Claude didn't start in time." }, { status: 502 });
   }
   setSessionProfile(id, profile.id);
   guardTurn({ key: id, text, mode, model, profile });
