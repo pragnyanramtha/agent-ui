@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, EditPencil, Folder, LogOut, MailIn, MoreHoriz, NavArrowRight, Search, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
+import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
+import { patchSession, type SessionChange } from "@/lib/client/useSessions";
 import { terminalBusy } from "@/lib/status";
 import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
@@ -14,9 +15,10 @@ import { NotifyButton } from "./NotifyButton";
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
  * A quiet, ChatGPT-like list: brand row with search and the
- * collapse toggle, "New session", then Open now, Projects and
- * Recents. Rows are one line; detail lives in the hover title.
- * Grouping and the agent filter sit in the Recents overflow.
+ * collapse toggle, "New session", then Pinned, Active, Projects,
+ * Recent and Archived. Rows are one line; detail lives in the
+ * hover title, actions in the row menu (right-click or "...").
+ * Grouping and the agent filter sit in the Recent overflow.
  * Collapsed on desktop, SessionRail stands in for it.
  * ───────────────────────────────────────────────────────── */
 
@@ -44,17 +46,34 @@ export function AgentBadge({ agent }: { agent: AgentId }) {
   return <span className="shrink-0 text-[12px] text-ink-3">{AGENT_LABEL[agent]}</span>;
 }
 
-const whereOf = (s: SessionSummary) => (s.web ? "web" : s.terminal?.multiplexer ?? (s.terminal ? "terminal" : null));
 const ago = (ms: number, now: number) => {
   const t = timeAgo(ms, now);
   return t === "now" ? "just now" : /\d$/.test(t) ? `on ${t}` : `${t} ago`;
 };
 
-/** The hover title: the full name, the folder, and when (or where it's open). */
-const rowTitle = (s: SessionSummary, now: number) => {
-  const where = whereOf(s);
-  return `${s.title}\n${s.project || "No folder"} · ${isLive(s) && where ? `open in ${where}` : ago(s.mtime, now)}${s.agent !== "claude" ? ` · ${AGENT_LABEL[s.agent]}` : ""}`;
-};
+/** The hover title: the full name, the folder, and when (or that it's open). */
+const rowTitle = (s: SessionSummary, now: number) =>
+  `${s.title}\n${s.project || "No folder"} · ${isLive(s) ? "open" : ago(s.mtime, now)}${s.agent !== "claude" ? ` · ${AGENT_LABEL[s.agent]}` : ""}`;
+
+/** The address that opens a session, the same one notifications use. */
+export const sessionLink = (id: string) => `${window.location.origin}/?s=${encodeURIComponent(id)}`;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* plain http has no clipboard API */
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
 
 /** Ctrl or ⌘, read after mount so the server render matches. */
 export function useModKey() {
@@ -126,6 +145,26 @@ function Brand() {
 
 /* ── rows ───────────────────────────────────────────────── */
 
+type MenuAt = { x: number; y: number } | HTMLElement;
+
+/** Which list a row sits in: a session shows in Projects and in Pinned, Active or Recent at once. */
+type RowWhere = "match" | "pinned" | "live" | "project" | "recent" | "archived";
+
+/** What a row needs to open its menu and to rename in place. Both are keyed by `${where}:${id}`. */
+type RowControl = {
+  menuFor: string | null;
+  renaming: string | null;
+  openMenu: (s: SessionSummary, at: MenuAt, where: RowWhere) => void;
+  rename: (s: SessionSummary, where: RowWhere, title: string | null, viaKey: boolean) => void;
+};
+
+/** Focus a row after a re-render: the same list if it's still there, else wherever it moved. */
+const focusRow = (id: string, where?: RowWhere) =>
+  requestAnimationFrame(() => {
+    const all = [...document.querySelectorAll<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`)].filter((el) => el.offsetParent !== null);
+    (all.find((el) => el.dataset.rowWhere === where) ?? all[0])?.focus({ preventScroll: true });
+  });
+
 function Row({
   s,
   active,
@@ -134,6 +173,8 @@ function Row({
   lead,
   indent,
   showAgent = true,
+  ctl,
+  where,
 }: {
   s: SessionSummary;
   active: boolean;
@@ -142,33 +183,202 @@ function Row({
   lead?: ReactNode;
   indent?: boolean;
   showAgent?: boolean;
+  ctl: RowControl;
+  where: RowWhere;
 }) {
   const waiting = (s.web?.pending.length ?? 0) > 0;
+  const key = `${where}:${s.id}`;
+  if (ctl.renaming === key) return <RenameRow s={s} lead={lead} indent={indent} onDone={(t, viaKey) => ctl.rename(s, where, t, viaKey)} />;
+  const menuOpen = ctl.menuFor === key;
+  /* the "..." button takes the trailing label's place on hover */
+  const tail = menuOpen ? "hidden" : "pointer-fine:group-hover/item:hidden pointer-fine:group-focus-within/item:hidden";
   return (
-    <button
-      type="button"
-      onClick={() => onPick(s.id)}
-      aria-current={active ? "page" : undefined}
-      title={rowTitle(s, now)}
-      className={`side-row ${indent ? "pl-[34px]" : ""}`}
+    <div
+      className="group/item relative"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        /* the context-menu key reports no position: anchor to the row */
+        ctl.openMenu(s, e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : e.currentTarget, where);
+      }}
     >
+      <button
+        type="button"
+        data-session-row={s.id}
+        data-row-where={where}
+        onClick={() => onPick(s.id)}
+        aria-current={active ? "page" : undefined}
+        title={rowTitle(s, now)}
+        className={`side-row pointer-coarse:pr-12 pointer-fine:group-focus-within/item:pr-9 pointer-fine:group-hover/item:pr-9 ${menuOpen ? "pr-9" : ""} ${indent ? "pl-[34px]" : ""}`}
+      >
+        {lead}
+        <span className="min-w-0 flex-1 truncate">{s.title}</span>
+        {waiting ? (
+          <span className={`flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-orange-ink ${tail}`}>
+            <span className="size-1.5 rounded-full bg-orange" aria-hidden />
+            Needs you
+          </span>
+        ) : (
+          showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label={`Options for ${s.title}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={(e) => ctl.openMenu(s, e.currentTarget, where)}
+        className={`absolute top-1/2 right-1 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-3 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-active hover:text-ink focus-visible:opacity-100 group-hover/item:opacity-100 group-focus-within/item:opacity-100 pointer-coarse:size-9 pointer-coarse:opacity-100 ${menuOpen ? "bg-sidebar-active text-ink opacity-100" : "opacity-0"}`}
+      >
+        <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+/** The row as a text field: Enter saves, Escape cancels, leaving the field saves. Empty brings the original name back. */
+function RenameRow({ s, lead, indent, onDone }: { s: SessionSummary; lead?: ReactNode; indent?: boolean; onDone: (title: string | null, viaKey: boolean) => void }) {
+  const [value, setValue] = useState(s.title);
+  const done = useRef(false);
+  const finish = (title: string | null, viaKey: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(title, viaKey);
+  };
+  return (
+    <div className={`side-row bg-sidebar-hover shadow-[inset_0_0_0_1.5px_var(--accent)] ${indent ? "pl-[34px]" : ""}`}>
       {lead}
-      <span className="min-w-0 flex-1 truncate">{s.title}</span>
-      {waiting ? (
-        <span className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-orange-ink">
-          <span className="size-1.5 rounded-full bg-orange" aria-hidden />
-          Needs you
-        </span>
-      ) : (
-        showAgent && s.agent !== "claude" && <span className="shrink-0 text-[12px] text-ink-3">{AGENT_LABEL[s.agent]}</span>
-      )}
+      <input
+        autoFocus
+        value={value}
+        maxLength={200}
+        onChange={(e) => setValue(e.target.value)}
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finish(value, true);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            finish(null, true);
+          }
+        }}
+        onBlur={() => finish(value, false)}
+        name="session-name"
+        autoComplete="off"
+        spellCheck={false}
+        aria-label="Session name"
+        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none sm:text-[14px] sm:pointer-coarse:text-[16px]"
+      />
+    </div>
+  );
+}
+
+/** Pin, rename, archive and copy link for one row, floating at the pointer or under the "..." button. */
+function RowMenu({
+  s,
+  at,
+  onClose,
+  onAction,
+}: {
+  s: SessionSummary;
+  at: MenuAt;
+  onClose: (restoreFocus: boolean) => void;
+  onAction: (action: "pin" | "rename" | "archive" | "link") => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    const w = ref.current?.offsetWidth ?? 192;
+    const h = ref.current?.offsetHeight ?? 180;
+    let x: number;
+    let y: number;
+    if (at instanceof HTMLElement) {
+      const r = at.getBoundingClientRect();
+      x = r.right - w;
+      y = r.bottom + 4 + h <= window.innerHeight - 8 ? r.bottom + 4 : r.top - 4 - h;
+    } else {
+      x = at.x;
+      y = at.y + h <= window.innerHeight - 8 ? at.y : at.y - h;
+    }
+    setPlace({
+      position: "fixed",
+      left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
+    });
+  }, [at]);
+  const placed = Boolean(place.position);
+  useEffect(() => {
+    if (placed) ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
+  }, [placed]);
+  useEffect(() => {
+    const inside = (t: EventTarget | null) => t instanceof Node && Boolean(ref.current?.contains(t) || (at instanceof HTMLElement && at.contains(t)));
+    const onDown = (e: PointerEvent) => !inside(e.target) && onClose(false);
+    const onFocus = (e: FocusEvent) => !inside(e.target) && onClose(false);
+    const onScroll = (e: Event) => !inside(e.target) && onClose(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" && e.key !== "Tab") return;
+      if (e.key === "Escape") e.preventDefault();
+      e.stopPropagation();
+      onClose(e.key === "Escape");
+    };
+    const onResize = () => onClose(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("focusin", onFocus);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("focusin", onFocus);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [at, onClose]);
+  const item = (action: Parameters<typeof onAction>[0], label: string, icon: ReactNode) => (
+    <button type="button" role="menuitem" onClick={() => onAction(action)} className="menu-item">
+      <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">{icon}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
+  );
+  const icon = { width: 15, height: 15, strokeWidth: 1.9, "aria-hidden": true } as const;
+  return createPortal(
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={s.title}
+      onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+        e.preventDefault();
+        const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+        const i = items.indexOf(document.activeElement as HTMLElement);
+        const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        items[next]?.focus();
+      }}
+      className="z-50 w-48 rounded-[12px] bg-surface p-1 shadow-overlay"
+      style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", ...place, visibility: place.position ? "visible" : "hidden" }}
+    >
+      {item("pin", s.pinned ? "Unpin" : "Pin", s.pinned ? <PinSlash {...icon} /> : <Pin {...icon} />)}
+      {item("rename", "Rename", <EditPencil {...icon} />)}
+      {item("archive", s.archived ? "Unarchive" : "Archive", <Archive {...icon} />)}
+      <div className="mx-2 my-1 h-px bg-line" />
+      {item("link", "Copy link", <Link {...icon} />)}
+    </div>,
+    document.body,
   );
 }
 
 const PulseSlot = ({ s }: { s: SessionSummary }) => (
   <span className="flex size-4 shrink-0 items-center justify-center">
     <Pulse busy={isBusy(s)} size={2.5} cellClass={AGENT_TONE[s.agent]} />
+  </span>
+);
+
+const PinSlot = () => (
+  <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">
+    <Pin width={13} height={13} strokeWidth={1.9} aria-hidden />
   </span>
 );
 
@@ -249,7 +459,7 @@ function groupProjects(rows: SessionSummary[]): Project[] {
   return [...m.values()].sort((a, b) => b.newest - a.newest);
 }
 
-/** The Recents overflow: grouping, the agent filter, and the inline filter. */
+/** The Recent overflow: grouping, the agent filter, and the inline filter. */
 function ViewMenu({
   groupBy,
   onGroupBy,
@@ -320,7 +530,7 @@ function ViewMenu({
       <button
         ref={buttonRef}
         type="button"
-        aria-label="Recents options"
+        aria-label="View options"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -333,7 +543,7 @@ function ViewMenu({
         <div
           ref={ref}
           role="menu"
-          aria-label="Recents options"
+          aria-label="View options"
           onKeyDown={(e) => {
             if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
             e.preventDefault();
@@ -349,7 +559,7 @@ function ViewMenu({
             <span className="min-w-0 flex-1 truncate">Filter list…</span>
           </button>
           <div className="mx-2 my-1 h-px bg-line" />
-          <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">Group recents by</div>
+          <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">Group by</div>
           {GROUPS.map((g) => item(groupBy === g, GROUP_LABEL[g], () => onGroupBy(g)))}
           {agents.length > 1 && (
             <>
@@ -370,7 +580,8 @@ const PROJECT_CAP = 6;
 const PROJECT_ROWS_CAP = 8;
 const RECENT_STEP = 40;
 
-type SectionKey = "live" | "projects" | "recents";
+type SectionKey = "pinned" | "live" | "projects" | "recents";
+const UNDO_MS = 5000;
 
 export function SessionList({
   sessions,
@@ -440,9 +651,68 @@ export function SessionList({
   const agentsPresent = useMemo(() => [...new Set((sessions ?? []).map((s) => s.agent))], [sessions]);
   const filter = agentsPresent.includes(agentFilter as AgentId) ? agentFilter : "all";
   const rows = useMemo(() => (sessions ?? []).filter((s) => filter === "all" || s.agent === filter), [sessions, filter]);
-  const live = useMemo(() => rows.filter(isLive), [rows]);
-  const recent = useMemo(() => rows.filter((s) => !isLive(s)), [rows]);
-  const projects = useMemo(() => groupProjects(rows), [rows]);
+  /* archived rows only show under Archived; pinned ones sit in Pinned instead of Active and Recent */
+  const shown = useMemo(() => rows.filter((s) => !s.archived), [rows]);
+  const archived = useMemo(() => rows.filter((s) => s.archived), [rows]);
+  const pinned = useMemo(() => shown.filter((s) => s.pinned), [shown]);
+  const live = useMemo(() => shown.filter((s) => isLive(s) && !s.pinned), [shown]);
+  const recent = useMemo(() => shown.filter((s) => !isLive(s) && !s.pinned), [shown]);
+  const projects = useMemo(() => groupProjects(shown), [shown]);
+
+  const [menu, setMenu] = useState<{ s: SessionSummary; at: MenuAt; where: RowWhere } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast((cur) => (cur === toast ? null : cur)), UNDO_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+  const say = (text: string, undo?: () => void) => setToast((cur) => ({ text, undo, n: (cur?.n ?? 0) + 1 }));
+
+  const change = (s: SessionSummary, c: SessionChange) =>
+    patchSession(s.id, c).catch((err: unknown) => say(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`));
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
+  const closeMenu = useCallback((restoreFocus: boolean) => {
+    const cur = menuRef.current;
+    if (cur && restoreFocus) {
+      if (cur.at instanceof HTMLElement && cur.at.isConnected && cur.at.tagName === "BUTTON") cur.at.focus({ preventScroll: true });
+      else focusRow(cur.s.id, cur.where);
+    }
+    setMenu(null);
+  }, []);
+  const onAction = (action: "pin" | "rename" | "archive" | "link") => {
+    if (!menu) return;
+    const { s, where } = menu;
+    if (action === "rename") {
+      setMenu(null);
+      setRenaming(`${where}:${s.id}`);
+      return;
+    }
+    closeMenu(true);
+    if (action === "pin") void change(s, { pinned: !s.pinned });
+    else if (action === "archive" && s.archived) void change(s, { archived: false });
+    else if (action === "archive") {
+      const wasPinned = Boolean(s.pinned);
+      void change(s, { archived: true });
+      say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
+    } else if (action === "link") {
+      void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied." : "Couldn't copy the link."));
+    }
+  };
+  const ctl: RowControl = {
+    menuFor: menu ? `${menu.where}:${menu.s.id}` : null,
+    renaming,
+    openMenu: (s, at, where) => setMenu((cur) => (cur?.s.id === s.id && cur.where === where && at instanceof HTMLElement ? null : { s, at, where })),
+    rename: (s, where, title, viaKey) => {
+      setRenaming(null);
+      if (viaKey) focusRow(s.id, where);
+      if (title === null) return;
+      const t = title.replace(/\s+/g, " ").trim();
+      if (t !== s.title) void change(s, { title: t || null });
+    },
+  };
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
@@ -469,7 +739,7 @@ export function SessionList({
   const palette = () => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT));
 
   return (
-    <nav aria-label="Sessions" className="flex h-full min-h-0 w-full flex-col">
+    <nav aria-label="Sessions" className="relative flex h-full min-h-0 w-full flex-col">
       <div className="flex h-[52px] shrink-0 items-center gap-0.5 pr-2 pl-3.5">
         <Brand />
         <span className="ml-2 min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.015em] text-ink">agent-u</span>
@@ -581,7 +851,7 @@ export function SessionList({
             {matches.length ? (
               <div className="flex flex-col gap-px">
                 {matches.map((s) => (
-                  <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} lead={isLive(s) ? <PulseSlot s={s} /> : undefined} />
+                  <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="match" lead={isLive(s) ? <PulseSlot s={s} /> : undefined} />
                 ))}
               </div>
             ) : (
@@ -598,10 +868,18 @@ export function SessionList({
         ) : (
           sessions !== null && (
             <>
+              {pinned.length > 0 && (
+                <Section label="Pinned" open={!shut.has("pinned")} onToggle={() => toggleSection("pinned")}>
+                  {pinned.map((s) => (
+                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="pinned" lead={isLive(s) ? <PulseSlot s={s} /> : <PinSlot />} />
+                  ))}
+                </Section>
+              )}
+
               {live.length > 0 && (
-                <Section label="Open now" open={!shut.has("live")} onToggle={() => toggleSection("live")}>
+                <Section label="Active" open={!shut.has("live")} onToggle={() => toggleSection("live")}>
                   {live.map((s) => (
-                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} lead={<PulseSlot s={s} />} />
+                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="live" lead={<PulseSlot s={s} />} />
                   ))}
                 </Section>
               )}
@@ -632,7 +910,7 @@ export function SessionList({
                           (p.rows.length ? (
                             <>
                               {list.map((s) => (
-                                <Row key={s.id} s={s} indent active={s.id === activeId} onPick={onPick} now={now} />
+                                <Row key={s.id} s={s} indent active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="project" />
                               ))}
                               {p.rows.length > list.length && (
                                 <button type="button" onClick={() => flip(setFullProjects, p.key)} className="side-row pl-[34px] text-[13px] text-ink-3">
@@ -652,7 +930,7 @@ export function SessionList({
                         <span className="flex size-[18px] shrink-0 items-center justify-center">
                           <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
                         </span>
-                        {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more projects`}
+                        {allProjects ? "Show fewer" : `${projects.length - shownProjects.length} more`}
                       </button>
                     )
                   ) : null}
@@ -660,7 +938,7 @@ export function SessionList({
               )}
 
               <Section
-                label="Recents"
+                label="Recent"
                 open={!shut.has("recents")}
                 onToggle={() => toggleSection("recents")}
                 action={
@@ -678,7 +956,7 @@ export function SessionList({
                   <div key={name || "all"} className="flex flex-col gap-px">
                     {name && <h3 className="flex h-7 items-end px-2.5 pb-1 text-[12px] text-ink-3 [&:not(:first-child)]:mt-2">{name}</h3>}
                     {list.map((s) => (
-                      <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} showAgent={groupBy !== "agent"} />
+                      <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="recent" showAgent={groupBy !== "agent"} />
                     ))}
                   </div>
                 ))}
@@ -687,14 +965,50 @@ export function SessionList({
                     Show more
                   </button>
                 )}
-                {!recent.length && (
+                {!recent.length && (!shown.length || live.length > 0) && (
                   <p className="px-2.5 py-1.5 text-[13px] text-ink-3">
-                    {rows.length ? "Everything is open right now." : filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet. Start one with New session."}
+                    {shown.length ? "All sessions are active." : filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet."}
                   </p>
                 )}
               </Section>
+
+              {archived.length > 0 && (
+                <Section label={`Archived (${archived.length})`} open={showArchived} onToggle={() => setShowArchived((v) => !v)}>
+                  {archived.map((s) => (
+                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="archived" />
+                  ))}
+                </Section>
+              )}
             </>
           )
+        )}
+      </div>
+
+      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} onClose={closeMenu} onAction={onAction} />}
+
+      <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
+        {toast && (
+          <div
+            key={toast.n}
+            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-[10px] bg-ink py-1.5 pr-1.5 pl-3 text-[13px] text-page shadow-overlay"
+            style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both" }}
+          >
+            <span className="min-w-0 truncate">{toast.text}</span>
+            {toast.undo ? (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.undo?.();
+                  setToast(null);
+                }}
+                className="shrink-0 rounded-control px-2 py-1 font-medium hover:bg-white/15 focus-visible:outline-offset-0"
+              >
+                Undo
+              </button>
+            ) : (
+              <span className="w-1.5" aria-hidden />
+            )}
+          </div>
         )}
       </div>
 
@@ -741,7 +1055,7 @@ export function SessionRail({
   inbox?: number;
 }) {
   const mod = useModKey();
-  const live = (sessions ?? []).filter(isLive);
+  const live = (sessions ?? []).filter((s) => isLive(s) && !s.archived);
   const shown = live.slice(0, RAIL_LIVE_CAP);
   return (
     <nav aria-label="Sessions" className="flex h-full w-full flex-col items-center">
@@ -762,7 +1076,7 @@ export function SessionRail({
         </IconButton>
         {onView && (
           <>
-            <IconButton label={inbox ? `Inbox, ${inbox} waiting` : "Inbox"} tip="Inbox" tipPos="right" onClick={() => onView("@inbox")} className="relative">
+            <IconButton label={inbox ? `Inbox, ${inbox} need you` : "Inbox"} tip="Inbox" tipPos="right" onClick={() => onView("@inbox")} className="relative">
               <MailIn width={18} height={18} strokeWidth={1.8} aria-hidden />
               {inbox > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-orange ring-2 ring-sidebar" aria-hidden />}
             </IconButton>
@@ -776,7 +1090,7 @@ export function SessionRail({
         )}
       </div>
       {shown.length > 0 && (
-        <div className="mt-5 flex flex-col items-center gap-1" role="list" aria-label="Open now">
+        <div className="mt-5 flex flex-col items-center gap-1" role="list" aria-label="Active">
           {shown.map((s) => {
             const waiting = (s.web?.pending.length ?? 0) > 0;
             const on = s.id === activeId;
@@ -799,7 +1113,7 @@ export function SessionRail({
             );
           })}
           {live.length > shown.length && (
-            <button type="button" onClick={onExpand} aria-label={`${live.length - shown.length} more open sessions`} data-tip="Show all" data-tip-pos="right" className="icon-btn text-[12px] font-medium tabular-nums">
+            <button type="button" onClick={onExpand} aria-label={`${live.length - shown.length} more`} data-tip="Show all" data-tip-pos="right" className="icon-btn text-[12px] font-medium tabular-nums">
               +{live.length - shown.length}
             </button>
           )}

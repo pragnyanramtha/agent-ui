@@ -84,6 +84,9 @@ export type SessionSummary = {
   size: number;
   terminal: TerminalInfo | null;
   web: RunState | null;
+  /** set from the list's row menu; archived rows still come back so they can be restored */
+  pinned?: boolean;
+  archived?: boolean;
 };
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";

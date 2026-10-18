@@ -227,10 +227,15 @@ export function saveProfiles(list: unknown[]): { ok: true } | { error: string } 
 
 /* ── which profile a session runs on ─────────────────────── */
 
-type State = { sessionProfiles?: Record<string, string> };
+/** What the user set on a session in the list: pinned, archived, a title of their own. */
+export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string };
+export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null };
+
+type State = { sessionProfiles?: Record<string, string>; sessionMeta?: Record<string, SessionMeta> };
 const readState = (): State => {
   try {
-    return JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as State;
+    const s = JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as unknown;
+    return s && typeof s === "object" && !Array.isArray(s) ? (s as State) : {};
   } catch {
     return {};
   }
@@ -250,6 +255,88 @@ export function setSessionProfile(key: string, profile: string) {
   } catch {
     /* read-only home: the session falls back to the agent's own profile */
   }
+}
+
+/* ── pinned, archived and renamed sessions ───────────────── */
+
+export const TITLE_MAX = 200;
+
+const cleanMeta = (raw: unknown): SessionMeta => {
+  if (!raw || typeof raw !== "object") return {};
+  const r = raw as Record<string, unknown>;
+  const out: SessionMeta = {};
+  if (r.pinned === true) out.pinned = true;
+  if (r.archived === true) out.archived = true;
+  if (typeof r.title === "string" && r.title.trim()) out.title = r.title.trim().slice(0, TITLE_MAX);
+  return out;
+};
+
+/** Every session the user pinned, archived or renamed, by session key. */
+export function allSessionMeta(): Record<string, SessionMeta> {
+  const raw = readState().sessionMeta;
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, SessionMeta> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const m = cleanMeta(v);
+    if (Object.keys(m).length) out[k] = m;
+  }
+  return out;
+}
+
+export const getSessionMeta = (key: string): SessionMeta => allSessionMeta()[key] ?? {};
+
+/** A strict reading of a PATCH body: only pinned, archived and title, with the right types. */
+export function parseSessionMetaPatch(body: unknown): SessionMetaPatch | string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "Send a JSON object.";
+  const r = body as Record<string, unknown>;
+  const keys = Object.keys(r);
+  if (!keys.length) return "Nothing to change.";
+  const unknown = keys.find((k) => k !== "pinned" && k !== "archived" && k !== "title");
+  if (unknown) return `Unknown field "${unknown.slice(0, 40)}".`;
+  const out: SessionMetaPatch = {};
+  for (const k of ["pinned", "archived"] as const) {
+    if (!(k in r)) continue;
+    if (typeof r[k] !== "boolean") return `${k} must be true or false.`;
+    out[k] = r[k] as boolean;
+  }
+  if ("title" in r) {
+    if (r.title === null) out.title = null;
+    else if (typeof r.title !== "string") return "title must be a string or null.";
+    else {
+      const t = r.title.replace(/\s+/g, " ").trim();
+      if (t.length > TITLE_MAX) return `Keep the title under ${TITLE_MAX} characters.`;
+      out.title = t || null;
+    }
+  }
+  return out;
+}
+
+/** Applies a patch and returns what the session ends up with. Archiving unpins; pinning unarchives. */
+export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMeta {
+  const s = readState();
+  const map = allSessionMeta();
+  const next: SessionMeta = { ...(map[key] ?? {}) };
+  if (patch.archived === true && patch.pinned === undefined) patch = { ...patch, pinned: false };
+  if (patch.pinned === true && patch.archived === undefined) patch = { ...patch, archived: false };
+  if (patch.pinned !== undefined) {
+    if (patch.pinned) next.pinned = true;
+    else delete next.pinned;
+  }
+  if (patch.archived !== undefined) {
+    if (patch.archived) next.archived = true;
+    else delete next.archived;
+  }
+  if (patch.title !== undefined) {
+    if (patch.title) next.title = patch.title.slice(0, TITLE_MAX);
+    else delete next.title;
+  }
+  /* re-added last so the newest edits survive the trim below */
+  delete map[key];
+  if (Object.keys(next).length) map[key] = next;
+  const keys = Object.keys(map);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
+  writeJson(STATE_PATH, { ...s, sessionMeta: map });
+  return next;
 }
 
 /* ── the profile a request runs under ────────────────────── */
