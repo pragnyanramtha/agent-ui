@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Xmark } from "iconoir-react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
 
@@ -61,6 +61,9 @@ const THEME = {
 };
 
 const SIZE_KEY = "cui:term-font";
+const DOCK_KEY = "cui:term-dock-height";
+const DOCK_MIN = 140;
+const DOCK_DEFAULT = 320;
 /* "#17181a" -> "rgb:1717/1818/1a1a", the form OSC 10/11 replies use */
 const oscColor = (hex: string) => `rgb:${[1, 3, 5].map((i) => hex.slice(i, i + 2).repeat(2)).join("/")}`;
 const NERD = '"Symbols Nerd Font Mono"';
@@ -78,8 +81,27 @@ const ctrlOf = (ch: string) => {
  * Drops reconnect on their own: a kept terminal replays what was missed, an attach redraws.
  * Full screen on phones, a large sheet on desktop.
  */
-export function WebTerminal({ target, onClose }: { target: TerminalTarget; onClose: () => void }) {
+export function WebTerminal({
+  target,
+  onClose,
+  docked = false,
+  hidden = false,
+  onDock,
+}: {
+  target: TerminalTarget;
+  onClose: () => void;
+  /** a resizable panel at the bottom of the main column (desktop) instead of a sheet over the page */
+  docked?: boolean;
+  /** docked and folded away; the connection stays up */
+  hidden?: boolean;
+  onDock?: (docked: boolean) => void;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(DOCK_DEFAULT);
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(DOCK_KEY));
+    if (stored >= DOCK_MIN) setHeight(stored);
+  }, []);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
@@ -321,10 +343,12 @@ export function WebTerminal({ target, onClose }: { target: TerminalTarget; onClo
     };
   }, [tgt.term, tgt.tmux, tgt.session, tgt.pid, tgt.cwd, attempt]);
 
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      /* Escape belongs to the terminal; Ctrl+Shift+X closes the sheet */
-      if (e.key.toLowerCase() === "x" && e.ctrlKey && e.shiftKey) {
+      /* Escape belongs to the terminal; Ctrl+Shift+X closes it */
+      if (e.key.toLowerCase() === "x" && e.ctrlKey && e.shiftKey && !hiddenRef.current) {
         e.preventDefault();
         closeRef.current();
       }
@@ -332,6 +356,30 @@ export function WebTerminal({ target, onClose }: { target: TerminalTarget; onClo
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    if (!hidden) requestAnimationFrame(() => termRef.current?.focus());
+  }, [hidden, docked]);
+
+  const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = height;
+    const max = () => Math.max(DOCK_MIN, window.innerHeight * 0.8);
+    let last = startH;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(Math.min(max(), Math.max(DOCK_MIN, startH + startY - ev.clientY)));
+      setHeight(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      localStorage.setItem(DOCK_KEY, String(last));
+    };
+    document.body.style.cursor = "row-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   const send = (seq: string) => (termRef.current as unknown as { __send?: (d: string) => void } | null)?.__send?.(seq);
   const press = (seq: string) => {
@@ -362,12 +410,35 @@ export function WebTerminal({ target, onClose }: { target: TerminalTarget; onClo
   const dot = conn === "open" ? "bg-green" : conn === "ended" ? "bg-red" : "animate-pulse bg-orange";
   const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-[#c9ccd3] hover:bg-white/10 sm:h-7";
   return (
-    <div className="fixed inset-x-0 top-0 bottom-[var(--kb,0px)] z-50 flex items-stretch justify-center bg-black/50 lg:items-center lg:p-6" role="dialog" aria-modal="true" aria-label={`Terminal: ${label}`}>
+    <div
+      className={
+        docked
+          ? `relative flex shrink-0 flex-col border-t border-line ${hidden ? "hidden" : ""}`
+          : "fixed inset-x-0 top-0 bottom-[var(--kb,0px)] z-50 flex items-stretch justify-center bg-black/50 lg:items-center lg:p-6"
+      }
+      style={docked ? { height } : undefined}
+      role={docked ? "region" : "dialog"}
+      aria-modal={docked ? undefined : true}
+      aria-label={`Terminal: ${label}`}
+    >
+      {docked && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize terminal"
+          onPointerDown={startResize}
+          className="absolute inset-x-0 -top-1 z-10 h-2 cursor-row-resize transition-colors hover:bg-accent/40"
+        />
+      )}
       <div
-        className="safe-top safe-bottom flex w-full flex-col overflow-hidden bg-[#17181a] shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
-        style={{ animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+        className={
+          docked
+            ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#17181a]"
+            : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-[#17181a] shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
+        }
+        style={docked ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
-        <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-white/10 px-3 text-[12.5px] text-[#c9ccd3] sm:h-11">
+        <div className={`flex shrink-0 items-center gap-1.5 border-b border-white/10 px-3 text-[12.5px] text-[#c9ccd3] ${docked ? "h-9" : "h-12 sm:h-11"}`}>
           <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
           <span className="min-w-0 truncate font-mono text-[12px] text-[#e6e8ec]" title={label}>
             {label}
@@ -396,7 +467,12 @@ export function WebTerminal({ target, onClose }: { target: TerminalTarget; onClo
             <button type="button" onClick={() => void paste()} className={`${tool} max-sm:hidden`}>
               Paste
             </button>
-            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">Ctrl+Shift+X to close</span>
+            {onDock && (
+              <button type="button" onClick={() => onDock(!docked)} aria-label={docked ? "Expand terminal" : "Dock terminal"} className={`${tool} max-lg:hidden`}>
+                {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
+              </button>
+            )}
+            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">{docked ? "Ctrl+J to hide" : "Ctrl+Shift+X to close"}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-[#8b909a] hover:bg-white/10 hover:text-[#e6e8ec] sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />

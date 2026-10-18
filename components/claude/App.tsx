@@ -23,6 +23,36 @@ const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
 
 const SIDEBAR_KEY = "cui:sidebar";
+const DOCK_KEY = "cui:term-docked";
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setMatches(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [query]);
+  return matches;
+}
+
+/** Desktop terminals sit in a panel under the page unless the user expanded them to a sheet; remembered. */
+function useTerminalDock() {
+  const [docked, setDocked] = useState(true);
+  useEffect(() => {
+    try {
+      setDocked(localStorage.getItem(DOCK_KEY) !== "sheet");
+    } catch {}
+  }, []);
+  const set = useCallback((next: boolean) => {
+    setDocked(next);
+    try {
+      localStorage.setItem(DOCK_KEY, next ? "dock" : "sheet");
+    } catch {}
+  }, []);
+  return { docked, set };
+}
 
 /** Desktop sidebar fold state, persisted. `anim` turns on after the stored state lands so reloads don't animate. */
 function useSidebar() {
@@ -58,8 +88,17 @@ export function App() {
   const { sessions, projects, error, refresh } = useSessions();
   useKeyboardInset();
   const [terminal, setTerminal] = useState<TerminalTarget | null>(null);
+  const [termKey, setTermKey] = useState(0);
+  const [termHidden, setTermHidden] = useState(false);
+  const { docked: dockPref, set: setDock } = useTerminalDock();
+  const desktop = useMediaQuery("(min-width: 1024px)");
+  const docked = desktop && dockPref;
   useEffect(() => {
-    const open = (e: Event) => setTerminal((e as CustomEvent<TerminalTarget>).detail);
+    const open = (e: Event) => {
+      setTerminal((e as CustomEvent<TerminalTarget>).detail);
+      setTermKey((k) => k + 1);
+      setTermHidden(false);
+    };
     window.addEventListener(OPEN_TERMINAL_EVENT, open);
     return () => window.removeEventListener(OPEN_TERMINAL_EVENT, open);
   }, []);
@@ -164,6 +203,23 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [cycle, reopen, close, select, active, newTab, drawer, sheet]);
+
+  /* Ctrl/Cmd+J: open a shell in the current session's folder, or show/hide the docked terminal.
+   * Capture phase, so a focused terminal can't swallow it. */
+  const activeCwd = sessionId ? byId.get(sessionId)?.cwd || undefined : undefined;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.code !== "KeyJ" || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!terminal) {
+        window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `shell in ${activeCwd}` : "shell" } }));
+      } else if (!docked) setDock(true);
+      else setTermHidden((h) => !h);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [terminal, docked, activeCwd, setDock]);
 
   /* Ctrl/Cmd+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
   const toggleSidebar = sidebar.toggle;
@@ -313,9 +369,21 @@ export function App() {
             <NewSession projects={projects} sessions={sessions} onMenu={() => setDrawer(true)} onOpen={openSession} extra={tabsButton} />
           )}
         </div>
+        {terminal && (
+          <WebTerminal
+            key={termKey}
+            target={terminal}
+            onClose={() => setTerminal(null)}
+            docked={docked}
+            hidden={docked && termHidden}
+            onDock={(next) => {
+              setDock(next);
+              setTermHidden(false);
+            }}
+          />
+        )}
       </div>
 
-      {terminal && <WebTerminal key={JSON.stringify(terminal)} target={terminal} onClose={() => setTerminal(null)} />}
       <OfflineBanner />
       <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} onTheme={onTheme} />
       <AskHost />
