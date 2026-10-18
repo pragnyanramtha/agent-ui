@@ -26,32 +26,32 @@
 
 :root {
   /* surfaces: cool, blue-tinted neutrals */
-  --page: oklch(0.985 0.001 286.376);
-  --canvas: oklch(0.961 0.002 247.84);
+  --page: oklch(0.993 0.004 265);
+  --canvas: oklch(0.965 0.004 265);
   --surface: oklch(1 0 0);
-  --inset: oklch(0.979 0.002 247.839);
-  --hover: oklch(0.97 0.002 247.839);
-  --hover-2: oklch(0.933 0.003 247.86);
+  --inset: oklch(0.979 0.004 265);
+  --hover: oklch(0.963 0.004 265);
+  --hover-2: oklch(0.935 0.004 265);
 
   /* ink ramp */
-  --ink: oklch(0.247 0.006 258.361);
-  --ink-2: oklch(0.506 0.01 264.477);
+  --ink: oklch(0.24 0.006 265);
+  --ink-2: oklch(0.48 0.008 265);
   /* ink-3 sits near 4:1 on page/surface so tertiary text stays legible */
   /* 4.5:1 on the page for the small meta text it carries */
-  --ink-3: oklch(0.54 0.009 264.505);
+  --ink-3: oklch(0.54 0.008 265);
 
   /* borders: solid and crisp, not alpha */
-  --line: oklch(0.946 0.003 264.542);
-  --line-strong: oklch(0.912 0.005 258.326);
-  --line-soft: oklch(0.966 0.002 264.542);
+  --line: oklch(0.93 0.004 265);
+  --line-strong: oklch(0.885 0.004 265);
+  --line-soft: oklch(0.955 0.004 265);
   --grid-line: color-mix(in srgb, var(--line) 78%, transparent);
-  --field: oklch(0.961 0.001 286.375);
+  --field: oklch(0.965 0.004 265);
   --stripe: oklch(0.405 0 0 / 0.075);
   --stripe-bg: oklch(0.97 0 0);
 
   /* accent */
-  --accent: oklch(0.626 0.205 254.947);
-  --accent-ink: oklch(0.556 0.187 255.617);
+  --accent: oklch(0.58 0.17 256);
+  --accent-ink: oklch(0.53 0.17 256);
   --accent-tint: oklch(0.96 0.019 252.878);
   /* filled accent buttons: deep enough for white labels at AA in both themes */
   --accent-solid: oklch(0.57 0.2 256);
@@ -78,7 +78,7 @@
    * (--shadow-xs…lg come from shadow-plugin/unprefixed) so every surface reads
    * consistently across the app. */
   --shadow-hairline: 0 0 0 1px var(--line);
-  --shadow-btn: 0 0 0 1px var(--line-strong), var(--shadow-xs);
+  --shadow-btn: 0 0 0 1px var(--line-strong);
   --shadow-card: 0 0 0 1px var(--line), var(--shadow-sm);
   --shadow-raised: 0 0 0 1px var(--line), var(--shadow-md);
   --shadow-overlay: 0 0 0 1px var(--line), var(--shadow-lg);
@@ -86,27 +86,27 @@
 }
 
 .dark {
-  --page: oklch(0.209 0.004 264.477);
-  --canvas: oklch(0.231 0.004 264.487);
-  --surface: oklch(0.26 0.006 271.191);
-  --inset: oklch(0.243 0.004 264.492);
-  --hover: oklch(0.289 0.006 271.22);
-  --hover-2: oklch(0.318 0.007 274.747);
+  --page: oklch(0.198 0.004 265);
+  --canvas: oklch(0.185 0.004 265);
+  --surface: oklch(0.225 0.004 265);
+  --inset: oklch(0.21 0.004 265);
+  --hover: oklch(0.25 0.004 265);
+  --hover-2: oklch(0.28 0.004 265);
 
-  --ink: oklch(0.964 0.002 247.839);
-  --ink-2: oklch(0.731 0.008 260.731);
-  --ink-3: oklch(0.6 0.01 264.484);
+  --ink: oklch(0.955 0.004 265);
+  --ink-2: oklch(0.75 0.004 265);
+  --ink-3: oklch(0.63 0.004 265);
 
-  --line: oklch(0.308 0.006 258.354);
-  --line-strong: oklch(0.356 0.007 264.474);
-  --line-soft: oklch(0.278 0.006 258.354);
-  --field: oklch(0.293 0.006 271.223);
+  --line: oklch(0.275 0.004 265);
+  --line-strong: oklch(0.33 0.004 265);
+  --line-soft: oklch(0.245 0.004 265);
+  --field: oklch(0.235 0.004 265);
   --stripe: oklch(1 0 0 / 0.055);
   --stripe-bg: oklch(0.226 0.004 264.485);
 
-  --accent: oklch(0.68 0.173 253.301);
+  --accent: oklch(0.7 0.15 255);
   --accent-ink: oklch(0.788 0.113 248.33);
-  --accent-tint: oklch(0.68 0.173 253.301 / 0.16);
+  --accent-tint: oklch(0.7 0.15 255 / 0.14);
 
   --green: oklch(0.705 0.154 153.814);
   --green-tint: oklch(0.705 0.154 153.814 / 0.14);
@@ -175,7 +175,7 @@
   --shadow-overlay: var(--shadow-overlay);
 
   /* type */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, "SF Mono", monospace;
 
   /* radii: chips 6, controls 8, cards 10, windows 14, pills 999 */
@@ -199,20 +199,10 @@ html {
 }
 
 body {
-  background-color: var(--stripe-bg);
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent 0,
-    transparent 7px,
-    var(--stripe) 7px,
-    var(--stripe) 8px
-  );
-  /* Pin the stripe pattern to the viewport so it stays put on scroll. */
-  background-attachment: fixed;
+  background-color: var(--sidebar);
   color: var(--ink);
-  font-feature-settings: "cv11", "ss01";
   font-size: 14px;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.006em;
   line-height: 1.5;
 }
 
@@ -829,9 +819,9 @@ label {
  * ══════════════════════════════════════════════════════════ */
 
 :root {
-  --sidebar: oklch(0.972 0.002 247.84);
-  --sidebar-hover: oklch(0.94 0.003 247.86);
-  --sidebar-active: oklch(0.922 0.004 247.86);
+  --sidebar: oklch(0.975 0.004 265);
+  --sidebar-hover: oklch(0.945 0.004 265);
+  --sidebar-active: oklch(0.925 0.004 265);
   --agent-codex: oklch(0.6 0.14 160);
   --agent-opencode: oklch(0.6 0.17 254);
   --agent-cursor: oklch(0.62 0.11 205);
@@ -839,9 +829,9 @@ label {
   --agent-kimi: oklch(0.62 0.16 40);
 }
 .dark {
-  --sidebar: oklch(0.186 0.004 264.48);
-  --sidebar-hover: oklch(0.243 0.005 268);
-  --sidebar-active: oklch(0.275 0.006 271);
+  --sidebar: oklch(0.172 0.004 265);
+  --sidebar-hover: oklch(0.228 0.004 265);
+  --sidebar-active: oklch(0.258 0.004 265);
   --agent-codex: oklch(0.74 0.14 160);
   --agent-opencode: oklch(0.72 0.14 254);
   --agent-cursor: oklch(0.76 0.1 205);
@@ -946,6 +936,9 @@ label {
   .menu-item:focus-visible {
     background: var(--hover);
     outline: none;
+  }
+  .menu-item:focus-visible {
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--accent) 60%, transparent);
   }
   .dark .menu-item:hover,
   .dark .menu-item:focus-visible {
@@ -1058,7 +1051,7 @@ label {
 }
 .tab-item[data-on] {
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), var(--shadow-xs);
+  box-shadow: 0 0 0 1px var(--line);
   color: var(--ink);
 }
 .dark .tab-item[data-on] {
@@ -1092,24 +1085,22 @@ label {
 }
 
 .composer-pill {
-  border-radius: 28px;
+  border-radius: 24px;
   background: var(--surface);
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.05),
-    0 1px 2px oklch(0 0 0 / 0.03),
-    0 6px 20px -6px oklch(0 0 0 / 0.08);
+    0 0 0 1px var(--line-strong),
+    0 6px 20px -10px oklch(0 0 0 / 0.1);
   transition:
     box-shadow 200ms var(--ease-out-strong),
     border-radius 200ms var(--ease-out-strong);
 }
 .composer-pill[data-stacked] {
-  border-radius: 24px;
+  border-radius: 18px;
 }
 .composer-pill:focus-within {
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.09),
-    0 1px 2px oklch(0 0 0 / 0.04),
-    0 8px 28px -8px oklch(0 0 0 / 0.14);
+    0 0 0 1px color-mix(in oklch, var(--accent) 50%, var(--line-strong)),
+    0 8px 24px -10px oklch(0 0 0 / 0.14);
 }
 .composer-pill[data-invalid] {
   box-shadow:
@@ -1118,10 +1109,10 @@ label {
 }
 .dark .composer-pill {
   background: var(--field);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.04), 0 8px 24px -10px oklch(0 0 0 / 0.5);
+  box-shadow: 0 0 0 1px var(--line-strong), 0 8px 24px -10px oklch(0 0 0 / 0.5);
 }
 .dark .composer-pill:focus-within {
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.09), 0 8px 24px -10px oklch(0 0 0 / 0.5);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, var(--line-strong)), 0 8px 24px -10px oklch(0 0 0 / 0.5);
 }
 .dark .composer-pill[data-invalid] {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--red) 55%, transparent);
@@ -1219,4 +1210,34 @@ label {
 .thin-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
+}
+
+/* the right-hand panels fill the resizable slot on desktop (components/claude/PanelSlot.tsx) */
+@media (min-width: 1024px) {
+  .panel-slot > aside {
+    width: 100%;
+  }
+}
+
+/* find in session (components/claude/FindBar.tsx) */
+::highlight(find) {
+  background-color: color-mix(in oklch, var(--orange) 28%, transparent);
+}
+::highlight(find-current) {
+  background-color: var(--orange);
+  color: oklch(0.2 0 0);
+}
+
+/* text fields: an accent edge and a soft halo on focus */
+.field-ring:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+}
+
+/* desktop: the main area is an inset panel on the sidebar's surface, like an editor window */
+@media (min-width: 1024px) {
+  .shell-main {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
 }
