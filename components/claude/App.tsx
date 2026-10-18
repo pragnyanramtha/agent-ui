@@ -9,7 +9,10 @@ import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
-import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, useTabs, VIEW_TABS } from "./useTabs";
+import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
+import { SettingsScreen } from "./SettingsScreen";
+import { ShortcutsDialog } from "./ShortcutsDialog";
+import { applyTheme, useSetting } from "@/lib/client/settings";
 import { InboxScreen, inboxCount } from "./InboxScreen";
 import { useFinished } from "@/lib/client/useFinished";
 import { AgentsScreen } from "./AgentsScreen";
@@ -23,8 +26,6 @@ const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
 
 const SIDEBAR_KEY = "cui:sidebar";
-const DOCK_KEY = "cui:term-docked";
-
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
   useEffect(() => {
@@ -35,23 +36,6 @@ function useMediaQuery(query: string) {
     return () => mq.removeEventListener("change", on);
   }, [query]);
   return matches;
-}
-
-/** Desktop terminals sit in a panel under the page unless the user expanded them to a sheet; remembered. */
-function useTerminalDock() {
-  const [docked, setDocked] = useState(true);
-  useEffect(() => {
-    try {
-      setDocked(localStorage.getItem(DOCK_KEY) !== "sheet");
-    } catch {}
-  }, []);
-  const set = useCallback((next: boolean) => {
-    setDocked(next);
-    try {
-      localStorage.setItem(DOCK_KEY, next ? "dock" : "sheet");
-    } catch {}
-  }, []);
-  return { docked, set };
 }
 
 /** Desktop sidebar fold state, persisted. `anim` turns on after the stored state lands so reloads don't animate. */
@@ -90,7 +74,16 @@ export function App() {
   const [terminal, setTerminal] = useState<TerminalTarget | null>(null);
   const [termKey, setTermKey] = useState(0);
   const [termHidden, setTermHidden] = useState(false);
-  const { docked: dockPref, set: setDock } = useTerminalDock();
+  const [dockPref, setDock] = useSetting("terminalDocked");
+  const [theme] = useSetting("theme");
+  /* "System" follows the OS while the app is open */
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = () => applyTheme("system");
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [theme]);
   const desktop = useMediaQuery("(min-width: 1024px)");
   const docked = desktop && dockPref;
   useEffect(() => {
@@ -221,6 +214,17 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [terminal, docked, activeCwd, setDock]);
 
+  /* Ctrl/Cmd+, opens Settings */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key !== ",") return;
+      e.preventDefault();
+      openView(SETTINGS_TAB);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openView]);
+
   /* Ctrl/Cmd+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
   const toggleSidebar = sidebar.toggle;
   useEffect(() => {
@@ -282,7 +286,7 @@ export function App() {
   const activeIndex = openTabs.findIndex((t) => t.id === active);
 
   return (
-    <main className="flex h-[calc(100dvh-var(--kb,0px))] bg-page text-ink">
+    <main className="flex h-[calc(100dvh-var(--kb,0px))] bg-page text-ink lg:bg-sidebar lg:py-1.5 lg:pr-1.5">
       <aside
         className="shell-sidebar relative z-20 hidden shrink-0 bg-sidebar lg:block"
         style={{ width: sidebar.collapsed ? 52 : 260 }}
@@ -343,7 +347,7 @@ export function App() {
       />
 
       {/* the main area: flush with the sidebar; the tab strip only shows once a second tab is open */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-page" inert={drawer || sheet}>
+      <div className="shell-main flex min-w-0 flex-1 flex-col overflow-hidden bg-page" inert={drawer || sheet}>
         {ready && infos.length > 1 && (
           <div className="hidden lg:block">
             <TabBar tabs={infos} active={active} onSelect={open} onClose={close} onNew={newTab} onMove={move} />
@@ -354,6 +358,8 @@ export function App() {
             <FilesScreen onMenu={() => setDrawer(true)} extra={tabsButton} start={filesStart.path} startKey={filesStart.n} />
           ) : active === INBOX_TAB ? (
             <InboxScreen sessions={sessions} finished={finished} onDismiss={dismiss} onOpen={openSession} onRefresh={() => void refresh()} onMenu={() => setDrawer(true)} extra={tabsButton} />
+          ) : active === SETTINGS_TAB ? (
+            <SettingsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onAgents={() => openView(AGENTS_TAB)} />
           ) : active === AGENTS_TAB ? (
             <AgentsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onOpenSession={openSession} projects={projects} />
           ) : sessionId ? (
@@ -387,6 +393,7 @@ export function App() {
       <OfflineBanner />
       <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} onTheme={onTheme} />
       <AskHost />
+      <ShortcutsDialog />
     </main>
   );
 }

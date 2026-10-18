@@ -2,33 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { HalfMoon, SunLight } from "iconoir-react";
-
-/* Browser chrome color for each theme, matched to --page. Keep in sync with app/layout.tsx. */
-const THEME_COLOR = { dark: "#17181a", light: "#fafafb" } as const;
+import { applyTheme, prefersDark, useSetting } from "@/lib/client/settings";
 
 /** Beautiful UI's sun/moon segmented pill. */
 export function ThemeToggle() {
-  const [dark, setDark] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    try {
-      setDark(localStorage.getItem("bui-theme") !== "light");
-    } catch {
-      setDark(document.documentElement.classList.contains("dark"));
-    }
-  }, []);
+  const [theme] = useSetting("theme");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const dark = !mounted ? null : theme === "system" ? prefersDark() : theme === "dark";
 
   function apply(next: boolean) {
     if (next === dark) return;
-    setDark(next);
-    const root = document.documentElement;
-    root.classList.add("theme-switching");
-    root.classList.toggle("dark", next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next ? THEME_COLOR.dark : THEME_COLOR.light);
-    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
-    try {
-      localStorage.setItem("bui-theme", next ? "dark" : "light");
-    } catch {}
+    applyTheme(next ? "dark" : "light");
   }
 
   const seg = "relative z-10 flex size-8 items-center justify-center rounded-full transition-colors duration-150 pointer-coarse:size-9";

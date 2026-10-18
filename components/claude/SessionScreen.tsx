@@ -27,6 +27,8 @@ import { PendingBubble } from "./PendingBubble";
 import { TerminalPeek } from "./TerminalPeek";
 import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
+import { PanelSlot } from "./PanelSlot";
+import { FindBar } from "./FindBar";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -42,6 +44,8 @@ function useMeasure<T extends HTMLElement>() {
 }
 
 const OFFLINE = "Couldn't reach the server.";
+type Panel = "changes" | "git" | "usage";
+const PANEL_KEY = "cui:panel";
 
 /** the kind of the last thing said in the thread (usage and notices aside) */
 function lastSaid(entries: Entry[]) {
@@ -73,19 +77,41 @@ export function SessionScreen({
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [peek, setPeek] = useState(false);
-  const [changesOpen, setChangesOpen] = useState(false);
-  const [gitOpen, setGitOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const togglePanel = useCallback((p: Panel) => {
+    setPanel((cur) => (cur === p ? null : p));
+    try {
+      localStorage.setItem(PANEL_KEY, p);
+    } catch {}
+  }, []);
   useEffect(() => {
-    const open = () => {
-      setChangesOpen(false);
-      setUsageOpen(true);
-    };
+    const open = () => setPanel("usage");
     window.addEventListener(OPEN_USAGE_EVENT, open);
     return () => window.removeEventListener(OPEN_USAGE_EVENT, open);
   }, []);
+  /* Ctrl/Cmd+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
+      e.preventDefault();
+      setPanel((cur) => {
+        if (cur) return null;
+        let last: string | null = null;
+        try {
+          last = localStorage.getItem(PANEL_KEY);
+        } catch {}
+        return last === "git" || last === "usage" ? last : "changes";
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const changesOpen = panel === "changes";
+  const usageOpen = panel === "usage";
+  const gitOpen = panel === "git";
   const [composerRef, composerH] = useMeasure<HTMLDivElement>();
   const menuRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   const agent: AgentId = id.includes(":") ? (id.slice(0, id.indexOf(":")) as AgentId) : "claude";
@@ -149,13 +175,8 @@ export function SessionScreen({
     !view.pending.length &&
     lastSaid(view.entries) === "text";
   const failed = run?.status === "error" && run.error && run.error !== dismissedError ? run.error : null;
-  const lastUserText = useMemo(() => {
-    for (let i = view.entries.length - 1; i >= 0; i--) {
-      const e = view.entries[i];
-      if (e.kind === "user") return e.text;
-    }
-    return null;
-  }, [view.entries]);
+  const sentTexts = useMemo(() => view.entries.flatMap((e) => (e.kind === "user" && e.text.trim() ? [e.text] : [])).slice(-50), [view.entries]);
+  const lastUserText = sentTexts.at(-1) ?? null;
 
   useEffect(() => {
     setBaseTitle(view.title ? `${view.title} · agent-u` : "agent-u");
@@ -180,7 +201,7 @@ export function SessionScreen({
         );
         updatePending(localId, { state: "sent", via: res.via, at: Date.now() });
         /* a greyed suggestion or half-typed text was in the terminal's prompt; say what was cleared */
-        if (res.cleared && !/^Try "/.test(res.cleared)) setError(`Cleared "${res.cleared.slice(0, 80)}" from the terminal's prompt before sending.`);
+        if (res.cleared && !/^Try "/.test(res.cleared)) setError(`Cleared unsent text: "${res.cleared.slice(0, 80)}"`);
         if (res.id !== id) {
           carryOver(id, res.id, pendingRef.current.map((p) => (p.localId === localId ? { ...p, state: "sent", via: res.via, at: Date.now(), sentAs: clientId, error: undefined, resend: undefined } : p)));
           onNavigate(res.id);
@@ -254,12 +275,9 @@ export function SessionScreen({
       <span className={loudLabel}>Reconnecting…</span>
     </span>
   ) : terminal ? (
-    <span className={`${chip} text-ink-3`} title={`Open in ${where}`}>
+    <span className={`${chip} text-ink-3`} title="Open in a terminal">
       <Pulse busy={terminalBusy(terminal.status)} size={2.5} cellClass={AGENT_TONE[agent]} />
-      <span className={chipLabel}>
-        <span className="sr-only">Open in </span>
-        {terminal.multiplexer ?? "terminal"}
-      </span>
+      <span className={chipLabel}>Terminal</span>
     </span>
   ) : run ? (
     <span role="status" className={`${chip} ${run.pending.length ? "font-medium text-orange-ink" : runFailed && !busy ? "font-medium text-red-ink" : "text-ink-3"}`} title={run.error && runFailed ? run.error : runLabel}>
@@ -294,12 +312,12 @@ export function SessionScreen({
       if (!/^(zellij|tmux)/.test(terminal.multiplexer ?? "")) {
         setError(
           terminal.headless
-            ? "Another program is running this session through the Agent SDK, so there's no terminal to open. It can be continued here once that program ends it."
-            : `This session is running in ${terminal.multiplexer === "screen" ? "GNU screen" : "a plain terminal"}, which the web can't join. Continue it there, or quit it there and open it here.`,
+            ? "Another app is running this session. Continue it there, or open it here once it ends."
+            : "This terminal can't be opened in the browser. Continue it there, or quit it there and open it here.",
         );
         return;
       }
-      window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { session: agent === "claude" ? id : undefined, pid: terminal.pid, label: `${agentName} in ${where ?? "terminal"}` } }));
+      window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { session: agent === "claude" ? id : undefined, pid: terminal.pid, label: `${agentName}: ${view.title || "session"}` } }));
       return;
     }
     setLaunching(true);
@@ -312,14 +330,10 @@ export function SessionScreen({
       setLaunching(false);
     }
   };
-  const openUsage = () => {
-    setChangesOpen(false);
-    setUsageOpen((v) => !v);
-  };
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
-    <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+    <section ref={sectionRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="on-page safe-top safe-x relative z-20 flex shrink-0 items-center bg-page">
         <div className="flex h-14 w-full min-w-0 items-center gap-0.5 px-1.5 sm:px-3 lg:h-[52px]">
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
@@ -348,11 +362,7 @@ export function SessionScreen({
           {changes.length > 0 && (
             <button
               type="button"
-              onClick={() => {
-                setUsageOpen(false);
-                setGitOpen(false);
-                setChangesOpen((v) => !v);
-              }}
+              onClick={() => togglePanel("changes")}
               aria-pressed={changesOpen}
               aria-label={`Changes: ${changes.length} ${changes.length === 1 ? "file" : "files"}`}
               data-tip="Changes"
@@ -368,18 +378,31 @@ export function SessionScreen({
               type="button"
               onClick={() => void openInteractive()}
               disabled={launching}
-              aria-label={terminal ? `Open ${where} interactively` : `Open ${agentName} in a terminal on the server`}
-              data-tip={terminal ? "Open interactive" : "Open in a terminal"}
+              aria-label="Open in terminal"
+              data-tip="Open in terminal"
               data-tip-pos="bottom"
               className="icon-btn w-auto gap-1.5 px-2.5 text-[12.5px] font-medium disabled:opacity-60"
             >
               <Terminal width={17} height={17} strokeWidth={1.8} />
-              <span className="max-sm:sr-only">{launching ? "Opening…" : "Interactive"}</span>
+              <span className="max-sm:sr-only">{launching ? "Opening…" : "Terminal"}</span>
+            </button>
+          )}
+          {view.cwd && (
+            <button
+              type="button"
+              onClick={() => togglePanel("git")}
+              aria-pressed={gitOpen}
+              aria-label="Git and checkpoints"
+              data-tip="Git"
+              data-tip-pos="bottom"
+              className="icon-btn max-sm:hidden"
+            >
+              <GitBranch width={17} height={17} strokeWidth={1.8} />
             </button>
           )}
           <button
             type="button"
-            onClick={openUsage}
+            onClick={() => togglePanel("usage")}
             aria-pressed={usageOpen}
             aria-label="Usage and cost"
             data-tip="Usage"
@@ -428,8 +451,7 @@ export function SessionScreen({
                   role="menuitem"
                   onClick={() => {
                     closeMenu();
-                    setChangesOpen(false);
-                    setUsageOpen(true);
+                    setPanel("usage");
                   }}
                   className="menu-item"
                 >
@@ -442,8 +464,7 @@ export function SessionScreen({
                     role="menuitem"
                     onClick={() => {
                       closeMenu();
-                      setChangesOpen(false);
-                      setGitOpen(true);
+                      setPanel("git");
                     }}
                     className="menu-item"
                   >
@@ -462,7 +483,7 @@ export function SessionScreen({
                     className="menu-item"
                   >
                     <Terminal width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
-                    {peek ? "Hide terminal preview" : "Preview terminal (read-only)"}
+                    {peek ? "Hide terminal preview" : "Preview terminal"}
                   </button>
                 )}
                 {view.cwd && (
@@ -471,12 +492,12 @@ export function SessionScreen({
                     role="menuitem"
                     onClick={() => {
                       setMenuOpen(false);
-                      window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: view.cwd, label: `shell in ${shortPath(view.cwd)}` } }));
+                      window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: view.cwd, label: `Shell: ${shortPath(view.cwd)}` } }));
                     }}
                     className="menu-item"
                   >
                     <Terminal width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
-                    Open a terminal here
+                    Open shell
                   </button>
                 )}
                 {view.cwd && (
@@ -504,10 +525,7 @@ export function SessionScreen({
                     className="menu-item items-start"
                   >
                     <ArrowRight width={15} height={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
-                    <span className="flex min-w-0 flex-col">
-                      <span>Continue in another agent…</span>
-                      <span className="text-[12px] text-ink-3">Another agent, account or model picks up this conversation.</span>
-                    </span>
+                    <span>Continue in another agent…</span>
                   </button>
                 )}
                 {run && (
@@ -524,8 +542,8 @@ export function SessionScreen({
                     >
                       <Xmark width={15} height={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
                       <span className="flex min-w-0 flex-col">
-                        <span>End web session</span>
-                        <span className="text-[12px] text-ink-3">Stops the {agent === "claude" ? "claude" : agentName} process. History stays.</span>
+                        <span>End session</span>
+                        <span className="text-[12px] text-ink-3">Stops the agent. History stays.</span>
                       </span>
                     </button>
                   </>
@@ -536,6 +554,7 @@ export function SessionScreen({
           {extra}
         </div>
         <div className="pointer-events-none absolute inset-x-0 top-full h-3 bg-gradient-to-b from-page to-transparent" aria-hidden />
+        <FindBar scope={sectionRef} />
       </header>
       {peek && terminal && !run && <TerminalPeek id={id} pid={terminal.pid} where={where ?? "terminal"} onClose={() => setPeek(false)} />}
 
@@ -543,7 +562,7 @@ export function SessionScreen({
         view={view}
         busy={Boolean(busy)}
         agentName={agentName}
-        workingLabel={terminal && !run ? `Working in ${where}` : agent === "claude" ? "Thinking" : `${agentName} is working`}
+        workingLabel={agent === "claude" && run ? "Thinking" : "Working"}
         onLoadOlder={() => void loadOlder()}
         pendingSlot={(p) => (
           <PendingBubble
@@ -566,13 +585,13 @@ export function SessionScreen({
         empty={
           view.status === "missing" ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <p className="text-[13px] text-ink-3">The server didn&apos;t return this session. Check your connection, then reload.</p>
+              <p className="text-[13px] text-ink-3">Couldn&apos;t load this session.</p>
               <button type="button" onClick={() => window.location.reload()} className="h-9 rounded-full px-3.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
                 Reload
               </button>
             </div>
           ) : (
-            <p className="py-16 text-center text-[13px] text-ink-3">{terminal && !run ? `Nothing recorded yet. Type below and it goes into ${where}.` : "No messages yet. Send one to start."}</p>
+            <p className="py-16 text-center text-[13px] text-ink-3">No messages yet.</p>
           )
         }
       />
@@ -584,12 +603,12 @@ export function SessionScreen({
             {failed && !busy && (
               <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-[13px] text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-                  <span className="font-medium">{agentName} stopped with an error.</span> {failed}
+                  <span className="font-medium">Turn failed.</span> {failed}
                 </p>
                 <div className="flex shrink-0 items-center gap-1">
                   {lastUserText && !view.pending.some((p) => p.state === "failed") && (
                     <button type="button" onClick={() => void send(lastUserText)} className="tap relative h-8 rounded-full px-3 text-[12.5px] font-medium text-ink hover:bg-hover">
-                      Retry last message
+                      Retry
                     </button>
                   )}
                   <button type="button" onClick={() => setHandoffOpen(true)} className="tap relative h-8 rounded-full px-3 text-[12.5px] font-medium text-ink hover:bg-hover">
@@ -603,7 +622,7 @@ export function SessionScreen({
             )}
             {planReady && (
               <div className="mb-2 flex items-center gap-2 rounded-[12px] bg-accent-tint px-3 py-2 text-[13px] text-accent-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
-                <p className="min-w-0 flex-1">{agentName} is in plan mode and hasn&apos;t changed anything.</p>
+                <p className="min-w-0 flex-1">Plan ready. No files changed yet.</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -615,7 +634,7 @@ export function SessionScreen({
                   }}
                   className="tap relative h-8 shrink-0 rounded-full bg-ink px-3 text-[12.5px] font-medium text-surface"
                 >
-                  Implement this plan
+                  Implement plan
                 </button>
               </div>
             )}
@@ -626,7 +645,8 @@ export function SessionScreen({
             )}
             <Composer
               draftKey={id}
-              placeholder={terminal && !run ? (/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? `Type into ${where}…` : `Running in ${where}. Reply there.`) : `Reply to ${agentName}…`}
+              placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
+              history={sentTexts}
               onSend={send}
               running={Boolean(busy && (run || terminal))}
               onStop={() => (live ? void control("interrupt") : void pressKey("Escape"))}
@@ -661,7 +681,7 @@ export function SessionScreen({
                     agent === "claude"
                       ? (MODELS.find((x) => x.key === a || x.name.toLowerCase().startsWith(a))?.key ?? (a === "default" ? "" : null))
                       : a === "default" ? "" : arg.trim() || null;
-                  if (m === null) return setError(agent === "claude" ? "Use /model opus, sonnet, haiku, or default." : "Use /model <model id>, or /model default."), true;
+                  if (m === null) return setError(agent === "claude" ? "Use /model opus, sonnet, haiku, or default." : "Use /model <id> or /model default."), true;
                   setLocalModel(m || null);
                   if (live) void control("model", m);
                 } else if (name === "mode") {
@@ -683,10 +703,14 @@ export function SessionScreen({
         </div>
       </div>
     </section>
-    {usageOpen && <UsagePanel view={view} onClose={() => setUsageOpen(false)} />}
+    {panel && (
+      <PanelSlot>
+        {usageOpen && <UsagePanel view={view} onClose={() => setPanel(null)} />}
+        {gitOpen && <GitPanel session={id} busy={Boolean(busy)} onClose={() => setPanel(null)} />}
+        {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setPanel(null)} />}
+      </PanelSlot>
+    )}
     {handoffOpen && <HandoffDialog id={id} agent={agent} current={profileId} mode={mode} onClose={() => setHandoffOpen(false)} onOpen={onNavigate} />}
-    {gitOpen && !changesOpen && <GitPanel session={id} busy={Boolean(busy)} onClose={() => setGitOpen(false)} />}
-    {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setChangesOpen(false)} />}
     </div>
   );
 }

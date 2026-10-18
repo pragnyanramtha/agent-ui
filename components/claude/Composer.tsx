@@ -1,5 +1,7 @@
 "use client";
 
+import { useSetting } from "@/lib/client/settings";
+import { comboFor } from "@/lib/client/shortcuts";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
@@ -136,6 +138,7 @@ export function Composer({
   profiles,
   profile,
   onProfileChange,
+  history,
 }: {
   draftKey: string;
   placeholder: string;
@@ -177,8 +180,13 @@ export function Composer({
   profiles?: ProfileInfo[];
   profile?: string;
   onProfileChange?: (id: string) => void;
+  /** messages already sent in this session, oldest first; Arrow Up in an empty box brings them back */
+  history?: string[];
 }) {
   const [draft, setDraft] = useState("");
+  const [sendWithEnter] = useSetting("sendWithEnter");
+  /* index into `history` while stepping through it with the arrows; null when not recalling */
+  const recall = useRef<number | null>(null);
   const [menu, setMenu] = useState<Menu>(null);
   const [slashHidden, setSlashHidden] = useState(false);
   const [menuPos, setMenuPos] = useState<{ left?: number; right?: number }>({});
@@ -782,10 +790,39 @@ export function Composer({
               setDraft(suggestion);
               return;
             }
-            /* Enter is a newline; Ctrl/Cmd+Enter sends */
-            if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
+            /* Ctrl/Cmd+Enter sends; plain Enter too when the setting is on, on a desktop keyboard */
+            if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.nativeEvent.isComposing) {
+              if (e.ctrlKey || e.metaKey || (sendWithEnter && window.matchMedia("(pointer: fine)").matches)) {
+                e.preventDefault();
+                recall.current = null;
+                void send();
+                return;
+              }
+            }
+            /* Esc stops a running turn when there's nothing typed */
+            if (e.key === "Escape" && running && onStop && !draft && !openMenu) {
               e.preventDefault();
-              void send();
+              onStop();
+              return;
+            }
+            /* Arrow Up in an empty box (or while stepping back) recalls earlier messages; Down goes forward */
+            const el = e.currentTarget;
+            if ((e.key === "ArrowUp" || e.key === "ArrowDown") && history?.length && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+              const stepping = recall.current !== null && draft === history[recall.current];
+              if (e.key === "ArrowUp" && (!draft || stepping) && el.selectionStart === el.selectionEnd && (!draft || el.selectionStart === 0 || stepping)) {
+                const next = recall.current === null || !stepping ? history.length - 1 : Math.max(0, recall.current - 1);
+                e.preventDefault();
+                recall.current = next;
+                setDraft(history[next]);
+                return;
+              }
+              if (e.key === "ArrowDown" && stepping && recall.current !== null) {
+                e.preventDefault();
+                const next = recall.current + 1;
+                recall.current = next < history.length ? next : null;
+                setDraft(next < history.length ? history[next] : "");
+                return;
+              }
             }
           }}
           placeholder={busy ? busyLabel : placeholder}
@@ -842,8 +879,8 @@ export function Composer({
           {!stopFirst && (
             <button
               type="button"
-              aria-label={sending ? "Sending…" : files.uploading ? "Uploading…" : "Send (Ctrl+Enter)"}
-              title={files.uploading ? "Waiting for the upload" : files.failed ? "Retry or remove the failed upload first" : "Send (Ctrl+Enter)"}
+              aria-label={sending ? "Sending…" : files.uploading ? "Uploading…" : "Send"}
+              title={files.uploading ? "Uploading…" : files.failed ? "Fix the failed upload first" : `Send (${sendWithEnter ? "Enter" : comboFor("send")})`}
               disabled={!canSend}
               onClick={() => void send()}
               className="composer-send tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-surface transition-[opacity,transform] duration-200 enabled:active:scale-[0.92] disabled:opacity-25"

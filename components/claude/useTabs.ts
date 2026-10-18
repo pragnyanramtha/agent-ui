@@ -8,7 +8,8 @@ export const NEW_TAB = "new";
 export const FILES_TAB = "@files";
 export const AGENTS_TAB = "@agents";
 export const INBOX_TAB = "@inbox";
-export const VIEW_TABS: Record<string, string> = { [FILES_TAB]: "Files", [AGENTS_TAB]: "Agents", [INBOX_TAB]: "Inbox" };
+export const SETTINGS_TAB = "@settings";
+export const VIEW_TABS: Record<string, string> = { [FILES_TAB]: "Files", [AGENTS_TAB]: "Agents", [INBOX_TAB]: "Inbox", [SETTINGS_TAB]: "Settings" };
 
 /** An open tab: a session id (or NEW_TAB) plus the last title we saw, so reloads paint names before the list loads. */
 export type Tab = { id: string; title?: string };

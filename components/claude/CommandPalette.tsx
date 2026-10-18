@@ -2,20 +2,22 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatBubble, EditPencil, Folder, HalfMoon, LogOut, MailIn, Search, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
+import { ChatBubble, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Search, Settings, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
-
-/* Browser chrome color for each theme, matched to --page. Keep in sync with ThemeToggle and app/layout.tsx. */
-const THEME_COLOR = { dark: "#17181a", light: "#fafafb" } as const;
+import { applyTheme } from "@/lib/client/settings";
+import { comboFor } from "@/lib/client/shortcuts";
 
 /** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
 export const OPEN_PALETTE_EVENT = "open-palette";
 
 /** Fired on window to fold or unfold the sidebar (the drawer on a phone). */
 export const TOGGLE_SIDEBAR_EVENT = "toggle-sidebar";
+
+/** Fired on window to open the keyboard shortcuts sheet. */
+export const OPEN_SHORTCUTS_EVENT = "open-shortcuts";
 
 /** Fired on window with `detail: TerminalTarget` to open the web terminal. */
 export const OPEN_TERMINAL_EVENT = "open-terminal";
@@ -56,6 +58,8 @@ type Item = {
   group: "Sessions" | "Actions";
   label: string;
   hint?: ReactNode;
+  /** shortcut id from lib/client/shortcuts.ts, shown on the right */
+  combo?: string;
   icon: ReactNode;
   run: () => void;
 };
@@ -76,7 +80,7 @@ export function CommandPalette({
   onOpen: (id: string) => void;
   onNew: () => void;
   /** opens the Agents or Files screen */
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
   /** called after the theme flips, so other theme controls can resync */
   onTheme?: (dark: boolean) => void;
 }) {
@@ -144,14 +148,7 @@ export function CommandPalette({
 
   const toggleTheme = useCallback(() => {
     const next = !document.documentElement.classList.contains("dark");
-    const root = document.documentElement;
-    root.classList.add("theme-switching");
-    root.classList.toggle("dark", next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next ? THEME_COLOR.dark : THEME_COLOR.light);
-    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
-    try {
-      localStorage.setItem("bui-theme", next ? "dark" : "light");
-    } catch {}
+    applyTheme(next ? "dark" : "light");
     onTheme?.(next);
   }, [onTheme]);
 
@@ -207,6 +204,7 @@ export function CommandPalette({
         id: "a:new",
         group: "Actions",
         label: "New session",
+        combo: "new",
         keywords: "new session start create chat",
         icon: <EditPencil width={15} height={15} strokeWidth={1.8} />,
         run: () => {
@@ -217,13 +215,14 @@ export function CommandPalette({
       {
         id: "a:shell",
         group: "Actions",
-        label: "Open a terminal",
+        label: "Open shell",
+        combo: "terminal",
         keywords: "terminal shell bash console command line ssh",
         icon: <Terminal width={15} height={15} strokeWidth={1.8} />,
         run: () => {
           navigated.current = true;
           const s = sessions?.find((x) => x.id === activeId);
-          window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: s?.cwd || undefined, label: s?.cwd ? `shell in ${s.cwd}` : "shell" } }));
+          window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: s?.cwd || undefined, label: s?.cwd ? `Shell: ${shortPath(s.cwd)}` : "Shell" } }));
         },
       },
       ...(onView
@@ -261,12 +260,25 @@ export function CommandPalette({
                 onView("@files");
               },
             },
+            {
+              id: "a:settings",
+              group: "Actions" as const,
+              label: "Settings",
+              combo: "settings",
+              keywords: "settings preferences options theme enter send keyboard",
+              icon: <Settings width={15} height={15} strokeWidth={1.8} />,
+              run: () => {
+                navigated.current = true;
+                onView("@settings");
+              },
+            },
           ]
         : []),
       {
         id: "a:sidebar",
         group: "Actions",
         label: "Toggle sidebar",
+        combo: "sidebar",
         keywords: "sidebar collapse expand hide show panel rail",
         icon: <SidebarCollapse width={15} height={15} strokeWidth={1.8} />,
         run: () => window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT)),
@@ -278,6 +290,15 @@ export function CommandPalette({
         keywords: "toggle theme dark light mode appearance",
         icon: dark ? <SunLight width={15} height={15} strokeWidth={1.8} /> : <HalfMoon width={15} height={15} strokeWidth={1.8} />,
         run: toggleTheme,
+      },
+      {
+        id: "a:shortcuts",
+        group: "Actions",
+        label: "Keyboard shortcuts",
+        combo: "shortcuts",
+        keywords: "keyboard shortcuts keys hotkeys bindings help",
+        icon: <KeyCommand width={15} height={15} strokeWidth={1.8} />,
+        run: () => window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT)),
       },
       {
         id: "a:signout",
@@ -451,10 +472,16 @@ export function CommandPalette({
                       <span className="block truncate text-[14px] font-medium sm:text-[13.5px]">{it.label}</span>
                       {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-ink-3">{it.hint}</span>}
                     </span>
-                    {on && (
+                    {on ? (
                       <kbd className="hidden shrink-0 rounded-[5px] bg-field px-1.5 py-0.5 font-sans text-[11px] text-ink-3 shadow-hairline pointer-fine:inline" aria-hidden>
                         Enter
                       </kbd>
+                    ) : (
+                      it.combo && (
+                        <span className="hidden shrink-0 font-sans text-[11.5px] tabular-nums text-ink-3 pointer-fine:inline" aria-hidden>
+                          {comboFor(it.combo)}
+                        </span>
+                      )
                     )}
                   </div>
                 );

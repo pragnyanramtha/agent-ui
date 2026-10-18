@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { EditPencil, Folder, List, Plus, Terminal, Xmark } from "iconoir-react";
+import { EditPencil, Folder, List, MailIn, Plus, Settings, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
 import { AGENT_TONE, AgentBadge, isBusy } from "./SessionList";
-import { AGENTS_TAB, INBOX_TAB, NEW_TAB, VIEW_TABS, type Tab } from "./useTabs";
+import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
+
+const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences" };
 
 /* ─────────────────────────────────────────────────────────
  * TABS
@@ -32,13 +34,13 @@ export type TabInfo = {
 
 export function describeTab(tab: Tab, session: SessionSummary | undefined, listLoaded: boolean, now = Date.now()): TabInfo {
   if (tab.id === NEW_TAB) return { id: tab.id, title: "New session", agent: "claude", live: false, busy: false, needsYou: false, meta: null };
-  if (VIEW_TABS[tab.id]) return { id: tab.id, title: VIEW_TABS[tab.id], agent: "claude", live: false, busy: false, needsYou: false, meta: tab.id === AGENTS_TAB ? "Terminals and profiles" : tab.id === INBOX_TAB ? "Waiting on you" : "Files on the server" };
+  if (VIEW_TABS[tab.id]) return { id: tab.id, title: VIEW_TABS[tab.id], agent: "claude", live: false, busy: false, needsYou: false, meta: VIEW_META[tab.id] ?? null };
   const agent = (tab.id.includes(":") ? tab.id.slice(0, tab.id.indexOf(":")) : "claude") as AgentId;
   if (!session) {
     return { id: tab.id, title: tab.title ?? (listLoaded ? "Session" : "Loading…"), agent: AGENT_LABEL[agent] ? agent : "claude", live: false, busy: false, needsYou: false, meta: null };
   }
   const live = Boolean(session.terminal) || (session.web !== null && session.web.status !== "closed");
-  const where = session.web ? "web" : session.terminal?.multiplexer ?? (session.terminal ? "terminal" : null);
+  const where = session.web ? "web" : session.terminal ? "terminal" : null;
   return {
     id: tab.id,
     title: session.title || tab.title || "Session",
@@ -55,6 +57,8 @@ function Indicator({ t, size = 2.5 }: { t: TabInfo; size?: number }) {
   if (t.needsYou) return <span className="size-1.5 shrink-0 rounded-full bg-orange" aria-label="Needs you" role="img" />;
   if (t.id === NEW_TAB) return <EditPencil width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === AGENTS_TAB) return <Terminal width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
+  if (t.id === INBOX_TAB) return <MailIn width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
+  if (t.id === SETTINGS_TAB) return <Settings width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (VIEW_TABS[t.id]) return <Folder width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.live) return <Pulse busy={t.busy} size={size} cellClass={AGENT_TONE[t.agent]} />;
   return <span className={`size-1.5 shrink-0 rounded-full ${AGENT_TONE[t.agent]} ${t.agent === "claude" ? "opacity-25" : ""}`} aria-hidden />;
@@ -211,7 +215,7 @@ export function TabBar({
       <button
         type="button"
         aria-label="New session"
-        data-tip="New tab  Alt T"
+        data-tip="New session  Alt T"
         data-tip-pos="bottom"
         onClick={onNew}
         className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink"
