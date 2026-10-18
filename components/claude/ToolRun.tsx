@@ -457,6 +457,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
       return (
         <Stack>
           {s("plan") && <ProseBox text={s("plan")} />}
+          {s("plan") && <PlanActions plan={s("plan")} />}
           {result && <Output result={result} />}
         </Stack>
       );
@@ -634,3 +635,39 @@ export const ToolRun = memo(function ToolRun({
     </div>
   );
 });
+
+/** Copy or save a proposed plan as Markdown. */
+function PlanActions({ plan }: { plan: string }) {
+  const [copied, setCopied] = useState(false);
+  const btn = "tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        className={btn}
+        onClick={() =>
+          void navigator.clipboard?.writeText(plan).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          })
+        }
+      >
+        {copied ? "Copied" : "Copy plan"}
+      </button>
+      <button
+        type="button"
+        className={btn}
+        onClick={() => {
+          const url = URL.createObjectURL(new Blob([plan], { type: "text/markdown" }));
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "plan.md";
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }}
+      >
+        Download .md
+      </button>
+    </div>
+  );
+}
