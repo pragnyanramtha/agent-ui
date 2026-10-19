@@ -424,9 +424,8 @@ function projectRoots(root: string): Map<string, string> {
   return map;
 }
 
-/** Every main chat under the given roots; the newest file wins when two carry the same id. */
-export function chatFiles(roots: string[]): Map<string, ChatFile> {
-  const out = new Map<string, ChatFile>();
+/** Every main chat file under the given roots, with its session id. */
+function* mainChats(roots: string[]): Generator<ChatFile> {
   for (const root of roots) {
     const tmp = path.join(root, "tmp");
     let slugs: string[];
@@ -461,13 +460,24 @@ export function chatFiles(roots: string[]): Map<string, ChatFile> {
         if (!st.isFile()) continue;
         const h = header(file, st.mtimeMs);
         if (!h.id || (h.kind && h.kind !== "main")) continue;
-        const prev = out.get(h.id);
-        if (!prev || prev.mtime < st.mtimeMs) out.set(h.id, { id: h.id, file, cwd, mtime: st.mtimeMs, size: st.size });
+        yield { id: h.id, file, cwd, mtime: st.mtimeMs, size: st.size };
       }
     }
   }
+}
+
+/** Every main chat under the given roots; the newest file wins when two carry the same id. */
+export function chatFiles(roots: string[]): Map<string, ChatFile> {
+  const out = new Map<string, ChatFile>();
+  for (const c of mainChats(roots)) {
+    const prev = out.get(c.id);
+    if (!prev || prev.mtime < c.mtime) out.set(c.id, c);
+  }
   return out;
 }
+
+/** Every file that holds the main chat `id` (normally one). */
+export const chatFilesOf = (roots: string[], id: string) => [...mainChats(roots)].filter((c) => c.id === id).map((c) => c.file);
 
 const folds = new Map<string, { mtime: number; size: number; fold: GeminiFold }>();
 

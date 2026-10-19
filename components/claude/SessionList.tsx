@@ -2,16 +2,20 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
-import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
+import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
+import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
-import { patchSession, type SessionChange } from "@/lib/client/useSessions";
+import { deleteSession, patchSession, type SessionChange } from "@/lib/client/useSessions";
+import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
+import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
+import { snoozePresets, wakeFull, wakeLabel } from "@/lib/client/snooze";
 import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";
 import { copyText } from "./CodeCard";
+import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -56,7 +60,15 @@ const ago = (ms: number, now: number) => {
 
 /** The hover title: the full name, the folder, and when (or that it's open). */
 const rowTitle = (s: SessionSummary, now: number) =>
-  `${s.title}\n${s.project || "No folder"} · ${isLive(s) ? "open" : ago(s.mtime, now)}${s.agent !== "claude" ? ` · ${AGENT_LABEL[s.agent]}` : ""}`;
+  `${s.title}\n${s.project || "No folder"} · ${isLive(s) ? "open" : ago(s.mtime, now)}${s.agent !== "claude" ? ` · ${AGENT_LABEL[s.agent]}` : ""}${
+    (s.snoozedUntil ?? 0) > now ? `\nSnoozed until ${wakeFull(s.snoozedUntil!)}` : ""
+  }`;
+
+/** Snoozed and quiet: out of the main lists. A session that's working or waiting on you always shows. */
+export const isAsleep = (s: SessionSummary, now: number) => (s.snoozedUntil ?? 0) > now && !s.archived && !isBusy(s) && !s.web?.pending.length;
+
+/** The id the agent itself knows the session by ("codex:abc" is abc), for its own resume command. */
+export const nativeId = (id: string) => id.slice(id.indexOf(":") + 1);
 
 /** The address that opens a session, the same one notifications use. */
 export const sessionLink = (id: string) => `${window.location.origin}/?s=${encodeURIComponent(id)}`;
@@ -134,7 +146,7 @@ function Brand() {
 type MenuAt = { x: number; y: number } | HTMLElement;
 
 /** Which list a row sits in: a session shows in Projects and in Pinned, Active or Recent at once. */
-type RowWhere = "match" | "pinned" | "live" | "project" | "recent" | "archived";
+type RowWhere = "match" | "pinned" | "live" | "project" | "recent" | "snoozed" | "archived";
 
 /* Pinned, Active and Recent never list a session twice: a rename follows its row between them when the poll moves it */
 const MAIN_LISTS: RowWhere[] = ["pinned", "live", "recent"];
@@ -147,6 +159,8 @@ type RowControl = {
   draft: { current: string | null };
   openMenu: (s: SessionSummary, at: MenuAt, where: RowWhere) => void;
   rename: (s: SessionSummary, where: RowWhere, title: string | null, viaKey: boolean) => void;
+  /** finished a turn this device hasn't opened since */
+  unread: (id: string) => boolean;
 };
 
 /** Focus a row after a re-render: the same list if it's still there, else wherever it moved. */
@@ -166,6 +180,7 @@ function Row({
   showAgent = true,
   ctl,
   where,
+  trail,
 }: {
   s: SessionSummary;
   active: boolean;
@@ -176,8 +191,10 @@ function Row({
   showAgent?: boolean;
   ctl: RowControl;
   where: RowWhere;
+  /** stands in for the agent's name at the end of a quiet row */
+  trail?: string;
 }) {
-  const waiting = (s.web?.pending.length ?? 0) > 0;
+  const status = sessionStatus(s, ctl.unread(s.id));
   const key = `${where}:${s.id}`;
   const r = ctl.renaming;
   if (r?.id === s.id && (r.where === where || (MAIN_LISTS.includes(r.where) && MAIN_LISTS.includes(where))))
@@ -185,6 +202,11 @@ function Row({
   const menuOpen = ctl.menuFor === key;
   /* the "..." button takes the trailing label's place on hover */
   const tail = menuOpen ? "hidden" : "pointer-fine:group-hover/item:hidden pointer-fine:group-focus-within/item:hidden";
+  const agentLabel = trail ? (
+    <span className={`shrink-0 text-[12px] text-ink-3 tabular-nums ${tail}`}>{trail}</span>
+  ) : (
+    showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>
+  );
   return (
     <div
       className="group/item relative"
@@ -205,13 +227,18 @@ function Row({
       >
         {lead}
         <span className="min-w-0 flex-1 truncate">{s.title}</span>
-        {waiting ? (
-          <span className={`flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-orange-ink ${tail}`}>
-            <span className="size-1.5 rounded-full bg-orange" aria-hidden />
-            Needs you
-          </span>
+        {status === "unread" ? (
+          <>
+            {agentLabel}
+            <span className={`flex size-4 shrink-0 items-center justify-center ${tail}`}>
+              <span className="size-1.5 rounded-full bg-green" aria-hidden />
+              <span className="sr-only">, {STATUS_LABEL.unread.toLowerCase()}</span>
+            </span>
+          </>
+        ) : status ? (
+          <StatusPill status={status} className={tail} />
         ) : (
-          showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>
+          agentLabel
         )}
       </button>
       <button
@@ -225,6 +252,23 @@ function Row({
         <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
       </button>
     </div>
+  );
+}
+
+const PILL_TONE: Record<Exclude<SessionStatus, "unread">, { text: string; dot: string }> = {
+  approval: { text: "font-medium text-orange-ink", dot: "bg-orange" },
+  input: { text: "font-medium text-accent-ink", dot: "bg-accent" },
+  working: { text: "text-ink-3", dot: "bg-accent motion-safe:animate-pulse" },
+  failed: { text: "font-medium text-red-ink", dot: "bg-red" },
+};
+
+function StatusPill({ status, className = "" }: { status: Exclude<SessionStatus, "unread">; className?: string }) {
+  const tone = PILL_TONE[status];
+  return (
+    <span className={`flex shrink-0 items-center gap-1.5 text-[12px] ${tone.text} ${className}`}>
+      <span className={`size-1.5 rounded-full ${tone.dot}`} aria-hidden />
+      {STATUS_LABEL[status]}
+    </span>
   );
 }
 
@@ -295,20 +339,29 @@ function RenameRow({
   );
 }
 
-/** Pin, rename, archive and copy link for one row, floating at the pointer or under the "..." button. */
+type RowAction = "pin" | "rename" | "read" | "archive" | "path" | "id" | "link" | "delete" | "wake" | { snooze: number };
+
+/** Pin, rename, mark read, snooze, archive, the copy actions and delete for one row, floating at the pointer or under the "..." button.
+ * Snooze opens its presets in place, so it works the same on a phone. */
 function RowMenu({
   s,
   at,
+  unread,
   onClose,
   onAction,
 }: {
   s: SessionSummary;
   at: MenuAt;
+  unread: boolean;
   onClose: (restoreFocus: boolean) => void;
-  onAction: (action: "pin" | "rename" | "archive" | "link") => void;
+  onAction: (action: RowAction) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<CSSProperties>({});
+  const [page, setPage] = useState<"main" | "snooze">("main");
+  const [now] = useState(() => Date.now());
+  const presets = useMemo(() => snoozePresets(new Date(now)), [now]);
+  const snoozed = (s.snoozedUntil ?? 0) > now;
   useLayoutEffect(() => {
     const w = ref.current?.offsetWidth ?? 192;
     const h = ref.current?.offsetHeight ?? 180;
@@ -327,11 +380,14 @@ function RowMenu({
       left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
       top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
     });
-  }, [at]);
+  }, [at, page]);
   const placed = Boolean(place.position);
   useEffect(() => {
-    if (placed) ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus({ preventScroll: true });
-  }, [placed]);
+    if (!placed) return;
+    const items = ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+    /* on the presets page, past "Back" */
+    items?.[page === "snooze" ? 1 : 0]?.focus({ preventScroll: true });
+  }, [placed, page]);
   useEffect(() => {
     const inside = (t: EventTarget | null) => t instanceof Node && Boolean(ref.current?.contains(t) || (at instanceof HTMLElement && at.contains(t)));
     const onDown = (e: PointerEvent) => !inside(e.target) && onClose(false);
@@ -341,7 +397,8 @@ function RowMenu({
       if (e.key !== "Escape" && e.key !== "Tab") return;
       if (e.key === "Escape") e.preventDefault();
       e.stopPropagation();
-      onClose(e.key === "Escape");
+      if (e.key === "Escape" && page === "snooze") setPage("main");
+      else onClose(e.key === "Escape");
     };
     const onResize = () => onClose(false);
     document.addEventListener("pointerdown", onDown);
@@ -356,21 +413,40 @@ function RowMenu({
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKey, true);
     };
-  }, [at, onClose]);
-  const item = (action: Parameters<typeof onAction>[0], label: string, icon: ReactNode) => (
-    <button type="button" role="menuitem" onClick={() => onAction(action)} className="menu-item">
+  }, [at, onClose, page]);
+  const item = (action: RowAction | (() => void), label: string, icon: ReactNode, trail?: ReactNode) => (
+    <button
+      key={typeof action === "object" ? action.snooze : label}
+      type="button"
+      role="menuitem"
+      onClick={() => (typeof action === "function" ? action() : onAction(action))}
+      className="menu-item"
+    >
       <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {trail}
     </button>
   );
   const icon = { width: 15, height: 15, strokeWidth: 1.9, "aria-hidden": true } as const;
+  const when = (text: string) => <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{text}</span>;
+  const PRESET_ICON = { hour: <Clock {...icon} />, tonight: <HalfMoon {...icon} />, tomorrow: <SunLight {...icon} />, "next-week": <Calendar {...icon} /> };
   return createPortal(
     <div
       ref={ref}
       role="menu"
-      aria-label={s.title}
+      aria-label={page === "snooze" ? `Snooze ${s.title}` : s.title}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={(e) => {
+        if (page === "snooze" && e.key === "ArrowLeft") {
+          e.preventDefault();
+          setPage("main");
+          return;
+        }
+        if (page === "main" && e.key === "ArrowRight" && (document.activeElement as HTMLElement | null)?.dataset.submenu) {
+          e.preventDefault();
+          setPage("snooze");
+          return;
+        }
         if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
         e.preventDefault();
         const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
@@ -378,16 +454,121 @@ function RowMenu({
         const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
         items[next]?.focus();
       }}
-      className="z-50 w-48 rounded-[12px] bg-surface p-1 shadow-overlay"
+      className={`z-50 rounded-[12px] bg-surface p-1 shadow-overlay ${page === "snooze" ? "w-56" : "w-48"}`}
       style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", ...place, visibility: place.position ? "visible" : "hidden" }}
     >
-      {item("pin", s.pinned ? "Unpin" : "Pin", s.pinned ? <PinSlash {...icon} /> : <Pin {...icon} />)}
-      {item("rename", "Rename", <EditPencil {...icon} />)}
-      {item("archive", s.archived ? "Unarchive" : "Archive", <Archive {...icon} />)}
-      <div className="mx-2 my-1 h-px bg-line" />
-      {item("link", "Copy link", <Link {...icon} />)}
+      {page === "snooze" ? (
+        <>
+          {item(() => setPage("main"), "Snooze", <NavArrowLeft {...icon} />)}
+          <div className="mx-2 my-1 h-px bg-line" />
+          {presets.map((p) => item({ snooze: p.at }, p.label, PRESET_ICON[p.id], when(p.when)))}
+        </>
+      ) : (
+        <>
+          {item("pin", s.pinned ? "Unpin" : "Pin", s.pinned ? <PinSlash {...icon} /> : <Pin {...icon} />)}
+          {item("rename", "Rename", <EditPencil {...icon} />)}
+          {item("read", unread ? "Mark as read" : "Mark as unread", unread ? <MailOpen {...icon} /> : <Mail {...icon} />)}
+          {snoozed ? (
+            item("wake", "Wake", <Alarm {...icon} />, when(wakeLabel(s.snoozedUntil!, now)))
+          ) : (
+            !s.archived && (
+              <button type="button" role="menuitem" aria-haspopup="menu" data-submenu="snooze" onClick={() => setPage("snooze")} className="menu-item">
+                <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">
+                  <Clock {...icon} />
+                </span>
+                <span className="min-w-0 flex-1 truncate">Snooze</span>
+                <NavArrowRight width={13} height={13} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
+              </button>
+            )
+          )}
+          {item("archive", s.archived ? "Unarchive" : "Archive", <Archive {...icon} />)}
+          <div className="mx-2 my-1 h-px bg-line" />
+          {s.cwd && item("path", "Copy folder path", <Folder {...icon} />)}
+          {item("id", "Copy session ID", <Hashtag {...icon} />)}
+          {item("link", "Copy link", <Link {...icon} />)}
+          <div className="mx-2 my-1 h-px bg-line" />
+          <button type="button" role="menuitem" onClick={() => onAction("delete")} className="menu-item text-red-ink">
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Trash {...icon} />
+            </span>
+            <span className="min-w-0 flex-1 truncate">Delete…</span>
+          </button>
+        </>
+      )}
     </div>,
     document.body,
+  );
+}
+
+/** Confirms a delete. The transcript file goes only when ticked, and only for agents that keep one file per session. */
+function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: () => void; onDeleted: (transcript: boolean) => void }) {
+  const [transcript, setTranscript] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const running = isBusy(s) || (s.web?.pending.length ?? 0) > 0;
+  const fileOk = TRANSCRIPT_DELETABLE.includes(s.agent);
+  const inTerminal = Boolean(s.terminal);
+  const agent = AGENT_LABEL[s.agent];
+  const close = useCallback(() => !busy && onClose(), [busy, onClose]);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteSession(s.id, fileOk && transcript && !inTerminal);
+      onDeleted(fileOk && transcript && !inTerminal);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      title="Delete session?"
+      onClose={close}
+      footer={
+        <>
+          <button type="button" onClick={close} disabled={busy} className={secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" data-autofocus={running ? undefined : true} onClick={() => void go()} disabled={running || busy} className={`${primaryBtn} bg-red text-white`}>
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </>
+      }
+    >
+      <p className="text-[13.5px] leading-relaxed text-ink-2">
+        <span className="font-medium text-ink [overflow-wrap:anywhere]">{s.title}</span> leaves the list on every device. This can&apos;t be undone.
+      </p>
+      {fileOk ? (
+        <label className={`mt-3 flex items-start gap-2.5 text-[13.5px] leading-snug ${inTerminal ? "text-ink-3" : "text-ink"}`}>
+          <input
+            type="checkbox"
+            checked={transcript && !inTerminal}
+            disabled={inTerminal || busy}
+            onChange={(e) => setTranscript(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-[var(--color-red)]"
+          />
+          <span>
+            Also delete the transcript file
+            <span className="mt-0.5 block text-[12.5px] text-ink-3">
+              {inTerminal ? "It's open in a terminal, so the file stays." : transcript ? `Removes the history from ${agent}'s own storage too.` : `Otherwise the history stays in ${agent}'s own storage.`}
+            </span>
+          </span>
+        </label>
+      ) : (
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-3">The history stays in {agent}&apos;s own storage.</p>
+      )}
+      {running && (
+        <p className="mt-3 rounded-control bg-orange-tint px-2.5 py-2 text-[13px] text-orange-ink">
+          {(s.web?.pending.length ?? 0) > 0 ? "It's waiting on you. Answer or stop it first." : "It's running. Stop it first."}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 rounded-control bg-red-tint px-2.5 py-2 text-[13px] text-red-ink">
+          {error}
+        </p>
+      )}
+    </Sheet>
   );
 }
 
@@ -603,6 +784,7 @@ const RECENT_STEP = 40;
 
 type SectionKey = "pinned" | "live" | "projects" | "recents";
 const UNDO_MS = 5000;
+const NONE_FINISHED: Finished = {};
 
 export function SessionList({
   sessions,
@@ -615,9 +797,17 @@ export function SessionList({
   onView,
   activeView,
   inbox = 0,
+  finished = NONE_FINISHED,
+  onUnread,
+  onDeleted,
 }: {
   sessions: SessionSummary[] | null;
   activeId: string | null;
+  /** sessions that finished a turn this device hasn't opened since */
+  finished?: Finished;
+  onUnread?: (s: SessionSummary, unread: boolean) => void;
+  /** a session was deleted: close its tab */
+  onDeleted?: (id: string) => void;
   /** kept for callers; open tabs no longer change how a row reads */
   openIds?: { id: string }[];
   onPick: (id: string) => void;
@@ -643,6 +833,8 @@ export function SessionList({
   const [fullProjects, setFullProjects] = useState<Set<string>>(new Set());
   const [allProjects, setAllProjects] = useState(false);
   const [recentCap, setRecentCap] = useState(RECENT_STEP);
+  /* bumped when the next snooze runs out, so the session comes back on time */
+  const [, setWoke] = useState(0);
   const now = Date.now();
 
   useEffect(() => {
@@ -675,15 +867,27 @@ export function SessionList({
   /* archived rows only show under Archived; pinned ones sit in Pinned instead of Active and Recent */
   const shown = useMemo(() => rows.filter((s) => !s.archived), [rows]);
   const archived = useMemo(() => rows.filter((s) => s.archived), [rows]);
-  const pinned = useMemo(() => shown.filter((s) => s.pinned), [shown]);
-  const live = useMemo(() => shown.filter((s) => isLive(s) && !s.pinned), [shown]);
-  const recent = useMemo(() => shown.filter((s) => !isLive(s) && !s.pinned), [shown]);
+  const awake = shown.filter((s) => !isAsleep(s, now));
+  const snoozed = shown.filter((s) => isAsleep(s, now)).sort((a, b) => a.snoozedUntil! - b.snoozedUntil!);
+  const pinned = awake.filter((s) => s.pinned);
+  const live = awake.filter((s) => isLive(s) && !s.pinned);
+  const recent = awake.filter((s) => !isLive(s) && !s.pinned);
+  const nextWake = snoozed[0]?.snoozedUntil;
+  useEffect(() => {
+    if (!nextWake) return;
+    /* setTimeout tops out near 24.8 days; a far wake just checks again then */
+    const t = setTimeout(() => setWoke((n) => n + 1), Math.min(Math.max(0, nextWake - Date.now()) + 50, 2 ** 31 - 1));
+    return () => clearTimeout(t);
+  }, [nextWake]);
   const projects = useMemo(() => groupProjects(shown), [shown]);
 
   const [menu, setMenu] = useState<{ s: SessionSummary; at: MenuAt; where: RowWhere } | null>(null);
   const [renaming, setRenaming] = useState<RowControl["renaming"]>(null);
   const renameDraft = useRef<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showSnoozed, setShowSnoozed] = useState(false);
+  const [deleting, setDeleting] = useState<SessionSummary | null>(null);
+  const closeDelete = useCallback(() => setDeleting(null), []);
   const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -704,9 +908,14 @@ export function SessionList({
     }
     setMenu(null);
   }, []);
-  const onAction = (action: "pin" | "rename" | "archive" | "link") => {
+  const onAction = (action: RowAction) => {
     if (!menu) return;
     const { s, where } = menu;
+    if (action === "delete") {
+      setMenu(null);
+      setDeleting(s);
+      return;
+    }
     if (action === "rename") {
       setMenu(null);
       renameDraft.current = null;
@@ -714,7 +923,13 @@ export function SessionList({
       return;
     }
     closeMenu(true);
-    if (action === "pin") void change(s, { pinned: !s.pinned });
+    if (typeof action === "object") {
+      const was = s.snoozedUntil && s.snoozedUntil > Date.now() ? s.snoozedUntil : null;
+      void change(s, { snoozedUntil: action.snooze });
+      say(`Snoozed until ${wakeLabel(action.snooze, Date.now())}.`, () => void change(s, { snoozedUntil: was }));
+    } else if (action === "wake") void change(s, { snoozedUntil: null });
+    else if (action === "pin") void change(s, { pinned: !s.pinned });
+    else if (action === "read") onUnread?.(s, !finished[s.id]);
     else if (action === "archive" && s.archived) void change(s, { archived: false });
     else if (action === "archive") {
       const wasPinned = Boolean(s.pinned);
@@ -722,6 +937,10 @@ export function SessionList({
       say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
     } else if (action === "link") {
       void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied." : "Couldn't copy the link."));
+    } else if (action === "path") {
+      void copyText(s.cwd).then((ok) => say(ok ? "Folder path copied." : "Couldn't copy the folder path."));
+    } else if (action === "id") {
+      void copyText(nativeId(s.id)).then((ok) => say(ok ? "Session ID copied." : "Couldn't copy the session ID."));
     }
   };
   const ctl: RowControl = {
@@ -737,6 +956,7 @@ export function SessionList({
       const t = title.replace(/\s+/g, " ").trim();
       if (t !== s.title) void change(s, { title: t || null });
     },
+    unread: (id) => Boolean(finished[id]),
   };
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -991,12 +1211,20 @@ export function SessionList({
                     Show more
                   </button>
                 )}
-                {!recent.length && (!shown.length || live.length > 0) && (
+                {!recent.length && (!shown.length || live.length > 0 || snoozed.length > 0) && (
                   <p className="px-2.5 py-1.5 text-[13px] text-ink-3">
-                    {shown.length ? "All sessions are active." : filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet."}
+                    {!shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : snoozed.length ? "The rest are snoozed." : "All sessions are active."}
                   </p>
                 )}
               </Section>
+
+              {snoozed.length > 0 && (
+                <Section label={`Snoozed (${snoozed.length})`} open={showSnoozed} onToggle={() => setShowSnoozed((v) => !v)}>
+                  {snoozed.map((s) => (
+                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="snoozed" trail={wakeLabel(s.snoozedUntil!, now)} />
+                  ))}
+                </Section>
+              )}
 
               {archived.length > 0 && (
                 <Section label={`Archived (${archived.length})`} open={showArchived} onToggle={() => setShowArchived((v) => !v)}>
@@ -1010,7 +1238,20 @@ export function SessionList({
         )}
       </div>
 
-      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} onClose={closeMenu} onAction={onAction} />}
+      {deleting && (
+        <DeleteDialog
+          key={deleting.id}
+          s={sessions?.find((x) => x.id === deleting.id) ?? deleting}
+          onClose={closeDelete}
+          onDeleted={(transcript) => {
+            setDeleting(null);
+            if (finished[deleting.id]) onUnread?.(deleting, false);
+            onDeleted?.(deleting.id);
+            say(transcript ? "Session and transcript deleted." : "Session deleted.");
+          }}
+        />
+      )}
+      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} unread={Boolean(finished[menu.s.id])} onClose={closeMenu} onAction={onAction} />}
 
       <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
         {toast && (
@@ -1086,7 +1327,8 @@ export function SessionRail({
   inbox?: number;
 }) {
   const mod = useModKey();
-  const live = (sessions ?? []).filter((s) => isLive(s) && !s.archived);
+  const now = Date.now();
+  const live = (sessions ?? []).filter((s) => isLive(s) && !s.archived && !isAsleep(s, now));
   const shown = live.slice(0, RAIL_LIVE_CAP);
   return (
     <nav aria-label="Sessions" className="flex h-full w-full flex-col items-center">

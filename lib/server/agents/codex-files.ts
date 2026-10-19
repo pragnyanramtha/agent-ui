@@ -10,7 +10,7 @@ import { parseLines, safeParse, userTitle, type ParseCtx } from "./codex-parse";
  * tails forward from the last complete line. */
 
 export const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-const roots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
+export const rolloutRoots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
 
 const ROLLOUT = /^rollout-.+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 export const idOfRollout = (file: string) => ROLLOUT.exec(path.basename(file))?.[1] ?? null;
@@ -39,7 +39,7 @@ export async function allRollouts(): Promise<string[]> {
       else if (it.isFile() && ROLLOUT.test(it.name)) out.push(p);
     }
   };
-  for (const root of roots()) await walk(root, 0);
+  for (const root of rolloutRoots()) await walk(root, 0);
   const files = cache().files;
   for (const f of out) files.set(idOfRollout(f)!, f);
   return out;

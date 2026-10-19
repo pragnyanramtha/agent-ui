@@ -24,6 +24,7 @@ import { setAttention, setBaseTitle } from "@/lib/client/attention";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
 import { hasMod, isMac } from "@/lib/client/shortcuts";
+import type { SessionSummary } from "@/lib/types";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
@@ -102,7 +103,8 @@ export function App() {
   }, [sessions, byId, syncTitles]);
   const infos = useMemo(() => openTabs.map((t) => describeTab(t, byId.get(t.id), sessions !== null)), [openTabs, byId, sessions]);
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
-  const { finished, dismiss } = useFinished(sessions, sessionId);
+  const { finished, dismiss, unread } = useFinished(sessions, sessionId);
+  const setUnread = useCallback((s: SessionSummary, on: boolean) => (on ? unread(s.id, s.mtime || Date.now()) : dismiss(s.id)), [unread, dismiss]);
   const inbox = inboxCount(sessions, finished);
 
   useEffect(() => {
@@ -292,7 +294,7 @@ export function App() {
   const dismissSheet = useCallback(() => setSheet(false), []);
   const closeDrawer = useCallback(() => setDrawer(false), []);
   const list = (onCollapse: () => void) => (
-    <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} />
+    <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} finished={finished} onUnread={setUnread} onDeleted={close} />
   );
   const tabsButton = (
     <TabsButton count={infos.length} attention={infos.some((t) => t.needsYou && t.id !== active)} onClick={() => setSheet(true)} />

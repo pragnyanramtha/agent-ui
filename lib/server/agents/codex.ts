@@ -7,7 +7,7 @@ import { rekeyTurn, startTurn, stopTurn, turnState } from "./cli-run";
 import { profileBin } from "../profiles";
 import { responsesItems, type Source } from "../handoff-shape";
 import { appServerTurn } from "./codex-app";
-import { allRollouts, fileMeta, findRollout, idOfRollout, readRecords, tailRollout, threadNames, type FileMeta } from "./codex-files";
+import { allRollouts, fileMeta, findRollout, idOfRollout, readRecords, rolloutRoots, tailRollout, threadNames, type FileMeta } from "./codex-files";
 import { errorText, parseLines, safeParse } from "./codex-parse";
 import type { AgentAdapter, AgentSession, HistoryPage } from "./types";
 
@@ -322,6 +322,7 @@ const adapter: AgentAdapter = {
   send,
   runState: (id) => turnState(key(id)),
   stop: async (id) => stopTurn(key(id)),
+  transcriptFiles: async (id) => ({ files: (await allRollouts()).filter((f) => idOfRollout(f) === id), roots: rolloutRoots() }),
 };
 
 export default adapter;

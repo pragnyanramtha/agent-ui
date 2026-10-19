@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextFinished } from "@/lib/client/useFinished";
+import { markRead, markUnread, nextFinished, parseFinished } from "@/lib/client/useFinished";
 import { inboxCount, inboxGroups } from "@/components/claude/InboxScreen";
 import { runFailed } from "@/lib/status";
 import type { RunState, SessionSummary } from "@/lib/types";
@@ -23,8 +23,31 @@ describe("finished turns for the inbox", () => {
     expect(f).toEqual({});
     f = nextFinished(f, busy, [row("a", run("idle")), row("b", run("idle"))], "b", 2);
     expect(f).toEqual({ a: 2 });
+    /* opening a clears it; the poll with a open leaves it cleared */
+    f = markRead(f, "a");
+    expect(f).toEqual({});
     f = nextFinished(f, busy, [row("a", run("idle")), row("b", run("idle"))], "a", 3);
     expect(f).toEqual({});
+  });
+
+  it("keeps a session marked unread while it's open", () => {
+    const busy = new Map<string, boolean>();
+    let f = markUnread({}, "a", 5);
+    expect(f).toEqual({ a: 5 });
+    f = nextFinished(f, busy, [row("a", run("idle"))], "a", 6);
+    expect(f).toEqual({ a: 5 });
+    /* an earlier finish keeps its time */
+    expect(markUnread(f, "a", 9)).toBe(f);
+    expect(markRead(f, "b")).toBe(f);
+    expect(markRead(f, null)).toEqual({});
+    expect(markRead({}, null)).toEqual({});
+  });
+
+  it("reads only well-formed stored values", () => {
+    expect(parseFinished(JSON.stringify({ a: 3, b: "x", c: -1, d: null }))).toEqual({ a: 3 });
+    expect(parseFinished("nope")).toEqual({});
+    expect(parseFinished("[1]")).toEqual({});
+    expect(parseFinished(null)).toEqual({});
   });
 
   it("doesn't list sessions it never saw working, or ones now waiting on an approval", () => {
