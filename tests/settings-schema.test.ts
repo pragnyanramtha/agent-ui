@@ -6,6 +6,7 @@ import {
   SETTING_KEYS,
   SETTINGS,
   SYNCED_CACHE_KEY,
+  THEME_CACHE_KEY,
   decodeStored,
   diffSettings,
   domState,
@@ -21,6 +22,7 @@ import {
   settingDef,
   settingsIn,
   storageKey,
+  themeCache,
   validatePatch,
   type SettingDef,
 } from "@/lib/settings-schema";
@@ -112,7 +114,8 @@ describe("validatePatch", () => {
   });
 
   it("clamps numbers and turns null into a reset when allowed", () => {
-    expect(validatePatch({ accentHue: 500, accent: null }, { scope: "synced", allowNull: true })).toEqual({ ok: true, values: { accentHue: 360 }, reset: ["accent"] });
+    expect(validatePatch({ uiScale: 500, accent: null }, { allowNull: true })).toEqual({ ok: true, values: { uiScale: 120 }, reset: ["accent"] });
+    expect(validatePatch({ accentColor: "#ABC" }, { scope: "synced" })).toEqual({ ok: true, values: { accentColor: "#aabbcc" }, reset: [] });
     expect(validatePatch({ accent: null }).ok).toBe(false);
   });
 });
@@ -170,7 +173,7 @@ describe("stored values from earlier versions", () => {
 
 describe("export and import", () => {
   it("round-trips every setting", () => {
-    const values = { ...DEFAULTS, palette: "nord", accent: "custom", accentHue: 140, uiScale: 120, sendShortcut: "enter-always", effortCodex: "high", composerMaxLines: 12, theme: "light" } as const;
+    const values = { ...DEFAULTS, palette: "custom", customTheme: '{"base":"nord","accent":"#ff7a59"}', accent: "custom", accentColor: "#123456", uiScale: 120, sendShortcut: "enter-always", effortCodex: "high", composerMaxLines: 12, theme: "light" } as const;
     const parsed = parseSettingsFile(serializeSettings(values, new Date(0)));
     expect(parsed).toEqual({ ok: true, values, skipped: [] });
   });
@@ -206,8 +209,8 @@ describe("showIf", () => {
     expect(isShown(limit, { ...DEFAULTS, longPaste: "text" })).toBe(false);
     expect(isShown(limit, { ...DEFAULTS, longPaste: "confirm" })).toBe(true);
     expect(isShown(limit, { ...DEFAULTS, longPaste: "attach" })).toBe(true);
-    expect(isShown(settingDef("accentHue"), { ...DEFAULTS, accent: "custom" })).toBe(true);
-    expect(isShown(settingDef("accentHue"), DEFAULTS)).toBe(false);
+    expect(isShown(settingDef("accentColor"), { ...DEFAULTS, accent: "custom" })).toBe(true);
+    expect(isShown(settingDef("accentColor"), DEFAULTS)).toBe(false);
     expect(isShown(settingDef("palette"), DEFAULTS)).toBe(true);
   });
 });
@@ -227,19 +230,54 @@ describe("search", () => {
 describe("appearance on <html>", () => {
   it("sets nothing for defaults", () => {
     const s = domState(DEFAULTS, false);
-    expect(s).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#151619" });
+    expect(s).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#0a0a0a" });
   });
 
   it("maps values to attributes and variables", () => {
-    const s = domState({ ...DEFAULTS, theme: "system", palette: "nord", accent: "custom", accentHue: 140, uiScale: 110, codeSize: 14, increaseContrast: true }, false);
+    const s = domState({ ...DEFAULTS, theme: "system", palette: "nord", accent: "violet", uiScale: 110, codeSize: 14, increaseContrast: true }, false);
     expect(s.dark).toBe(false);
     expect(s.themeColor).toBe("#eceff4");
-    expect(s.attrs).toEqual({ "data-palette": "nord", "data-accent": "custom", "data-ui-scale": "110", "data-code-size": "14", "data-contrast": "on" });
-    expect(s.vars).toEqual({ "--ah": "140", "--ui-scale": "1.1", "--code-size": "14px" });
+    expect(s.attrs).toEqual({ "data-palette": "nord", "data-accent": "violet", "data-ui-scale": "110", "data-code-size": "14", "data-contrast": "on" });
+    expect(s.vars).toEqual({ "--ui-scale": "1.1", "--code-size": "14px" });
   });
 
-  it("keeps the custom hue off unless the accent is custom", () => {
-    expect(domState({ ...DEFAULTS, accent: "violet", accentHue: 10 }, true).vars).toEqual({});
+  it("keeps the custom color off unless the accent is custom", () => {
+    expect(domState({ ...DEFAULTS, accent: "violet", accentColor: "#ff0000" }, true).vars).toEqual({});
+    const s = domState({ ...DEFAULTS, accent: "custom", accentColor: "#ffd60a" }, true);
+    expect(s.attrs["data-accent"]).toBe("custom");
+    /* a light yellow keeps its exact fill and gets a dark label */
+    expect(s.vars["--primary"]).toBe("#ffd60a");
+    expect(s.vars["--primary-foreground"]).toBe("#0a0a0a");
+  });
+
+  it("uses the light-mode palette only while light", () => {
+    const values = { ...DEFAULTS, theme: "system", palette: "nord", lightPalette: "github" } as const;
+    expect(domState(values, true).attrs["data-palette"]).toBe("nord");
+    expect(domState(values, false).attrs["data-palette"]).toBe("github");
+    expect(domState(values, false).themeColor).toBe("#ffffff");
+    expect(domState({ ...values, lightPalette: "default" }, false).attrs["data-palette"]).toBeUndefined();
+  });
+
+  it("puts a custom theme's base palette and tokens on <html>", () => {
+    const theme = JSON.stringify({ base: "graphite", accent: "#ff7a59", dark: { page: "#101010" }, light: { ink: "#111111" } });
+    const dark = domState({ ...DEFAULTS, palette: "custom", customTheme: theme }, true);
+    expect(dark.attrs["data-palette"]).toBe("graphite");
+    expect(dark.vars["--page"]).toBe("#101010");
+    expect(dark.vars["--primary"]).toBe("#ff7a59");
+    expect(dark.themeColor).toBe("#101010");
+    expect(domState({ ...DEFAULTS, theme: "light", palette: "custom", customTheme: theme }, false).vars["--ink"]).toBe("#111111");
+    /* a named accent wins over the theme's own */
+    const named = domState({ ...DEFAULTS, palette: "custom", customTheme: theme, accent: "teal" }, true);
+    expect(named.vars["--primary"]).toBeUndefined();
+    expect(named.vars["--page"]).toBe("#101010");
+    /* a broken theme falls back to the default palette instead of half applying */
+    expect(domState({ ...DEFAULTS, palette: "custom", customTheme: "{" }, true)).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#0a0a0a" });
+  });
+
+  it("refuses an invalid custom theme from the server or an import", () => {
+    expect(validatePatch({ customTheme: '{"page":"red-ish"}' }, { scope: "synced" }).ok).toBe(false);
+    expect(validatePatch({ customTheme: '{"page":"#000"}' }, { scope: "synced" }).ok).toBe(true);
+    expect(validatePatch({ customTheme: "" }, { scope: "synced" }).ok).toBe(true);
   });
 });
 
@@ -261,6 +299,7 @@ describe("pre-paint script", () => {
         documentElement: {
           classList: { toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)) },
           setAttribute: (k: string, v: string) => (attrs[k] = v),
+          removeAttribute: (k: string) => delete attrs[k],
           style: { setProperty: (k: string, v: string) => (vars[k] = v) },
         },
         querySelector: () => ({ setAttribute: (_: string, v: string) => (meta.content = v) }),
@@ -271,7 +310,7 @@ describe("pre-paint script", () => {
   }
 
   it("applies the defaults when nothing is stored", () => {
-    expect(run({})).toEqual({ attrs: {}, vars: {}, dark: true, theme: "#151619" });
+    expect(run({})).toEqual({ attrs: {}, vars: {}, dark: true, theme: "#0a0a0a" });
   });
 
   it("reads the old theme key, device keys and the synced cache", () => {
@@ -279,12 +318,12 @@ describe("pre-paint script", () => {
       "bui-theme": "system",
       "cui:set:uiScale": "120",
       "cui:set:density": '"compact"',
-      [SYNCED_CACHE_KEY]: JSON.stringify({ palette: "github", accent: "custom", accentHue: 30, showTimestamps: true }),
+      [SYNCED_CACHE_KEY]: JSON.stringify({ palette: "github", accent: "pink", showTimestamps: true }),
     });
     expect(out.dark).toBe(false);
     expect(out.theme).toBe("#ffffff");
-    expect(out.attrs).toEqual({ "data-palette": "github", "data-accent": "custom", "data-ui-scale": "120", "data-density": "compact", "data-timestamps": "on" });
-    expect(out.vars).toEqual({ "--ah": "30", "--ui-scale": "1.2" });
+    expect(out.attrs).toEqual({ "data-palette": "github", "data-accent": "pink", "data-ui-scale": "120", "data-density": "compact", "data-timestamps": "on" });
+    expect(out.vars).toEqual({ "--ui-scale": "1.2" });
   });
 
   it("matches domState for the same values", () => {
@@ -295,8 +334,22 @@ describe("pre-paint script", () => {
     expect(run(storage)).toEqual({ attrs: s.attrs, vars: s.vars, dark: s.dark, theme: s.themeColor });
   });
 
+  it("applies custom themes, accents and the light-mode palette from the theme cache", () => {
+    const values = { ...DEFAULTS, theme: "light", palette: "custom", lightPalette: "custom", customTheme: '{"base":"nord","light":{"page":"#fafafa"}}', accent: "custom", accentColor: "#0f766e" } as const;
+    const storage: Record<string, string> = {
+      "bui-theme": "light",
+      [SYNCED_CACHE_KEY]: JSON.stringify({ palette: "custom", lightPalette: "custom", customTheme: values.customTheme, accent: "custom", accentColor: "#0f766e" }),
+      [THEME_CACHE_KEY]: JSON.stringify(themeCache(values)),
+    };
+    const s = domState(values, false);
+    expect(run(storage)).toEqual({ attrs: s.attrs, vars: s.vars, dark: false, theme: "#fafafa" });
+    expect(s.attrs["data-palette"]).toBe("nord");
+    /* a cache entry naming an unknown palette doesn't land on <html> */
+    expect(run({ [THEME_CACHE_KEY]: '{"d":["evil","#000",{"--page":"#000","bad key":"x"}]}' })).toEqual({ attrs: {}, vars: { "--page": "#000" }, dark: true, theme: "#000" });
+  });
+
   it("ignores garbage and survives storage that throws", () => {
-    expect(run({ "bui-theme": "light", "cui:set:uiScale": "500", "cui:set:codeSize": "x", [SYNCED_CACHE_KEY]: '{"palette":"evil\\"><script>"}' })).toEqual({ attrs: {}, vars: {}, dark: false, theme: "#fcfcfd" });
+    expect(run({ "bui-theme": "light", "cui:set:uiScale": "500", "cui:set:codeSize": "x", [SYNCED_CACHE_KEY]: '{"palette":"evil\\"><script>"}' })).toEqual({ attrs: {}, vars: {}, dark: false, theme: "#fdfdfd" });
     expect(run({ [SYNCED_CACHE_KEY]: "{broken" }).attrs).toEqual({});
     expect(run({}, false, true).dark).toBe(true);
   });

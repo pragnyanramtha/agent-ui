@@ -25,27 +25,26 @@
  * ────────────────────────────────────────────────────────── */
 
 :root {
-  /* surfaces: cool, blue-tinted neutrals */
-  --page: oklch(0.993 0.004 265);
-  --canvas: oklch(0.965 0.004 265);
+  /* surfaces: neutral zinc, no blue tint */
+  --page: oklch(0.995 0 0);
+  --canvas: oklch(0.967 0.001 286);
   --surface: oklch(1 0 0);
-  --inset: oklch(0.979 0.004 265);
-  --hover: oklch(0.963 0.004 265);
-  --hover-2: oklch(0.935 0.004 265);
+  --inset: oklch(0.98 0.001 286);
+  --hover: oklch(0.967 0.001 286);
+  --hover-2: oklch(0.94 0.002 286);
 
   /* ink ramp */
-  --ink: oklch(0.24 0.006 265);
-  --ink-2: oklch(0.48 0.008 265);
-  /* ink-3 sits near 4:1 on page/surface so tertiary text stays legible */
+  --ink: oklch(0.274 0.006 286);
+  --ink-2: oklch(0.442 0.017 286);
   /* 4.5:1 on the page for the small meta text it carries */
-  --ink-3: oklch(0.54 0.008 265);
+  --ink-3: oklch(0.552 0.016 286);
 
   /* borders: solid and crisp, not alpha */
-  --line: oklch(0.93 0.004 265);
-  --line-strong: oklch(0.885 0.004 265);
-  --line-soft: oklch(0.955 0.004 265);
+  --line: oklch(0.92 0.004 286);
+  --line-strong: oklch(0.871 0.006 286);
+  --line-soft: oklch(0.955 0.002 286);
   --grid-line: color-mix(in srgb, var(--line) 78%, transparent);
-  --field: oklch(0.965 0.004 265);
+  --field: oklch(0.967 0.001 286);
   --stripe: oklch(0.405 0 0 / 0.075);
   --stripe-bg: oklch(0.97 0 0);
 
@@ -56,6 +55,12 @@
   /* filled accent buttons: deep enough for white labels at AA in both themes */
   --accent-solid: oklch(0.57 0.2 256);
   --accent-solid-hover: oklch(0.52 0.19 256);
+  /* primary buttons (send, confirm) and the label on them; a custom accent swaps all three */
+  --primary: var(--accent-solid);
+  --primary-hover: var(--accent-solid-hover);
+  --primary-foreground: oklch(1 0 0);
+  /* focus rings: the brighter accent, so they read on any page */
+  --ring: var(--accent);
 
   /* semantic */
   --green: oklch(0.603 0.155 150.883);
@@ -86,23 +91,24 @@
 }
 
 .dark {
-  --page: oklch(0.198 0.004 265);
-  --canvas: oklch(0.185 0.004 265);
-  --surface: oklch(0.225 0.004 265);
-  --inset: oklch(0.21 0.004 265);
-  --hover: oklch(0.25 0.004 265);
-  --hover-2: oklch(0.28 0.004 265);
+  /* near-black neutrals; hovers and hairlines are white at low alpha so they sit on any surface */
+  --page: oklch(0.145 0 0);
+  --canvas: oklch(0.13 0 0);
+  --surface: oklch(0.18 0 0);
+  --inset: oklch(0.165 0 0);
+  --hover: oklch(1 0 0 / 0.045);
+  --hover-2: oklch(1 0 0 / 0.07);
 
-  --ink: oklch(0.955 0.004 265);
-  --ink-2: oklch(0.75 0.004 265);
-  --ink-3: oklch(0.63 0.004 265);
+  --ink: oklch(0.96 0 0);
+  --ink-2: oklch(0.72 0 0);
+  --ink-3: oklch(0.6 0 0);
 
-  --line: oklch(0.275 0.004 265);
-  --line-strong: oklch(0.33 0.004 265);
-  --line-soft: oklch(0.245 0.004 265);
-  --field: oklch(0.235 0.004 265);
+  --line: oklch(1 0 0 / 0.07);
+  --line-strong: oklch(1 0 0 / 0.11);
+  --line-soft: oklch(1 0 0 / 0.045);
+  --field: oklch(0.19 0 0);
   --stripe: oklch(1 0 0 / 0.055);
-  --stripe-bg: oklch(0.226 0.004 264.485);
+  --stripe-bg: oklch(0.17 0 0);
 
   --accent: oklch(0.7 0.15 255);
   --accent-ink: oklch(0.788 0.113 248.33);
@@ -117,10 +123,10 @@
   --orange-ink: var(--orange);
   --red-ink: var(--red);
 
-  --tooltip-bg: oklch(0.182 0.004 264.459);
-  --tooltip-fg: oklch(0.964 0.002 247.839);
-  --tooltip-muted: oklch(0.731 0.008 260.731);
-  --tooltip-border: oklch(0.308 0.006 258.354);
+  --tooltip-bg: oklch(0.2 0 0);
+  --tooltip-fg: oklch(0.96 0 0);
+  --tooltip-muted: oklch(0.72 0 0);
+  --tooltip-border: oklch(1 0 0 / 0.1);
 
   --shadow-hairline: 0 0 0 1px var(--line);
   /* Elevation rings go to a subtle *light* hairline in dark mode: the ring
@@ -157,6 +163,10 @@
   --color-accent-tint: var(--accent-tint);
   --color-accent-solid: var(--accent-solid);
   --color-accent-solid-hover: var(--accent-solid-hover);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
   --color-green: var(--green);
   --color-green-tint: var(--green-tint);
   --color-orange: var(--orange);
@@ -190,6 +200,17 @@
   --ease-link: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* type scale: five steps for interface text (text-2xs ... text-md). Prose sizes itself in em; phone inputs stay at
+ * 16px so iOS doesn't zoom. No line heights here, so a step only changes the size. */
+@theme {
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 15px;
+}
+
 /* ── base ─────────────────────────────────────────────── */
 
 html {
@@ -201,8 +222,7 @@ html {
 body {
   background-color: var(--sidebar);
   color: var(--ink);
-  font-size: 14px;
-  letter-spacing: -0.006em;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -257,7 +277,7 @@ a {
  * rounded-* utility and square off pills on focus. Outlines follow the
  * element's own radius. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -552,19 +572,20 @@ body {
  * Sized for reading on a phone first; tightened on wider screens. Streamdown's
  * own shadcn styling is replaced element by element, so everything lives here. */
 .prose-claude {
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--ink);
+  font-size: var(--text-md);
+  line-height: 1.625;
+  /* body text a step under full ink, so long answers don't glare; headings, bold and code stay at --ink */
+  color: color-mix(in oklch, var(--ink) 88%, var(--page));
   overflow-wrap: anywhere;
   white-space: normal;
 }
 @media (min-width: 640px) {
   .prose-claude {
-    font-size: 14px;
+    font-size: var(--text-base);
   }
 }
 .prose-claude.is-compact {
-  font-size: 13px;
+  font-size: var(--text-sm);
   line-height: 1.6;
 }
 .prose-claude > * + * {
@@ -634,15 +655,17 @@ body {
 .prose-claude a:hover { text-decoration-color: currentColor; }
 /* relative links (repo paths) can't open in the browser: shown as text, path on hover */
 .prose-claude .md-deadlink { color: var(--ink); font-weight: 500; }
-.prose-claude strong { font-weight: 600; }
+.prose-claude strong { font-weight: 600; color: var(--ink); }
 .prose-claude del { color: var(--ink-3); }
 .prose-claude code.md-code {
-  border-radius: 5px;
+  margin-inline: 0.05em;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
   background: var(--inset);
-  box-shadow: var(--shadow-hairline);
-  padding: 0.08em 0.35em;
+  padding: 0.1em 0.3em;
+  color: var(--ink);
   font-family: var(--font-mono);
-  font-size: 0.86em;
+  font-size: 0.85em;
   /* chips wrap like text; each line fragment keeps its own rounded edge */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -722,7 +745,7 @@ body {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 12.5px;
+  font-size: var(--text-sm);
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   /* `anywhere` (inherited) shrinks min-content widths and squeezes cells to one
@@ -731,9 +754,9 @@ body {
   word-break: normal;
 }
 @media (min-width: 640px) {
-  .prose-claude .md-table table { font-size: 13px; }
+  .prose-claude .md-table table { font-size: var(--text-sm); }
 }
-.prose-claude.is-compact .md-table table { font-size: 12px; }
+.prose-claude.is-compact .md-table table { font-size: var(--text-xs); }
 .prose-claude .md-table :is(th, td) {
   padding: 7px 12px;
   text-align: left;
@@ -828,9 +851,9 @@ label {
  * ══════════════════════════════════════════════════════════ */
 
 :root {
-  --sidebar: oklch(0.975 0.004 265);
-  --sidebar-hover: oklch(0.945 0.004 265);
-  --sidebar-active: oklch(0.925 0.004 265);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-hover: oklch(0.955 0.002 286);
+  --sidebar-active: oklch(1 0 0);
   --agent-codex: oklch(0.6 0.14 160);
   --agent-opencode: oklch(0.6 0.17 254);
   --agent-cursor: oklch(0.62 0.11 205);
@@ -840,9 +863,9 @@ label {
   --agent-antigravity: oklch(0.6 0.13 180);
 }
 .dark {
-  --sidebar: oklch(0.172 0.004 265);
-  --sidebar-hover: oklch(0.228 0.004 265);
-  --sidebar-active: oklch(0.258 0.004 265);
+  --sidebar: oklch(0.115 0 0);
+  --sidebar-hover: oklch(1 0 0 / 0.05);
+  --sidebar-active: oklch(1 0 0 / 0.09);
   --agent-codex: oklch(0.74 0.14 160);
   --agent-opencode: oklch(0.72 0.14 254);
   --agent-cursor: oklch(0.76 0.1 205);
@@ -874,11 +897,11 @@ label {
     height: var(--row-h, 34px);
     flex-shrink: 0;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     padding-inline: 10px;
     border-radius: var(--radius-control);
     color: var(--ink);
-    font-size: 14px;
+    font-size: var(--text-sm);
     line-height: 20px;
     text-align: left;
     transition: background-color 120ms ease;
@@ -889,6 +912,10 @@ label {
   .side-row[aria-current="page"] {
     background: var(--sidebar-active);
   }
+  /* the default light sidebar marks the current row with a white card, which needs an edge */
+  :root:not(.dark):not([data-palette]) .side-row[aria-current="page"] {
+    box-shadow: 0 0 0 1px var(--line);
+  }
   .side-row:focus-visible {
     outline-offset: -2px;
   }
@@ -898,12 +925,12 @@ label {
     }
   }
 
-  /* quiet square icon button (sidebar, rail, top bars) */
+  /* quiet square icon button (sidebar, rail, top bars): 28px with 16px icons under a mouse, 44px on touch */
   .icon-btn {
     position: relative;
     display: inline-flex;
-    width: 36px;
-    height: 36px;
+    width: 28px;
+    height: 28px;
     flex-shrink: 0;
     align-items: center;
     justify-content: center;
@@ -927,6 +954,13 @@ label {
   .on-page .icon-btn[aria-expanded="true"] {
     background: var(--hover);
   }
+  @media (pointer: fine) {
+    .icon-btn > svg {
+      width: 16px;
+      height: 16px;
+      stroke-width: 1.6;
+    }
+  }
   @media (pointer: coarse) {
     .icon-btn {
       width: 44px;
@@ -934,18 +968,39 @@ label {
     }
   }
 
+  /* a key cap for shortcut hints (palette rows, the shortcuts sheet, tooltips) */
+  .kbd {
+    display: inline-flex;
+    height: 20px;
+    min-width: 20px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    border-radius: calc(4px * var(--radius-scale, 1));
+    background: var(--field);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--ink-3);
+    font: 500 var(--text-2xs) / 1 var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
   .menu-item {
     position: relative;
     display: flex;
     width: 100%;
-    min-height: 34px;
+    min-height: 30px;
     align-items: center;
     gap: 8px;
-    padding: 6px 8px;
-    border-radius: var(--radius-control);
+    padding: 4px 8px;
+    border-radius: calc(6px * var(--radius-scale, 1));
     color: var(--ink);
-    font-size: 13.5px;
+    font-size: var(--text-sm);
     text-align: left;
+  }
+  .menu-item:not([class*="text-red"]) > svg,
+  .menu-item:not([class*="text-red"]) > span:first-child:has(> svg) {
+    color: var(--ink-3);
   }
   .menu-item:hover,
   .menu-item:focus-visible {
@@ -953,7 +1008,7 @@ label {
     outline: none;
   }
   .menu-item:focus-visible {
-    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--accent) 60%, transparent);
+    box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--ring) 60%, transparent);
   }
   .dark .menu-item:hover,
   .dark .menu-item:focus-visible {
@@ -976,10 +1031,10 @@ label {
     padding: 4px 8px;
     border-radius: var(--radius-chip);
     background: var(--tooltip-bg);
-    box-shadow: 0 0 0 1px var(--tooltip-border), var(--shadow-md);
+    box-shadow: 0 0 0 1px var(--tooltip-border), 0 4px 12px -4px oklch(0 0 0 / 0.35);
     color: var(--tooltip-fg);
     content: attr(data-tip);
-    font-size: 12px;
+    font-size: var(--text-xs);
     font-weight: 500;
     letter-spacing: 0;
     line-height: 16px;
@@ -1024,6 +1079,30 @@ label {
   [data-tip-pos="bottom-end"]:hover::after,
   [data-tip-pos="bottom-end"]:focus-visible::after {
     transform: none;
+  }
+}
+
+/* Menus and popovers: frosted glass over whatever they open on. Every role="menu" popover gets it (the composer's
+ * menus through their shell), so components don't each restyle; .menu-glass is there for anything else. */
+:root {
+  --glass-opacity: 82%;
+  --glass-blur: 16px;
+}
+.menu-glass,
+.composer-menu,
+[role="menu"]:not(.composer-menu [role="menu"]) {
+  background: color-mix(in oklch, var(--surface) var(--glass-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--ink) 10%, transparent),
+    0 16px 40px -18px oklch(0 0 0 / 0.55);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .menu-glass,
+  .composer-menu,
+  [role="menu"]:not(.composer-menu [role="menu"]) {
+    background: var(--surface);
   }
 }
 
@@ -1100,7 +1179,7 @@ label {
   box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
 }
 .dark .composer-pill:focus-within {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, oklch(1 0 0 / 0.08));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(1 0 0 / 0.1));
 }
 .dark .composer-pill[data-invalid] {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--red) 55%, transparent);
@@ -1226,15 +1305,14 @@ label {
 
 /* text fields: an accent edge and a soft halo on focus */
 .field-ring:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 20%, transparent);
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent);
 }
 
-/* desktop: the main area is an inset panel on the sidebar's surface, like an editor window */
+/* desktop: the main area runs edge to edge, split from the sidebar by one hairline */
 @media (min-width: 1024px) {
   .shell-main {
-    border: 1px solid var(--line);
-    border-radius: calc(12px * var(--radius-scale, 1));
+    border-left: 1px solid var(--line);
   }
 }
 
@@ -1340,6 +1418,46 @@ html[data-code-font="system"] body {
 }
 
 /* ── palettes: the same tokens as :root / .dark, per palette and mode ── */
+
+/* the original blue-gray look, kept for anyone who liked it */
+[data-palette="slate"] {
+  --page: #fbfdff;
+  --canvas: #f2f3f6;
+  --surface: #ffffff;
+  --inset: #f7f8fb;
+  --hover: #f1f3f5;
+  --hover-2: #e8e9ec;
+  --ink: #1e1f22;
+  --ink-2: #5b5e62;
+  --ink-3: #6c6f73;
+  --line: #e6e8eb;
+  --line-strong: #d8d9dc;
+  --line-soft: #eff0f3;
+  --field: #f2f3f6;
+  --stripe-bg: #f5f5f5;
+  --sidebar: #f5f7fa;
+  --sidebar-hover: #ebedef;
+  --sidebar-active: #e5e6e9;
+}
+.dark[data-palette="slate"] {
+  --page: #151617;
+  --canvas: #121314;
+  --surface: #1b1c1e;
+  --inset: #17181a;
+  --hover: #212224;
+  --hover-2: #28292b;
+  --ink: #eff0f3;
+  --ink-2: #adaeb0;
+  --ink-3: #88898c;
+  --line: #27282a;
+  --line-strong: #343537;
+  --line-soft: #1f2022;
+  --field: #1d1e20;
+  --stripe-bg: #1b1c1e;
+  --sidebar: #0f1012;
+  --sidebar-hover: #1b1c1e;
+  --sidebar-active: #232325;
+}
 
 [data-palette="graphite"] {
   --page: #fcfcfc;
@@ -1802,6 +1920,31 @@ html[data-code-font="system"] body {
   --accent-tint: oklch(1 0 0 / 0.1);
   --accent-solid: oklch(0.48 0 0);
   --accent-solid-hover: oklch(0.54 0 0);
+}
+
+/* ── translucent sidebar: a soft wash of the accent behind a see-through sidebar; the phone drawer blurs the page ── */
+
+html[data-translucent] body > main:has(> .shell-main) {
+  background:
+    radial-gradient(90% 55% at 0% 0%, color-mix(in oklch, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(70% 45% at 0% 100%, color-mix(in oklch, var(--accent) 7%, transparent), transparent 70%),
+    var(--sidebar);
+}
+html[data-translucent] .shell-sidebar {
+  background: color-mix(in oklch, var(--sidebar) 62%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  backdrop-filter: blur(28px) saturate(1.5);
+}
+html[data-translucent] [data-drawer] {
+  background: color-mix(in oklch, var(--sidebar) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+}
+@media (prefers-reduced-transparency: reduce) {
+  html[data-translucent] .shell-sidebar,
+  html[data-translucent] [data-drawer] {
+    background: var(--sidebar);
+  }
 }
 
 /* ── increase contrast: secondary text and hairlines move toward ink, in any palette ── */

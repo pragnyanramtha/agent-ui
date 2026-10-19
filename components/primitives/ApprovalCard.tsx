@@ -270,7 +270,7 @@ export default function ApprovalCard({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="rounded-control bg-surface px-3 py-2 text-[12.5px] font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover">
+      <button type="button" onClick={() => setOpen(true)} className="rounded-control bg-surface px-3 py-2 text-sm font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover">
         Open approval
       </button>
     );
@@ -280,11 +280,11 @@ export default function ApprovalCard({
     return (
       <div className="flex w-full max-w-80 items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
         {sent === "sending" ? (
-          <span role="status" className="inline-flex items-center rounded-full bg-hover px-2.5 py-1 text-[12.5px] font-medium text-ink-2">
+          <span role="status" className="inline-flex items-center rounded-full bg-hover px-2.5 py-1 text-sm font-medium text-ink-2">
             {t.sendingMessage}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-green">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-sm font-medium text-green">
             <span className="flex size-4.5 items-center justify-center rounded-full bg-green text-white">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
             </span>
@@ -292,7 +292,7 @@ export default function ApprovalCard({
           </span>
         )}
         {resettable && sent === true && (
-          <button type="button" onClick={reset} className="text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink">
+          <button type="button" onClick={reset} className="text-xs font-medium text-ink-3 transition-colors duration-150 hover:text-ink">
             Start over
           </button>
         )}
@@ -346,7 +346,7 @@ export default function ApprovalCard({
                     aria-hidden={active ? undefined : true}
                     style={questionStyle}
                   >
-                    <div className="pr-7 text-[14px] font-medium text-ink">{question.q}</div>
+                    <div className="pr-7 text-base font-medium text-ink">{question.q}</div>
                     <GlideMenu className="mt-2.5 flex flex-col gap-1" highlightClassName="inset-x-0 rounded-control bg-hover">
                       {(Array.isArray(question.options) ? question.options : []).map((option, i) => {
                         const on = picked.includes(i);
@@ -371,7 +371,7 @@ export default function ApprovalCard({
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                               )}
                             </span>
-                            <span className={`text-[13px] leading-snug transition-colors duration-200 sm:leading-none ${on ? "text-ink" : "text-ink-2"}`}>
+                            <span className={`text-sm leading-snug transition-colors duration-200 sm:leading-none ${on ? "text-ink" : "text-ink-2"}`}>
                               {option}
                             </span>
                           </button>
@@ -394,7 +394,7 @@ export default function ApprovalCard({
                           }}
                           placeholder={t.customPlaceholder}
                           aria-label="Custom answer"
-                          className="min-w-0 flex-1 bg-transparent pl-1.5 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[13px] sm:pointer-coarse:text-[16px]"
+                          className="min-w-0 flex-1 bg-transparent pl-1.5 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-sm sm:pointer-coarse:text-[16px]"
                         />
                       </label>
                     </GlideMenu>
@@ -406,7 +406,7 @@ export default function ApprovalCard({
         </div>
 
         {error && (
-          <p role="alert" className="mx-3 mb-1 text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+          <p role="alert" className="mx-3 mb-1 text-sm text-red-ink [overflow-wrap:anywhere]">
             {error}
           </p>
         )}
@@ -423,7 +423,7 @@ export default function ApprovalCard({
             >
               <Ico size={14} path={<path d="M18 15l-6-6-6 6" />} />
             </button>
-            <span className="inline-flex items-center text-[12px] font-medium tabular-nums text-ink-3" style={{ letterSpacing: "-0.1px", lineHeight: 1 }}>
+            <span className="inline-flex items-center text-xs font-medium tabular-nums text-ink-3" style={{ letterSpacing: "-0.1px", lineHeight: 1 }}>
               <RollingDigits value={`${qi + 1} / ${questions.length}`} />
             </span>
             <button

@@ -30,7 +30,7 @@ export function rawJson(entry: unknown, max = RAW_MAX): { full: string; shown: s
   return { full, shown: truncated ? full.slice(0, max) : full, truncated };
 }
 
-const BTN = "tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
+const BTN = "tap relative h-7 rounded-[7px] px-2.5 text-xs font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
 
 /** The compact card a crashed entry shows instead of blanking the thread. */
 export function EntryFallback({ entry, message = "Couldn't show this message.", actions }: { entry?: unknown; message?: string; actions?: ReactNode }) {
@@ -49,7 +49,7 @@ export function EntryFallback({ entry, message = "Couldn't show this message.", 
   return (
     <div role="alert" className="flex min-w-0 flex-col gap-2 rounded-card bg-inset px-3 py-2.5 shadow-hairline">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <p className="min-w-0 flex-1 text-[12.5px] text-ink-2">{message}</p>
+        <p className="min-w-0 flex-1 text-sm text-ink-2">{message}</p>
         <span className="flex shrink-0 items-center gap-1.5">
           {entry !== undefined && (
             <>
@@ -68,7 +68,7 @@ export function EntryFallback({ entry, message = "Couldn't show this message.", 
         <pre
           tabIndex={0}
           translate="no"
-          className="max-h-72 overflow-auto overscroll-contain rounded-[8px] bg-surface px-2.5 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-ink-2 shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]!"
+          className="max-h-72 overflow-auto overscroll-contain rounded-[8px] bg-surface px-2.5 py-2 font-mono text-xs leading-[1.6] whitespace-pre-wrap text-ink-2 shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]!"
         >
           {raw.shown}
           {raw.truncated && <span className="font-sans text-ink-3">{"\n"}Trimmed. Copy has all of it.</span>}

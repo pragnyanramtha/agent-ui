@@ -12,8 +12,8 @@ describe("terminal theme", () => {
   });
 
   it("falls back when the variables can't be read", () => {
-    expect(buildTerminalTheme({ dark: true }).background).toBe("#17181a");
-    expect(buildTerminalTheme({ dark: false, page: "oklch(1 0 0)" }).background).toBe("#fcfcfd");
+    expect(buildTerminalTheme({ dark: true }).background).toBe("#0a0a0a");
+    expect(buildTerminalTheme({ dark: false, page: "oklch(1 0 0)" }).background).toBe("#fdfdfd");
   });
 
   it("keeps light ANSI colors readable on the light page", () => {

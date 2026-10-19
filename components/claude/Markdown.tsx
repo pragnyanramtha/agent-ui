@@ -21,7 +21,7 @@ function RemoteImage({ src, alt }: { src: string; alt: string }) {
   } catch {}
   if (shown) return <img src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="md-img" />;
   return (
-    <button type="button" onClick={() => setShown(true)} title={src} className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-line px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-hover">
+    <button type="button" onClick={() => setShown(true)} title={src} className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-line px-2.5 py-1.5 text-left text-sm text-ink-2 hover:bg-hover">
       <span className="truncate">{alt ? `Image: ${alt}` : "Image"}</span>
       {host && <span className="shrink-0 text-ink-3">from {host}. Load</span>}
     </button>
@@ -142,7 +142,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
           timer.current = setTimeout(() => setDone(false), 1500);
         })
       }
-      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-colors duration-100 hover:bg-hover pointer-coarse:h-10 pointer-coarse:min-w-11 pointer-coarse:justify-center pointer-coarse:px-3 pointer-coarse:text-[12.5px] ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
+      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-xs font-medium transition-colors duration-100 hover:bg-hover pointer-coarse:h-10 pointer-coarse:min-w-11 pointer-coarse:justify-center pointer-coarse:px-3 pointer-coarse:text-sm ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
     >
       {done ? <Check width={12} height={12} strokeWidth={2.2} /> : <Copy width={12} height={12} strokeWidth={1.8} />}
       {label}

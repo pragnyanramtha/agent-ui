@@ -76,7 +76,7 @@ export function DataSection() {
           </SmallButton>
         </Row>
         {result && (
-          <div role="status" className="px-3.5 py-3 text-[12.5px]">
+          <div role="status" className="px-3.5 py-3 text-sm">
             {!result.ok ? (
               <p className="text-red-ink">{result.error}</p>
             ) : undone ? (

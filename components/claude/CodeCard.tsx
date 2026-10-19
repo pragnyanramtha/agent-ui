@@ -71,7 +71,7 @@ export const CodeCard = memo(function CodeCard({ code, label, collapseAfter }: {
 
   return (
     <div className="not-prose w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-card">
-      <div className="flex h-9 items-center gap-2 border-b border-line pr-1.5 pl-3 text-[12px]">
+      <div className="flex h-9 items-center gap-2 border-b border-line pr-1.5 pl-3 text-xs">
         {label?.includes("/") ? <PathLabel path={label} /> : <span className="truncate font-mono text-ink-3">{label || "text"}</span>}
         <button
           type="button"
@@ -86,13 +86,13 @@ export const CodeCard = memo(function CodeCard({ code, label, collapseAfter }: {
       <div
         tabIndex={0}
         translate="no"
-        className="max-h-[28rem] overflow-auto overscroll-x-contain py-2.5 font-mono text-[12.5px] leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!"
+        className="max-h-[28rem] overflow-auto overscroll-x-contain py-2.5 font-mono text-sm leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!"
       >
         <div className="flex min-w-fit items-start">
           {/* sticky so line numbers stay put while long lines scroll sideways */}
           <span
             aria-hidden
-            className={`sticky left-0 shrink-0 self-stretch border-r border-line bg-surface pr-2 text-right text-[11px] whitespace-pre text-ink-3 tabular-nums select-none ${LINE}`}
+            className={`sticky left-0 shrink-0 self-stretch border-r border-line bg-surface pr-2 text-right text-2xs whitespace-pre text-ink-3 tabular-nums select-none ${LINE}`}
             style={{ width: gutter }}
           >
             {numbers}

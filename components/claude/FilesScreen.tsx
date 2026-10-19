@@ -180,11 +180,11 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
               autoCapitalize="off"
               autoCorrect="off"
               translate="no"
-              className="h-8 w-full rounded-[8px] bg-inset px-2.5 font-mono text-[16px] text-ink shadow-hairline outline-none sm:text-[12.5px]"
+              className="h-8 w-full rounded-[8px] bg-inset px-2.5 font-mono text-[16px] text-ink shadow-hairline outline-none sm:text-sm"
             />
           </form>
         ) : (
-          <nav aria-label="Path" className="no-scrollbar flex min-w-0 flex-1 items-center self-stretch overflow-x-auto font-mono text-[12.5px] whitespace-nowrap" onDoubleClick={() => setTyped(dir)}>
+          <nav aria-label="Path" className="no-scrollbar flex min-w-0 flex-1 items-center self-stretch overflow-x-auto font-mono text-sm whitespace-nowrap" onDoubleClick={() => setTyped(dir)}>
             {crumbs.map((c, i) => (
               <span key={c.path} className="flex items-center">
                 {i > 1 && <span className="px-0.5 text-ink-3">/</span>}
@@ -217,7 +217,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         <button type="button" onClick={refresh} aria-label="Refresh" data-tip="Refresh" className={iconBtn}>
           <Refresh width={16} height={16} strokeWidth={1.8} className={loading ? "animate-spin" : ""} />
         </button>
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={!dir} className="tap relative ml-1 inline-flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 text-[12.5px] font-medium text-page disabled:opacity-50">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={!dir} className="tap relative ml-1 inline-flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 text-sm font-medium text-page disabled:opacity-50">
           <Upload width={15} height={15} strokeWidth={1.9} />
           <span>Upload</span>
         </button>
@@ -236,7 +236,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       {uploads.length > 0 && (
         <ul className="mx-2 mb-1 flex flex-col gap-1 rounded-[10px] bg-inset p-2 sm:mx-4">
           {uploads.map((u) => (
-            <li key={u.id} className="flex items-center gap-2 text-[12.5px]">
+            <li key={u.id} className="flex items-center gap-2 text-sm">
               <span className="min-w-0 flex-1 truncate text-ink" translate="no">
                 {u.name}
               </span>
@@ -254,16 +254,16 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       )}
 
       {error && (
-        <p role="alert" className="mx-2 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink sm:mx-4">
+        <p role="alert" className="mx-2 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink sm:mx-4">
           {error}
         </p>
       )}
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-6 sm:px-3">
         {listing === null && !error ? (
-          <p className="px-3 py-6 text-[13px] text-ink-3">Loading files…</p>
+          <p className="px-3 py-6 text-sm text-ink-3">Loading files…</p>
         ) : listing?.entries.length === 0 ? (
-          <p className="px-3 py-6 text-[13px] text-ink-3">Empty folder{listing.hiddenCount ? ` (${listing.hiddenCount} hidden)` : ""}</p>
+          <p className="px-3 py-6 text-sm text-ink-3">Empty folder{listing.hiddenCount ? ` (${listing.hiddenCount} hidden)` : ""}</p>
         ) : (
           <ul className="flex flex-col">
             {listing?.entries.map((it) => (
@@ -274,12 +274,12 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
                   className={`flex min-h-11 w-full min-w-0 items-center gap-3 rounded-[9px] px-2.5 pr-11 text-left hover:bg-hover sm:min-h-9 ${file?.path === it.path ? "bg-hover" : ""}`}
                 >
                   {it.type === "dir" ? <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-accent-ink" aria-hidden /> : <Page width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />}
-                  <span className={`min-w-0 flex-1 truncate text-[13.5px] ${it.type === "broken" ? "text-ink-3 line-through" : "text-ink"}`} translate="no">
+                  <span className={`min-w-0 flex-1 truncate text-sm ${it.type === "broken" ? "text-ink-3 line-through" : "text-ink"}`} translate="no">
                     {it.name}
                     {it.link && <span className="text-ink-3"> ↗</span>}
                   </span>
-                  <span className="hidden shrink-0 text-[12px] text-ink-3 tabular-nums min-[420px]:inline">{it.type === "file" ? formatBytes(it.size) : ""}</span>
-                  <span className="w-10 shrink-0 text-right text-[12px] text-ink-3 tabular-nums">{it.mtime ? timeAgo(it.mtime, now) : ""}</span>
+                  <span className="hidden shrink-0 text-xs text-ink-3 tabular-nums min-[420px]:inline">{it.type === "file" ? formatBytes(it.size) : ""}</span>
+                  <span className="w-10 shrink-0 text-right text-xs text-ink-3 tabular-nums">{it.mtime ? timeAgo(it.mtime, now) : ""}</span>
                 </button>
                 <button
                   type="button"
@@ -319,10 +319,10 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
             ))}
           </ul>
         )}
-        {listing?.truncated && <p className="px-3 py-2 text-[12px] text-ink-3">Showing the first 2000 entries.</p>}
+        {listing?.truncated && <p className="px-3 py-2 text-xs text-ink-3">Showing the first 2000 entries.</p>}
       </div>
       {drag && (
-        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-[14px] border-2 border-dashed border-accent bg-page/80 text-[14px] font-medium text-ink">
+        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-[14px] border-2 border-dashed border-accent bg-page/80 text-base font-medium text-ink">
           Drop to upload to {shortPath(dir)}
         </div>
       )}
@@ -336,7 +336,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">Files</h1>
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">Files</h1>
           {extra}
         </div>
       </header>
@@ -406,7 +406,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
     if (kind === "pdf")
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <a href={raw(file.path)} target="_blank" rel="noopener" className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-page">
+          <a href={raw(file.path)} target="_blank" rel="noopener" className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-page">
             <OpenNewWindow width={15} height={15} /> Open PDF
           </a>
         </div>
@@ -414,14 +414,14 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
     if (kind === "binary")
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <p className="text-[13px] text-ink-3">No preview available.</p>
-          <a href={raw(file.path, true)} download={name} className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-[13px] font-medium text-page">
+          <p className="text-sm text-ink-3">No preview available.</p>
+          <a href={raw(file.path, true)} download={name} className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-page">
             <Download width={15} height={15} /> Download {formatBytes(file.size)}
           </a>
         </div>
       );
-    if (text === null) return <p className="py-6 text-[13px] text-ink-3">Loading preview…</p>;
-    if ("error" in text) return <p className="py-6 text-[13px] text-red-ink">{text.error}</p>;
+    if (text === null) return <p className="py-6 text-sm text-ink-3">Loading preview…</p>;
+    if ("error" in text) return <p className="py-6 text-sm text-red-ink">{text.error}</p>;
     if (editing !== null)
       return (
         <textarea
@@ -430,7 +430,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          className="h-full min-h-[50vh] w-full resize-none rounded-[10px] bg-inset p-3 font-mono text-[16px] leading-relaxed text-ink shadow-hairline outline-none sm:text-[12.5px]"
+          className="h-full min-h-[50vh] w-full resize-none rounded-[10px] bg-inset p-3 font-mono text-[16px] leading-relaxed text-ink shadow-hairline outline-none sm:text-sm"
         />
       );
     if (kind === "html" && !source)
@@ -453,16 +453,16 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           <NavArrowLeft width={18} height={18} strokeWidth={1.8} />
         </button>
         <div className="flex min-w-0 flex-1 flex-col px-1">
-          <span className="truncate text-[13.5px] font-medium text-ink" translate="no">
+          <span className="truncate text-sm font-medium text-ink" translate="no">
             {name}
           </span>
-          <span className="truncate text-[11.5px] text-ink-3">
+          <span className="truncate text-xs text-ink-3">
             {formatBytes(file.size)} · {timeAgo(file.mtime)}
             {text && "partial" in text && text.partial ? ` · first ${formatBytes(PREVIEW_BYTES)} shown` : ""}
           </span>
         </div>
         {(kind === "html" || kind === "markdown") && editing === null && (
-          <button type="button" onClick={() => setSource((s) => !s)} aria-pressed={source} className="h-8 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover">
+          <button type="button" onClick={() => setSource((s) => !s)} aria-pressed={source} className="h-8 rounded-full px-2.5 text-sm font-medium text-ink-2 hover:bg-hover">
             {source ? "Rendered" : "Source"}
           </button>
         )}
@@ -473,10 +473,10 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
             </button>
           ) : (
             <>
-              <button type="button" onClick={() => setEditing(null)} className="h-8 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover">
+              <button type="button" onClick={() => setEditing(null)} className="h-8 rounded-full px-2.5 text-sm font-medium text-ink-2 hover:bg-hover">
                 Cancel
               </button>
-              <button type="button" onClick={() => void save()} disabled={saving} className="h-8 rounded-full bg-ink px-3 text-[12.5px] font-medium text-page disabled:opacity-60">
+              <button type="button" onClick={() => void save()} disabled={saving} className="h-8 rounded-full bg-ink px-3 text-sm font-medium text-page disabled:opacity-60">
                 {saving ? "Saving…" : "Save"}
               </button>
             </>
@@ -487,7 +487,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
         <button type="button" onClick={() => void copyText(file.path)} aria-label="Copy path" data-tip="Copy path" className="icon-btn max-sm:hidden">
           <Copy width={16} height={16} strokeWidth={1.8} />
         </button>
-        <button type="button" onClick={onRename} className="h-8 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover max-sm:hidden">
+        <button type="button" onClick={onRename} className="h-8 rounded-full px-2.5 text-sm font-medium text-ink-2 hover:bg-hover max-sm:hidden">
           Rename
         </button>
         <button type="button" onClick={onDelete} aria-label="Delete" data-tip="Delete" className="icon-btn text-red-ink">
@@ -497,7 +497,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           <Xmark width={17} height={17} strokeWidth={1.8} />
         </button>
       </div>
-      {saveError && <p className="mx-3 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{saveError}</p>}
+      {saveError && <p className="mx-3 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{saveError}</p>}
       <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 pb-6 sm:px-3">{body}</div>
     </div>
   );

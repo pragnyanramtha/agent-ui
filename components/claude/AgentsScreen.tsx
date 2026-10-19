@@ -27,7 +27,7 @@ export function AgentsScreen({ onMenu, extra, onOpenSession, projects }: { onMen
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">Agents</h1>
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">Agents</h1>
           {extra}
         </div>
       </header>
@@ -46,7 +46,7 @@ export function AgentsScreen({ onMenu, extra, onOpenSession, projects }: { onMen
 function H({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
     <div className="flex items-center gap-2 pb-2">
-      <h2 className="min-w-0 flex-1 text-[13px] font-semibold text-ink">{children}</h2>
+      <h2 className="min-w-0 flex-1 text-sm font-semibold text-ink">{children}</h2>
       {aside}
     </div>
   );
@@ -94,7 +94,7 @@ function Launcher({ projects }: { projects: string[] }) {
       </H>
       <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-[12px] font-medium text-ink-3">Agent</span>
+          <span className="text-xs font-medium text-ink-3">Agent</span>
           <Select
             label="Agent"
             value={chosen?.id ?? ""}
@@ -103,13 +103,13 @@ function Launcher({ projects }: { projects: string[] }) {
           />
         </label>
         <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
-          <span className="text-[12px] font-medium text-ink-3">Folder</span>
+          <span className="text-xs font-medium text-ink-3">Folder</span>
           <button type="button" onClick={() => setPicker(true)} className={`${field} truncate text-left`} translate="no">
             {cwd ? shortPath(cwd) : <span className="text-ink-3">Choose a folder</span>}
           </button>
         </label>
         <label className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-[12px] font-medium text-ink-3">Model</span>
+          <span className="text-xs font-medium text-ink-3">Model</span>
           <input value={model} onChange={(e) => setModel(e.target.value)} list="launch-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
           <datalist id="launch-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
         </label>
@@ -127,8 +127,8 @@ function Launcher({ projects }: { projects: string[] }) {
           </button>
         </div>
       </div>
-      <p className="px-1 pt-1.5 text-[12px] text-ink-3">Keeps running after you close the tab.</p>
-      {error && <p className="mt-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
+      <p className="px-1 pt-1.5 text-xs text-ink-3">Keeps running after you close the tab.</p>
+      {error && <p className="mt-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
       <FolderPicker open={picker} value={cwd} recent={projects} onPick={setCwd} onClose={() => setPicker(false)} />
     </section>
   );
@@ -161,31 +161,31 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   const now = Date.now();
   return (
     <section aria-labelledby="terms-h">
-      <H aside={data && !data.tmux ? <span className="text-[12px] text-ink-3">Install tmux so these survive restarts</span> : null}>
+      <H aside={data && !data.tmux ? <span className="text-xs text-ink-3">Install tmux so these survive restarts</span> : null}>
         <span id="terms-h">Running</span>
       </H>
-      {data?.error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{data.error}</p>}
+      {data?.error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
       {data === null ? (
-        <p className="px-1 text-[13px] text-ink-3">Loading terminals…</p>
+        <p className="px-1 text-sm text-ink-3">Loading terminals…</p>
       ) : data.terminals.length === 0 ? (
-        <p className="px-1 text-[13px] text-ink-3">Nothing running.</p>
+        <p className="px-1 text-sm text-ink-3">Nothing running.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {data.terminals.map((t) => (
             <li key={t.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
               <span className={`size-2 shrink-0 rounded-full ${t.exited ? "bg-line-strong" : "animate-pulse bg-green"}`} aria-hidden />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-[13.5px] text-ink">{t.label}</span>
-                <span className="truncate text-[12px] text-ink-3" translate="no">
+                <span className="truncate text-sm text-ink">{t.label}</span>
+                <span className="truncate text-xs text-ink-3" translate="no">
                   {[t.cwd && shortPath(t.cwd), t.exited ? `Exited (${t.exited.code})` : t.clients ? `${t.clients} watching` : "Running", t.createdAt ? timeAgo(t.createdAt, now) : ""].filter(Boolean).join(" · ")}
                 </span>
               </div>
               {t.session && (
-                <button type="button" onClick={() => onOpenSession(t.session!)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover max-sm:hidden">
+                <button type="button" onClick={() => onOpenSession(t.session!)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-sm font-medium text-ink-2 hover:bg-hover max-sm:hidden">
                   Session
                 </button>
               )}
-              <button type="button" onClick={() => openServerTerminal(t, t.label)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => openServerTerminal(t, t.label)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
                 Open
               </button>
               <button type="button" onClick={() => void stop(t)} aria-label={t.exited ? `Remove ${t.label}` : `Stop ${t.label}`} className="icon-btn shrink-0 text-ink-3 pointer-coarse:size-10">
@@ -233,17 +233,17 @@ function HealthCheck() {
     <section aria-labelledby="health-h">
       <H
         aside={
-          <button type="button" onClick={() => void check()} disabled={busy} className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover disabled:opacity-60">
+          <button type="button" onClick={() => void check()} disabled={busy} className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover disabled:opacity-60">
             {busy ? "Checking…" : report ? "Check again" : "Run check"}
           </button>
         }
       >
         <span id="health-h">Health check</span>
       </H>
-      <p className="px-1 pb-2 text-[12px] text-ink-3" aria-live="polite">
+      <p className="px-1 pb-2 text-xs text-ink-3" aria-live="polite">
         {summary ? `${summary} · ${new Date(report!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}
       </p>
-      {error && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
+      {error && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
       {report && (
         <div className="flex flex-col gap-3">
           <HealthList rows={agents} footer={absent.length ? `Not installed: ${absent.map((r) => r.label).join(", ")}` : undefined} />
@@ -262,18 +262,18 @@ function HealthList({ rows, footer }: { rows: HealthRow[]; footer?: string }) {
         <li key={r.id} className="flex min-h-12 gap-3 px-3 py-2.5">
           <span className={`mt-[7px] size-2 shrink-0 rounded-full ${DOT[r.status]}`} aria-hidden />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[13.5px] text-ink">
+            <span className="text-sm text-ink">
               <span className="sr-only">{SAYS[r.status]}: </span>
               {r.label}
             </span>
-            <span className="text-[12px] break-words text-ink-3" translate="no">
+            <span className="text-xs break-words text-ink-3" translate="no">
               {r.detail}
             </span>
             {r.fix && <FixCommand command={r.fix} />}
           </div>
         </li>
       ))}
-      {footer && <li className="px-3 py-2.5 text-[12px] text-ink-3">{footer}</li>}
+      {footer && <li className="px-3 py-2.5 text-xs text-ink-3">{footer}</li>}
     </ul>
   );
 }
@@ -291,14 +291,14 @@ function FixCommand({ command }: { command: string }) {
     });
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1 rounded-[8px] bg-inset py-0.5 pr-0.5 pl-2.5">
-      <code className="no-scrollbar min-w-0 flex-1 overflow-x-auto font-mono text-[11.5px] whitespace-nowrap text-ink-2" translate="no">
+      <code className="no-scrollbar min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap text-ink-2" translate="no">
         {command}
       </code>
       <button
         type="button"
         onClick={() => void copy()}
         aria-label={copied ? "Copied" : `Copy ${command}`}
-        className={`flex h-8 shrink-0 items-center gap-1 rounded-[6px] px-2 text-[12px] font-medium hover:bg-hover ${copied ? "text-green" : "text-ink-3 hover:text-ink"}`}
+        className={`flex h-8 shrink-0 items-center gap-1 rounded-[6px] px-2 text-xs font-medium hover:bg-hover ${copied ? "text-green" : "text-ink-3 hover:text-ink"}`}
       >
         {copied ? <CheckIcon width={13} height={13} strokeWidth={2.2} /> : <Copy width={13} height={13} strokeWidth={1.8} />}
         {copied ? "Copied" : "Copy"}
@@ -393,7 +393,7 @@ function Profiles() {
           <button
             type="button"
             onClick={() => setEdit({ isNew: true, draft: { id: "", label: "", agent: "codex", bin: "", args: "", env: "", models: "", defaultModel: "", defaultEffort: "", fallback: "", launchArgs: "", notes: "", hidden: false } })}
-            className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 pointer-coarse:h-10 pointer-coarse:px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover"
+            className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 pointer-coarse:h-10 pointer-coarse:px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover"
           >
             <Plus width={14} height={14} strokeWidth={2} /> Add profile
           </button>
@@ -401,38 +401,38 @@ function Profiles() {
       >
         <span id="profiles-h">Profiles</span>
       </H>
-      <p className="px-1 pb-2 text-[12px] text-ink-3">
+      <p className="px-1 pb-2 text-xs text-ink-3">
         Accounts, proxies and wrappers per agent. Stored in{" "}
         <code className="font-mono" translate="no">
           {shortPath(configPath)}
         </code>
         .
       </p>
-      {error && !edit && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
+      {error && !edit && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
       {profiles === null ? (
-        <p className="px-1 text-[13px] text-ink-3">Loading profiles…</p>
+        <p className="px-1 text-sm text-ink-3">Loading profiles…</p>
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {AGENT_IDS.flatMap((a) => profiles.filter((p) => p.agent === a)).map((p) => (
             <li key={p.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
               <span className={`size-2 shrink-0 rounded-full ${AGENT_TONE[p.agent]} ${p.installed ? "" : "opacity-30"}`} aria-hidden />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className={`truncate text-[13.5px] ${p.hidden ? "text-ink-3" : "text-ink"}`}>
+                <span className={`truncate text-sm ${p.hidden ? "text-ink-3" : "text-ink"}`}>
                   {p.label}
                   <span className="text-ink-3"> · {p.id === p.agent ? "Built-in" : AGENT_LABEL[p.agent]}</span>
                 </span>
-                <span className="truncate font-mono text-[11.5px] text-ink-3" translate="no">
+                <span className="truncate font-mono text-xs text-ink-3" translate="no">
                   {p.installed ? shortPath(p.binPath ?? p.bin ?? p.agent) : `${p.bin || p.agent} not found`}
                   {p.models.length ? ` · ${p.models.join(", ")}` : ""}
                   {p.fallback.length ? ` · then ${p.fallback.join(", ")}` : ""}
                 </span>
               </div>
               {p.custom && (
-                <button type="button" onClick={() => reset(p)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-[12.5px] font-medium text-ink-3 hover:bg-hover hover:text-ink">
+                <button type="button" onClick={() => reset(p)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-sm font-medium text-ink-3 hover:bg-hover hover:text-ink">
                   {p.builtin ? "Reset" : "Delete"}
                 </button>
               )}
-              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
                 Edit
               </button>
             </li>
@@ -465,12 +465,12 @@ function ProfileEditor({
   const close = useCallback(() => setEdit(null), [setEdit]);
   const row = (label: string, hint: string, control: ReactNode) => (
     <label className="flex flex-col gap-1">
-      <span className="text-[12px] font-medium text-ink-2">{label}</span>
+      <span className="text-xs font-medium text-ink-2">{label}</span>
       {control}
-      {hint && <span className="text-[11.5px] text-ink-3">{hint}</span>}
+      {hint && <span className="text-xs text-ink-3">{hint}</span>}
     </label>
   );
-  const area = `${areaBase} font-mono sm:text-[12.5px]`;
+  const area = `${areaBase} font-mono sm:text-sm`;
   return (
     <Sheet
       title={edit.isNew ? "New profile" : `Edit ${d.label || d.id}`}
@@ -478,7 +478,7 @@ function ProfileEditor({
       wide
       footer={
         <>
-          {error && <span className="mr-auto min-w-0 truncate text-[12.5px] text-red-ink">{error}</span>}
+          {error && <span className="mr-auto min-w-0 truncate text-sm text-red-ink">{error}</span>}
           <button type="button" onClick={close} className={secondaryBtn}>
             Cancel
           </button>
@@ -521,7 +521,7 @@ function ProfileEditor({
         )}
         {row("Terminal arguments", "One per line, terminal only", <textarea rows={2} value={d.launchArgs} onChange={(e) => set({ launchArgs: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
         {row("Notes", "", <input value={d.notes} onChange={(e) => set({ notes: e.target.value })} className={field} />)}
-        <label className="flex items-center gap-2 self-end pb-2 text-[13px] text-ink-2 pointer-coarse:min-h-10 pointer-coarse:pb-0">
+        <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink-2 pointer-coarse:min-h-10 pointer-coarse:pb-0">
           <input type="checkbox" checked={d.hidden} onChange={(e) => set({ hidden: e.target.checked })} />
           Hide from menus
         </label>

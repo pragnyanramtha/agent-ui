@@ -138,7 +138,7 @@ export function AttachmentChips({ items, onRemove, onRetry }: { items: Attachmen
       {items.map((a) => {
         const pct = a.size ? Math.round((a.sent / a.size) * 100) : 100;
         return (
-          <li key={a.id} className={`relative flex h-12 max-w-[14rem] shrink-0 items-center gap-2 rounded-[12px] pr-8 pl-1.5 text-[12.5px] shadow-hairline ${a.state === "error" ? "bg-red-tint" : "bg-inset"}`} title={a.error ?? a.name}>
+          <li key={a.id} className={`relative flex h-12 max-w-[14rem] shrink-0 items-center gap-2 rounded-[12px] pr-8 pl-1.5 text-sm shadow-hairline ${a.state === "error" ? "bg-red-tint" : "bg-inset"}`} title={a.error ?? a.name}>
             {a.preview ? (
               <img src={a.preview} alt="" className="size-9 shrink-0 rounded-[8px] object-cover" />
             ) : (
@@ -149,11 +149,11 @@ export function AttachmentChips({ items, onRemove, onRetry }: { items: Attachmen
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="truncate text-ink">{a.name}</span>
               {a.state === "error" ? (
-                <button type="button" onClick={() => onRetry(a.id)} className="text-left text-[11.5px] font-medium text-red-ink underline-offset-2 hover:underline">
+                <button type="button" onClick={() => onRetry(a.id)} className="text-left text-xs font-medium text-red-ink underline-offset-2 hover:underline">
                   Upload failed. Retry
                 </button>
               ) : (
-                <span className="text-[11.5px] text-ink-3 tabular-nums">{a.state === "uploading" ? `Uploading… ${pct}%` : formatBytes(a.size)}</span>
+                <span className="text-xs text-ink-3 tabular-nums">{a.state === "uploading" ? `Uploading… ${pct}%` : formatBytes(a.size)}</span>
               )}
             </span>
             <button type="button" onClick={() => onRemove(a.id)} aria-label={`Remove ${a.name}`} className="tap absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-3 hover:bg-hover hover:text-ink">
@@ -180,7 +180,7 @@ export function SentFiles({ paths }: { paths: string[] }) {
               {isImagePath(p) ? (
                 <img src={raw(p)} alt={name} loading="lazy" decoding="async" className="max-h-40 max-w-[12rem] rounded-[10px] object-cover shadow-hairline" />
               ) : (
-                <span className="inline-flex h-8 max-w-[14rem] items-center gap-1.5 rounded-[10px] bg-inset px-2.5 text-[12.5px] text-ink-2 shadow-hairline hover:text-ink">
+                <span className="inline-flex h-8 max-w-[14rem] items-center gap-1.5 rounded-[10px] bg-inset px-2.5 text-sm text-ink-2 shadow-hairline hover:text-ink">
                   <Page width={14} height={14} strokeWidth={1.8} className="shrink-0" aria-hidden />
                   <span className="truncate">{name}</span>
                 </span>

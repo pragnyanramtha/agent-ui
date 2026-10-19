@@ -233,14 +233,14 @@ export function FolderPicker({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => enter(it)}
         title={it.path}
-        className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 text-[14px] transition-colors duration-75 sm:min-h-9 sm:text-[13.5px] ${on ? "bg-hover text-ink" : "text-ink-2"}`}
+        className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 text-base transition-colors duration-75 sm:min-h-9 sm:text-sm ${on ? "bg-hover text-ink" : "text-ink-2"}`}
       >
         <Folder width={16} height={16} strokeWidth={1.8} className={`shrink-0 ${on ? "text-ink-2" : "text-ink-3"}`} aria-hidden />
         <span className="min-w-0 truncate" translate="no">
           {it.name}
         </span>
         {it.kind === "recent" ? (
-          <span className="ml-auto min-w-0 shrink truncate pl-3 text-[12px] text-ink-3" translate="no">
+          <span className="ml-auto min-w-0 shrink truncate pl-3 text-xs text-ink-3" translate="no">
             {shortPath(it.path)}
           </span>
         ) : (
@@ -284,7 +284,7 @@ export function FolderPicker({
             autoCapitalize="off"
             spellCheck={false}
             translate="no"
-            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[14.5px] sm:pointer-coarse:text-[16px]"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-base sm:pointer-coarse:text-[16px]"
           />
           <button
             type="button"
@@ -297,7 +297,7 @@ export function FolderPicker({
         </div>
 
         <div className="flex h-10 shrink-0 items-center gap-1 border-y border-line pr-1.5 pl-2.5">
-          <nav ref={crumbsRef} aria-label="Folder path" className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap text-[13px]" translate="no">
+          <nav ref={crumbsRef} aria-label="Folder path" className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap text-sm" translate="no">
             {crumbs.map((c, i) => {
               const last = i === crumbs.length - 1;
               return (
@@ -344,7 +344,7 @@ export function FolderPicker({
         <div id={`${uid}-list`} role="listbox" aria-label="Folders" aria-busy={loading} className="thin-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
           {recentCount > 0 && (
             <div role="group" aria-labelledby={`${uid}-recent`} className="pb-1">
-              <div id={`${uid}-recent`} role="presentation" className="px-2.5 pt-1.5 pb-1 text-[12px] font-medium text-ink-3">
+              <div id={`${uid}-recent`} role="presentation" className="px-2.5 pt-1.5 pb-1 text-xs font-medium text-ink-3">
                 Recent
               </div>
               {items.slice(0, recentCount).map((it, i) => row(it, i))}
@@ -352,26 +352,26 @@ export function FolderPicker({
           )}
           <div role="group" aria-label={data ? `Folders in ${shortPath(data.path)}` : "Folders"}>
             {recentCount > 0 && (
-              <div role="presentation" className="px-2.5 pt-2 pb-1 text-[12px] font-medium text-ink-3">
+              <div role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
                 {data ? base(data.path === home ? "~" : data.path) : "Folders"}
               </div>
             )}
             {items.slice(recentCount).map((it, i) => row(it, recentCount + i))}
           </div>
           {error ? (
-            <p role="alert" className="px-2.5 py-3 text-[13px] text-red-ink">
+            <p role="alert" className="px-2.5 py-3 text-sm text-red-ink">
               {error}
             </p>
           ) : !loading && data && dirCount === 0 ? (
-            <p className="px-2.5 py-3 text-[13px] text-ink-3">{leaf ? "No folders match." : "No subfolders here."}</p>
+            <p className="px-2.5 py-3 text-sm text-ink-3">{leaf ? "No folders match." : "No subfolders here."}</p>
           ) : !data ? (
-            <p className="px-2.5 py-3 text-[13px] text-ink-3">Loading folders…</p>
+            <p className="px-2.5 py-3 text-sm text-ink-3">Loading folders…</p>
           ) : null}
-          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-[12px] text-ink-3">First 500 shown. Type to filter.</p>}
+          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-xs text-ink-3">First 500 shown. Type to filter.</p>}
         </div>
 
         <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-4">
-          <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-3" title={chosen} translate="no">
+          <span className="min-w-0 flex-1 truncate text-sm text-ink-3" title={chosen} translate="no">
             {chosen ? shortPath(chosen) : "\u00a0"}
           </span>
           <button
@@ -379,7 +379,7 @@ export function FolderPicker({
             disabled={!chosen}
             onClick={() => chosen && pick(chosen)}
             title="Use this folder (Ctrl+Enter)"
-            className="tap relative h-10 shrink-0 rounded-full bg-ink px-4 text-[13.5px] font-medium text-surface transition-[opacity,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-40 sm:h-8 sm:text-[13px]"
+            className="tap relative h-10 shrink-0 rounded-full bg-ink px-4 text-sm font-medium text-surface transition-[opacity,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-40 sm:h-8"
           >
             Use this folder
           </button>

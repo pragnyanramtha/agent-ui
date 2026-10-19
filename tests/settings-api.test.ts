@@ -34,9 +34,9 @@ describe("PUT /api/settings", () => {
     expect((await GET().json()).settings).toEqual({ palette: "nord", corners: "round" });
   });
 
-  it("clamps numbers to their range", async () => {
-    const res = await put(JSON.stringify({ accentHue: 999.4 }));
-    expect((await res.json()).settings).toEqual({ accentHue: 360 });
+  it("normalizes colors", async () => {
+    const res = await put(JSON.stringify({ accentColor: "#ABC" }));
+    expect((await res.json()).settings).toEqual({ accentColor: "#aabbcc" });
   });
 
   it("answers 400 and keeps the file for unknown keys, bad values, device settings and bad bodies", async () => {

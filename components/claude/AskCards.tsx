@@ -18,7 +18,7 @@ function Preview({ toolName, input }: { toolName: string; input: Record<string, 
   const text =
     toolName === "Bash" ? s("command") : toolName === "Write" ? `${s("file_path")}\n\n${s("content").slice(0, 1200)}` : s("file_path") || s("url") || s("pattern") || JSON.stringify(input, null, 2);
   return (
-    <pre className="max-h-56 overflow-auto rounded-[8px] bg-inset px-2.5 py-2 font-mono text-[12px] leading-[1.6] whitespace-pre-wrap text-ink shadow-hairline [overflow-wrap:anywhere]">
+    <pre className="max-h-56 overflow-auto rounded-[8px] bg-inset px-2.5 py-2 font-mono text-xs leading-[1.6] whitespace-pre-wrap text-ink shadow-hairline [overflow-wrap:anywhere]">
       {toolName === "Bash" && <span className="select-none text-ink-3">$ </span>}
       {text}
     </pre>
@@ -44,12 +44,12 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
     <div className="w-full overflow-hidden rounded-card bg-surface shadow-card" role="group" aria-label="Approval needed" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <div className="primitive-card-pad flex flex-col gap-2.5">
         <div>
-          <p className="text-[14px] font-medium text-ink">{ask.title}</p>
-          {ask.description && <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{ask.description}</p>}
+          <p className="text-base font-medium text-ink">{ask.title}</p>
+          {ask.description && <p className="mt-1 text-sm leading-relaxed text-ink-2">{ask.description}</p>}
         </div>
         <Preview toolName={ask.toolName} input={input} />
         {error && (
-          <p role="alert" className="text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+          <p role="alert" className="text-sm text-red-ink [overflow-wrap:anywhere]">
             {error}
           </p>
         )}
@@ -57,7 +57,7 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
       {/* Phones: the tool label sits on its own line and the three actions share the row
        * evenly at full tap height. From sm up it is one compact Beautiful UI footer. */}
       <div className="primitive-card-footer flex flex-col gap-2 border-t border-line sm:flex-row sm:items-center sm:justify-between">
-        <span className="min-w-0 truncate pl-1 font-mono text-[11.5px] text-ink-3" translate="no">
+        <span className="min-w-0 truncate pl-1 font-mono text-xs text-ink-3" translate="no">
           {summary.verb === ask.toolName ? ask.toolName : `${ask.toolName} · ${summary.chip}`}
         </span>
         <span className="flex items-center gap-1.5 sm:ml-auto sm:shrink-0">
@@ -109,7 +109,7 @@ function QuestionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "ques
         }}
       />
       {error && (
-        <p role="alert" className="px-1 text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+        <p role="alert" className="px-1 text-sm text-red-ink [overflow-wrap:anywhere]">
           {error}
         </p>
       )}
@@ -134,7 +134,7 @@ export function AskCards({ pending, respond }: { pending: PendingAsk[]; respond:
                 <button
                   type="button"
                   onClick={() => void respond({ requestId: ask.requestId, allow: false }).catch(() => {})}
-                  className="tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink"
+                  className="tap relative h-7 rounded-[7px] px-2.5 text-xs font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink"
                 >
                   {ask.kind === "permission" ? "Deny" : "Skip"}
                 </button>

@@ -71,8 +71,8 @@ export const LIGHT_ANSI: Ansi = {
   brightWhite: "#8c959f",
 };
 
-export const DARK_FALLBACK = { page: "#17181a", ink: "#e6e8ec", accent: "#61afef" };
-export const LIGHT_FALLBACK = { page: "#fcfcfd", ink: "#2b2d31", accent: "#0960c8" };
+export const DARK_FALLBACK = { page: "#0a0a0a", ink: "#f2f2f2", accent: "#61afef" };
+export const LIGHT_FALLBACK = { page: "#fdfdfd", ink: "#27272a", accent: "#0960c8" };
 
 type Rgb = [number, number, number];
 
