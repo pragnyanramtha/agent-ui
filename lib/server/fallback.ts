@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Entry, PermissionMode, ServerEvent } from "@/lib/types";
+import { parseEffort } from "@/lib/agent-traits";
 import { adapterFor, parseSessionKey, sessionKey } from "./agents";
 import { onTurn } from "./agents/cli-run";
 import { handoff, loadSource } from "./handoff";
@@ -59,7 +60,8 @@ function nextProfile(p: ResolvedProfile, tried: string[]) {
   return null;
 }
 
-export type GuardedTurn = { key: string; text: string; mode: PermissionMode; model?: string; profile: ResolvedProfile; tried?: string[] };
+/** `effort`: undefined is the profile's default, null the model's */
+export type GuardedTurn = { key: string; text: string; mode: PermissionMode; model?: string; effort?: string | null; profile: ResolvedProfile; tried?: string[] };
 
 const short = (s: string) => (s.length > 140 ? `${s.slice(0, 140)}…` : s);
 
@@ -129,11 +131,13 @@ async function failover(t: GuardedTurn, error: string) {
       const ctx = await sessionContext(k.native);
       if (!ctx) return;
       getRun(k.native)?.close();
-      const run = startRun({ resume: k.native, cwd: ctx.cwd, permissionMode: t.mode, profile: next });
+      const run = startRun({ resume: k.native, cwd: ctx.cwd, effort: t.effort, permissionMode: t.mode, profile: next });
       run.send(t.text);
     } else {
       const a = await adapterFor(k.agent);
-      await withProfile(next, () => a!.send(k.native, t.text, { mode: t.mode }));
+      const asked = parseEffort(k.agent, t.effort);
+      const effort = (asked === undefined ? next.defaultEffort : asked) ?? undefined;
+      await withProfile(next, () => a!.send(k.native, t.text, { mode: t.mode, effort }));
     }
     setSessionProfile(sessionKey(k.agent, k.native), next.id);
     guardTurn(go);
