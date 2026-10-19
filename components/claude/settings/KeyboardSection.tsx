@@ -30,7 +30,7 @@ function Caps({ chord, mac }: { chord: string; mac: boolean }) {
   return (
     <span className="inline-flex items-center gap-0.5">
       {chordParts(chord, mac).map((k, i) => (
-        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] border border-line bg-field px-1.5 font-sans text-[11.5px] leading-none text-ink-2 tabular-nums">
+        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] border border-line bg-field px-1.5 font-sans text-xs leading-none text-ink-2 tabular-nums">
           {k}
         </kbd>
       ))}
@@ -77,16 +77,16 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
   return (
     <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1.5 px-3.5 py-2">
       <div className="min-w-[min(100%,12rem)] flex-1">
-        <div className="text-[13.5px] text-ink">{cmd.label}</div>
+        <div className="text-sm text-ink">{cmd.label}</div>
         {note && (
-          <div className={`mt-0.5 text-[12px] leading-relaxed ${tone}`} role={warn ? "status" : undefined}>
+          <div className={`mt-0.5 text-xs leading-relaxed ${tone}`} role={warn ? "status" : undefined}>
             {note}
           </div>
         )}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {cmd.fixed ? (
-          <span className="flex items-center gap-1.5 px-1.5 text-[11px] text-ink-3">
+          <span className="flex items-center gap-1.5 px-1.5 text-2xs text-ink-3">
             {keys.map((k) => (
               <Caps key={k} chord={k} mac={mac} />
             ))}
@@ -99,12 +99,12 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
             onBlur={() => recording && onRecord(false)}
             aria-label={recording ? `Press the new keys for ${cmd.label}` : `Change shortcut for ${cmd.label}: ${keys.length ? keys.map((k) => chordLabel(k, mac)).join(" or ") : "none"}`}
             aria-pressed={recording}
-            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-control border px-2 text-[11px] text-ink-3 transition-colors ${
+            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-control border px-2 text-2xs text-ink-3 transition-colors ${
               recording ? "border-accent bg-accent-tint text-accent-ink" : "border-transparent hover:border-line hover:bg-hover"
             }`}
           >
             {recording ? (
-              <span className="text-[12px] font-medium">Press keys…</span>
+              <span className="text-xs font-medium">Press keys…</span>
             ) : keys.length ? (
               keys.map((k, i) => (
                 <Fragment key={k}>
@@ -113,7 +113,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
                 </Fragment>
               ))
             ) : (
-              <span className="text-[12px]">None</span>
+              <span className="text-xs">None</span>
             )}
           </button>
         )}
@@ -168,7 +168,7 @@ export function KeyboardSection() {
             onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), e.stopPropagation(), setQuery(""))}
             placeholder="Search shortcuts"
             aria-label="Search shortcuts"
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3 md:text-[13px] [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 md:text-sm md:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -176,7 +176,7 @@ export function KeyboardSection() {
             </button>
           )}
         </div>
-        {changed > 0 && <span className="text-[12px] text-ink-3">{changed === 1 ? "1 shortcut changed" : `${changed} shortcuts changed`}</span>}
+        {changed > 0 && <span className="text-xs text-ink-3">{changed === 1 ? "1 shortcut changed" : `${changed} shortcuts changed`}</span>}
       </div>
       {COMMAND_GROUPS.map((g) => {
         const rows = shown.filter((c) => c.group === g);
@@ -197,8 +197,8 @@ export function KeyboardSection() {
           </Card>
         );
       })}
-      {!shown.length && <p className="px-1 py-6 text-center text-[13px] text-ink-3">No shortcuts match &ldquo;{query.trim()}&rdquo;.</p>}
-      <p className="px-1 text-[12px] leading-relaxed text-ink-3">
+      {!shown.length && <p className="px-1 py-6 text-center text-sm text-ink-3">No shortcuts match &ldquo;{query.trim()}&rdquo;.</p>}
+      <p className="px-1 text-xs leading-relaxed text-ink-3">
         Click a shortcut, then press the new keys. Esc cancels, Backspace removes it.
         {comboFor("shortcuts", mac, { bindings }) && ` Press ${comboFor("shortcuts", mac, { bindings })} outside a text field to see them anywhere.`}
       </p>

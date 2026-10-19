@@ -37,8 +37,8 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
   return (
     <section className="border-b border-line px-3 py-4 last:border-b-0 sm:px-4">
       <div className="mb-2.5 flex items-baseline gap-2">
-        <h3 className="text-[12.5px] font-medium text-ink">{title}</h3>
-        {aside && <div className="ml-auto text-[12px] text-ink-3 tabular-nums">{aside}</div>}
+        <h3 className="text-sm font-medium text-ink">{title}</h3>
+        {aside && <div className="ml-auto text-xs text-ink-3 tabular-nums">{aside}</div>}
       </div>
       {children}
     </section>
@@ -87,7 +87,7 @@ function ContextBreakdown({ ctx }: { ctx: ContextState }) {
       }
     >
       <StackedBar label="Context window" slices={rows.map((r) => ({ label: r.label, value: r.n / ctx.window, color: r.color, text: `${k(r.n)} tokens` }))} />
-      <dl className="mt-3 flex flex-col gap-1.5 text-[12.5px]">
+      <dl className="mt-3 flex flex-col gap-1.5 text-sm">
         {[...rows, { label: "Free", n: ctx.free, color: FREE }].map((r) => (
           <div key={r.label} className="flex items-center gap-2">
             <Dot color={r.color} />
@@ -99,10 +99,10 @@ function ContextBreakdown({ ctx }: { ctx: ContextState }) {
           </div>
         ))}
       </dl>
-      <p className="mt-2.5 text-[11.5px] text-ink-3">
+      <p className="mt-2.5 text-xs text-ink-3">
         As of the latest API call{ctx.model ? <span className="font-mono"> · {ctx.model}</span> : null}. Last reply wrote {k(ctx.output)} tokens.
       </p>
-      {ctx.pct >= 0.8 && <p className="mt-1.5 text-[12px] text-orange-ink">Getting full. /compact frees space.</p>}
+      {ctx.pct >= 0.8 && <p className="mt-1.5 text-xs text-orange-ink">Getting full. /compact frees space.</p>}
     </Section>
   );
 }
@@ -113,10 +113,10 @@ function CostMeter({ cost, totals }: { cost: SessionCost; totals: UsageTotals })
     <Section title="Cost" aside={cost.actualUsd !== null ? "reported by the run" : "estimated"}>
       <div className="flex items-baseline gap-2">
         <span className="text-[24px] leading-none font-semibold tracking-[-0.01em] text-ink tabular-nums">{fmtUsd(cost.usd)}</span>
-        {cost.estimated && <span className="rounded-chip bg-field px-1.5 py-0.5 text-[11px] font-medium text-ink-3 shadow-hairline">est.</span>}
-        <span className="text-[12px] text-ink-3">{cost.actualUsd !== null ? "web run" : "session"}</span>
+        {cost.estimated && <span className="rounded-chip bg-field px-1.5 py-0.5 text-2xs font-medium text-ink-3 shadow-hairline">est.</span>}
+        <span className="text-xs text-ink-3">{cost.actualUsd !== null ? "web run" : "session"}</span>
         {cost.actualUsd !== null && totals.calls > 0 && (
-          <span className="ml-auto text-[12px] text-ink-3 tabular-nums" title="Estimated from every loaded API call at list prices">
+          <span className="ml-auto text-xs text-ink-3 tabular-nums" title="Estimated from every loaded API call at list prices">
             {fmtUsd(cost.estUsd)} est. transcript
           </span>
         )}
@@ -126,15 +126,15 @@ function CostMeter({ cost, totals }: { cost: SessionCost; totals: UsageTotals })
           <div className="mt-3">
             <StackedBar label="Cost by model" slices={totals.models.map((m, i) => ({ label: m.model, value: m.share, color: tint(i), text: `${fmtUsd(m.usd)} est.` }))} />
           </div>
-          <ul className="mt-3 flex flex-col gap-2 text-[12.5px]">
+          <ul className="mt-3 flex flex-col gap-2 text-sm">
             {totals.models.map((m, i) => (
               <li key={m.model} className="flex min-w-0 items-center gap-2">
                 <Dot color={tint(i)} />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-[12px] text-ink-2" title={m.model}>
+                  <p className="truncate font-mono text-xs text-ink-2" title={m.model}>
                     {m.model}
                   </p>
-                  <p className="text-[11.5px] text-ink-3 tabular-nums">
+                  <p className="text-xs text-ink-3 tabular-nums">
                     {k(m.input + m.cacheRead + m.cacheWrite)} in · {k(m.output)} out · {m.calls} {m.calls === 1 ? "call" : "calls"}
                     {m.price.fallback ? " · generic rate" : ""}
                   </p>
@@ -147,7 +147,7 @@ function CostMeter({ cost, totals }: { cost: SessionCost; totals: UsageTotals })
           </ul>
         </>
       )}
-      <p className="mt-3 text-[11.5px] leading-relaxed text-ink-3">
+      <p className="mt-3 text-xs leading-relaxed text-ink-3">
         Estimates use list prices per million tokens{cost.fallback ? ", with a generic rate for unrecognized models" : ""}. Subscription plans aren&apos;t billed per token.
       </p>
     </Section>
@@ -157,8 +157,8 @@ function CostMeter({ cost, totals }: { cost: SessionCost; totals: UsageTotals })
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0 rounded-[10px] bg-inset px-3 py-2 shadow-hairline" title={hint}>
-      <dt className="truncate text-[11.5px] text-ink-3">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-medium text-ink tabular-nums">{value}</dd>
+      <dt className="truncate text-xs text-ink-3">{label}</dt>
+      <dd className="mt-0.5 text-md font-medium text-ink tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -196,7 +196,7 @@ function Sparkline({ points, window }: { points: { t: number; used: number }[]; 
         <path d={area} fill="var(--accent-tint)" />
         <path d={line} fill="none" stroke={pct >= 0.7 ? contextTone(pct) : "var(--accent)"} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="mt-1.5 flex justify-between text-[11px] text-ink-3 tabular-nums">
+      <div className="mt-1.5 flex justify-between text-2xs text-ink-3 tabular-nums">
         <span>{fmtTime(points[0].t)}</span>
         <span>
           {points.length} {points.length === 1 ? "call" : "calls"}
@@ -222,8 +222,8 @@ function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
   if (!turns.length) return null;
   return (
     <Section title="Turns" aside={avg !== null ? `avg ${fmtDuration(avg)}` : undefined}>
-      <div role="table" aria-label="Turn timing" className="text-[12.5px]">
-        <div role="row" className="grid grid-cols-[4.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] gap-2 border-b border-line pb-1.5 text-[11.5px] text-ink-3">
+      <div role="table" aria-label="Turn timing" className="text-sm">
+        <div role="row" className="grid grid-cols-[4.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] gap-2 border-b border-line pb-1.5 text-xs text-ink-3">
           <span role="columnheader">Time</span>
           <span role="columnheader">Prompt</span>
           <span role="columnheader" className="text-right">
@@ -259,7 +259,7 @@ function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
           );
         })}
       </div>
-      {turns.length > TURN_ROWS && <p className="mt-2 text-[11.5px] text-ink-3">Latest {TURN_ROWS} of {turns.length} turns.</p>}
+      {turns.length > TURN_ROWS && <p className="mt-2 text-xs text-ink-3">Latest {TURN_ROWS} of {turns.length} turns.</p>}
     </Section>
   );
 }
@@ -296,11 +296,11 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
     >
       <div className="safe-top flex shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
         <div className="flex h-14 min-w-0 flex-1 items-center gap-2">
-          <h2 id="usage-h" className="text-[14px] font-semibold text-ink">
+          <h2 id="usage-h" className="text-base font-semibold text-ink">
             Usage
           </h2>
           {totals.calls > 0 && (
-            <span className="text-[12px] text-ink-3 tabular-nums">
+            <span className="text-xs text-ink-3 tabular-nums">
               {fmtUsd(cost.usd)}
               {cost.estimated ? " est." : ""} · {k(totals.output)} out
             </span>
@@ -317,9 +317,9 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
         aria-labelledby={scrolls ? "usage-h" : undefined}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:[outline-offset:-2px]"
       >
-        {partial && <p className="px-3 pt-3 text-[11.5px] text-ink-3 sm:px-4">From the loaded part of the conversation. Load earlier messages to include older usage.</p>}
+        {partial && <p className="px-3 pt-3 text-xs text-ink-3 sm:px-4">From the loaded part of the conversation. Load earlier messages to include older usage.</p>}
         {totals.calls === 0 && !latest ? (
-          <p className="px-4 py-10 text-center text-[13px] text-ink-3">No token usage reported in this conversation yet.</p>
+          <p className="px-4 py-10 text-center text-sm text-ink-3">No token usage reported in this conversation yet.</p>
         ) : (
           <>
             {latest && <ContextBreakdown ctx={contextOf(latest)} />}

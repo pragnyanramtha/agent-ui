@@ -61,14 +61,14 @@ export function PendingBubble({
     <div className="flex flex-col items-end gap-1" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <SentFiles paths={paths} />
       <div
-        className={`max-w-[80%] min-w-0 rounded-2xl border border-dashed px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:px-4 sm:py-3 sm:text-[14px] ${
+        className={`max-w-[80%] min-w-0 rounded-2xl border border-dashed px-3.5 py-2.5 text-md leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:px-4 sm:py-3 sm:text-base ${
           pending.state === "failed" ? "border-red/40 bg-red-tint" : "border-line-strong bg-field/60"
         }`}
         aria-busy={pending.state === "sending" || undefined}
       >
         {body}
       </div>
-      <div role="status" className={`flex max-w-full items-center gap-1.5 text-[11.5px] ${status.tone}`}>
+      <div role="status" className={`flex max-w-full items-center gap-1.5 text-xs ${status.tone}`}>
         <span className="shrink-0">{status.icon}</span>
         <span className="min-w-0">{status.text}</span>
         {queued && (

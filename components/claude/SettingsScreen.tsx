@@ -65,7 +65,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
         onKeyDown={(e) => e.key === "Escape" && value && (e.preventDefault(), onChange(""))}
         placeholder="Search settings"
         aria-label="Search settings"
-        className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3 md:text-sm [&::-webkit-search-cancel-button]:hidden"
+        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 md:text-sm md:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">

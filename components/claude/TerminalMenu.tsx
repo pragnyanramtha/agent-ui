@@ -63,7 +63,7 @@ export function TerminalMenu({
     <button type="button" role="menuitem" disabled={opts.disabled} onClick={() => onAction(action)} className="menu-item disabled:pointer-events-none disabled:opacity-40">
       <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">{glyph}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {opts.hint && <span className="shrink-0 text-[11.5px] text-ink-3 pointer-coarse:hidden">{opts.hint}</span>}
+      {opts.hint && <span className="shrink-0 text-xs text-ink-3 pointer-coarse:hidden">{opts.hint}</span>}
     </button>
   );
   return createPortal(

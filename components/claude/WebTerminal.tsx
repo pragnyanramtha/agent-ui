@@ -784,7 +784,7 @@ export function WebTerminal({
   const scheme = schemeTheme(prefs.terminalTheme);
   const isShell = kind === "shell" || (!kind && !target.tmux && !target.pid && !target.session && !target.term);
   const dot = conn === "open" ? "bg-green" : conn === "ended" ? "bg-red" : "animate-pulse bg-orange";
-  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-ink-2 hover:bg-hover hover:text-ink sm:h-7";
+  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-xs text-ink-2 hover:bg-hover hover:text-ink sm:h-7";
   return (
     <div
       className={
@@ -814,16 +814,16 @@ export function WebTerminal({
         }
         style={docked || popped ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
-        <div className={`flex shrink-0 items-center gap-1.5 border-b border-line px-3 text-[12.5px] text-ink-2 ${docked ? "h-9" : "h-12 sm:h-11"}`}>
+        <div className={`flex shrink-0 items-center gap-1.5 border-b border-line px-3 text-sm text-ink-2 ${docked ? "h-9" : "h-12 sm:h-11"}`}>
           {tabs ?? (
             <>
               <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
-              <span className="min-w-0 truncate font-mono text-[12px] text-ink" title={label}>
+              <span className="min-w-0 truncate font-mono text-xs text-ink" title={label}>
                 {label}
               </span>
             </>
           )}
-          {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange-ink">Reconnecting…</span>}
+          {conn === "reconnecting" && <span className="shrink-0 text-xs text-orange-ink">Reconnecting…</span>}
           {conn === "ended" && kind !== "agent" && (
             <button
               type="button"
@@ -831,7 +831,7 @@ export function WebTerminal({
                 if (isShell) setFresh(true);
                 setAttempt((a) => a + 1);
               }}
-              className="ml-1 shrink-0 rounded-full bg-hover px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-hover-2"
+              className="ml-1 shrink-0 rounded-full bg-hover px-2.5 py-1 text-xs font-medium text-ink hover:bg-hover-2"
             >
               {isShell ? "New shell" : kind ? "Reattach" : "Retry"}
             </button>
@@ -840,7 +840,7 @@ export function WebTerminal({
             <button type="button" onClick={() => zoom(-1)} aria-label="Smaller text" className={tool}>
               A−
             </button>
-            <span className="w-5 text-center text-[11px] tabular-nums text-ink-3">{fontSize ?? ""}</span>
+            <span className="w-5 text-center text-2xs tabular-nums text-ink-3">{fontSize ?? ""}</span>
             <button type="button" onClick={() => zoom(1)} aria-label="Larger text" className={tool}>
               A+
             </button>
@@ -852,27 +852,27 @@ export function WebTerminal({
                 {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
               </button>
             )}
-            <span className="mx-1 hidden text-[11px] text-ink-3 lg:inline">{docked ? hideHint(comboFor("terminal", isMac(), { inTerminal: true }), "hide") : hideHint(comboFor("closeTerminal"), "close")}</span>
+            <span className="mx-1 hidden text-2xs text-ink-3 lg:inline">{docked ? hideHint(comboFor("terminal", isMac(), { inTerminal: true }), "hide") : hideHint(comboFor("closeTerminal"), "close")}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-ink-3 hover:bg-hover hover:text-ink sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />
           </button>
         </div>
-        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
+        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-xs ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
         <div className="relative min-h-0 flex-1">
           <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" style={{ background: scheme?.background }} />
           {bell > 0 && <div key={bell} aria-hidden className="pointer-events-none absolute inset-0 bg-ink/10" style={{ animation: "fade-in 220ms ease-out reverse both" }} />}
-          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-xs text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
           {find && search && <TerminalFind search={search} dark={find.dark} focusKey={find.n} onClose={closeFind} />}
           {notice && (
-            <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-[12px] text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+            <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-xs text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
               {notice}
             </p>
           )}
           {menu && <TerminalMenu at={menu} hasSelection={menu.selection} findKey={findKey} onAction={(a) => void act(a)} onClose={closeMenu} />}
         </div>
         <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
-          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-[12.5px] text-ink-2 active:bg-hover-2">
+          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-sm text-ink-2 active:bg-hover-2">
             Paste
           </button>
           {KEYS.map(([text, seq]) => (
@@ -882,7 +882,7 @@ export function WebTerminal({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => press(seq)}
               aria-pressed={seq === mod || undefined}
-              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-[12.5px] active:bg-hover-2 ${seq === mod ? "bg-ink text-page" : "bg-hover text-ink-2"}`}
+              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-sm active:bg-hover-2 ${seq === mod ? "bg-ink text-page" : "bg-hover text-ink-2"}`}
             >
               {text}
             </button>

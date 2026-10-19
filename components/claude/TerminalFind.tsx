@@ -61,9 +61,9 @@ export function TerminalFind({ search, dark, focusKey, onClose }: { search: Sear
         spellCheck={false}
         autoCapitalize="off"
         autoComplete="off"
-        className="h-7 w-36 min-w-0 bg-transparent px-2 text-[12.5px] text-ink outline-none placeholder:text-ink-3 sm:w-48"
+        className="h-7 w-36 min-w-0 bg-transparent px-2 text-sm text-ink outline-none placeholder:text-ink-3 sm:w-48"
       />
-      <span aria-live="polite" className={`shrink-0 px-1 text-[11.5px] tabular-nums ${result?.resultCount === 0 ? "text-red-ink" : "text-ink-3"}`}>
+      <span aria-live="polite" className={`shrink-0 px-1 text-xs tabular-nums ${result?.resultCount === 0 ? "text-red-ink" : "text-ink-3"}`}>
         {label}
       </span>
       <button type="button" onClick={() => step(true)} disabled={!result?.resultCount} aria-label="Previous match" className={btn}>

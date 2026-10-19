@@ -35,7 +35,7 @@ export function SettingControl<K extends SettingKey>({ k, id }: { k: K; id?: str
     }
     case "string":
       if (def.control === "theme-json") return <CustomThemeField id={id} />;
-      return <input id={id} type="text" value={value as string} maxLength={def.maxLength} placeholder={def.placeholder} onChange={(e) => setAny(e.target.value)} className="field-ring h-8 w-56 rounded-control border border-line bg-field px-2.5 text-sm text-ink outline-none" />;
+      return <input id={id} type="text" value={value as string} maxLength={def.maxLength} placeholder={def.placeholder} onChange={(e) => setAny(e.target.value)} className="field-ring h-8 w-56 rounded-control border border-line bg-field px-2.5 text-[16px] text-ink outline-none sm:text-sm sm:pointer-coarse:text-[16px]" />;
     case "color":
       return <ColorField k={k as "accentColor"} id={id} />;
   }

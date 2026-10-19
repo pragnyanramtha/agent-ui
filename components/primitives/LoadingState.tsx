@@ -180,7 +180,7 @@ export default function LoadingState({
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-1.5">
                 <LoaderGrid {...PATTERNS.Drive} />
-                <span className="px-3 text-center font-mono text-[10px]" style={{ color: "var(--tooltip-muted)" }}>
+                <span className="px-3 text-center font-mono text-2xs" style={{ color: "var(--tooltip-muted)" }}>
                   Video unavailable
                 </span>
               </div>

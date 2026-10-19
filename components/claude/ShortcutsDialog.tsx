@@ -18,15 +18,15 @@ export function ShortcutList() {
     <div className="flex flex-col gap-5">
       {COMMAND_GROUPS.map((g) => (
         <section key={g}>
-          <h3 className="mb-1 text-[12px] font-medium text-ink-3">{g}</h3>
+          <h3 className="mb-1 text-xs font-medium text-ink-3">{g}</h3>
           <ul className="divide-y divide-line">
             {COMMANDS.filter((c) => c.group === g && !(tabsFolded && TABS.includes(c.id as (typeof TABS)[number]) && c.id !== "tab1")).map((c) => {
               const keys = keysFor(c.id, bindings);
               const folded = tabsFolded && c.id === "tab1";
               return (
-                <li key={c.id} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-[13px] text-ink">
+                <li key={c.id} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm text-ink">
                   <span className="min-w-0">{folded ? "Go to tab 1 to 8" : c.label}</span>
-                  <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+                  <span className="flex shrink-0 items-center gap-1.5 text-2xs text-ink-3">
                     {folded ? (
                       <>
                         <Kbd chord={keys[0]} className="!inline-flex" />
@@ -75,7 +75,7 @@ export function ShortcutsDialog() {
   return (
     <Sheet title="Keyboard shortcuts" onClose={() => setOpen(false)}>
       <ShortcutList />
-      <p className="pt-4 text-[12px] text-ink-3">Change them in Settings, under Keyboard.</p>
+      <p className="pt-4 text-xs text-ink-3">Change them in Settings, under Keyboard.</p>
     </Sheet>
   );
 }

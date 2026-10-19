@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 
 function ScreenWait({ label }: { label: string }) {
   return (
-    <div role="status" className="flex min-h-0 flex-1 items-center justify-center bg-page p-6 text-[13px] text-ink-3">
+    <div role="status" className="flex min-h-0 flex-1 items-center justify-center bg-page p-6 text-sm text-ink-3">
       {label}
     </div>
   );
@@ -17,7 +17,7 @@ function PanelWait({ label }: { label: string }) {
   return (
     <div
       role="status"
-      className="absolute inset-0 z-20 flex items-center justify-center bg-page p-6 text-[13px] text-ink-3 lg:static lg:inset-auto lg:w-[440px] lg:shrink-0 lg:border-l lg:border-line xl:w-[520px]"
+      className="absolute inset-0 z-20 flex items-center justify-center bg-page p-6 text-sm text-ink-3 lg:static lg:inset-auto lg:w-[440px] lg:shrink-0 lg:border-l lg:border-line xl:w-[520px]"
     >
       {label}
     </div>
@@ -26,7 +26,7 @@ function PanelWait({ label }: { label: string }) {
 
 function PillWait({ label }: { label: string }) {
   return (
-    <div role="status" className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-surface px-3.5 py-2 text-[12.5px] text-ink-2 shadow-overlay">
+    <div role="status" className="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-surface px-3.5 py-2 text-sm text-ink-2 shadow-overlay">
       {label}
     </div>
   );
@@ -45,7 +45,7 @@ export const GitPanel = dynamic(() => import("./GitPanel").then((m) => m.GitPane
 export const UsagePanel = dynamic(() => import("./UsagePanel").then((m) => m.UsagePanel), { ssr: false, loading: () => <PanelWait label="Loading usage…" /> });
 export const HandoffDialog = dynamic(() => import("./HandoffDialog").then((m) => m.HandoffDialog), { ssr: false, loading: () => <PillWait label="Loading…" /> });
 export const TerminalPeek = dynamic(() => import("./TerminalPeek").then((m) => m.TerminalPeek), { ssr: false, loading: () => <PillWait label="Loading terminal preview…" /> });
-export const AskCards = dynamic(() => askCards().then((m) => m.AskCards), { ssr: false, loading: () => <p role="status" className="py-2 text-[13px] text-ink-3">Loading request…</p> });
+export const AskCards = dynamic(() => askCards().then((m) => m.AskCards), { ssr: false, loading: () => <p role="status" className="py-2 text-sm text-ink-3">Loading request…</p> });
 
 /** Fetches what an open session may need at once, so an approval still shows if the network drops later. */
 export const preloadSessionChunks = () => void askCards().catch(() => undefined);

@@ -28,8 +28,8 @@ function Item({ t }: { t: Toast }) {
     >
       <Icon width={17} height={17} strokeWidth={1.9} className={`mt-px shrink-0 ${cls}`} aria-hidden />
       <div className="min-w-0 flex-1 py-px">
-        <p className="text-[13px] leading-snug font-medium [overflow-wrap:anywhere]">{t.title}</p>
-        {t.body && <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-ink-3 [overflow-wrap:anywhere]">{t.body}</p>}
+        <p className="text-sm leading-snug font-medium [overflow-wrap:anywhere]">{t.title}</p>
+        {t.body && <p className="mt-0.5 line-clamp-2 text-sm leading-snug text-ink-3 [overflow-wrap:anywhere]">{t.body}</p>}
       </div>
       {t.action && (
         <button
@@ -38,7 +38,7 @@ function Item({ t }: { t: Toast }) {
             t.action?.run();
             dismissToast(t.id);
           }}
-          className="tap relative -my-0.5 shrink-0 rounded-control px-2.5 py-1 text-[12.5px] font-medium text-accent-ink hover:bg-hover"
+          className="tap relative -my-0.5 shrink-0 rounded-control px-2.5 py-1 text-sm font-medium text-accent-ink hover:bg-hover"
         >
           {t.action.label}
         </button>

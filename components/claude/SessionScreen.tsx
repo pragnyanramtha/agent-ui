@@ -46,7 +46,7 @@ function useMeasure<T extends HTMLElement>() {
 
 const OFFLINE = "Couldn't reach the server.";
 const SEGMENT =
-  "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
+  "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-sm font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
 type Panel = "changes" | "git" | "usage";
 const PANEL_KEY = "cui:panel";
 
@@ -308,7 +308,7 @@ export function SessionScreen({
   const respond = useCallback((body: Answer) => answerAsk(id, body), [id]);
 
   /* status as a quiet mark + word; below 480px only the mark shows for calm states, states that need you keep the word */
-  const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
+  const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-sm";
   const chipLabel = "max-w-[9rem] truncate max-[479px]:sr-only";
   const loudLabel = "max-w-[9rem] truncate";
   const turnFailed = runFailed(run);
@@ -431,7 +431,7 @@ export function SessionScreen({
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-[15px] tracking-[-0.01em] sm:text-[13.5px]">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-md tracking-[-0.01em] sm:text-sm">
             {runsOn && (
               <span className="flex shrink-0 max-sm:hidden" title={runsOn}>
                 <AgentMark agent={agent} />
@@ -451,7 +451,7 @@ export function SessionScreen({
               {view.title || (view.status === "missing" ? "Couldn't load this session" : "Loading session…")}
             </h1>
             {git?.branch && (
-              <span className="inline-flex h-5 max-w-[10rem] min-w-0 shrink-[8] items-center rounded-chip bg-field px-1.5 font-mono text-[11.5px] text-ink-3 max-sm:hidden @max-[48rem]:hidden" title={`Branch ${git.branch}`} translate="no">
+              <span className="inline-flex h-5 max-w-[10rem] min-w-0 shrink-[8] items-center rounded-chip bg-field px-1.5 font-mono text-xs text-ink-3 max-sm:hidden @max-[48rem]:hidden" title={`Branch ${git.branch}`} translate="no">
                 <span className="truncate">{git.branch}</span>
               </span>
             )}
@@ -657,7 +657,7 @@ export function SessionScreen({
                       <Xmark width={15} height={15} strokeWidth={1.8} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
                       <span className="flex min-w-0 flex-col">
                         <span>End session</span>
-                        <span className="text-[12px] text-ink-3">Stops the agent. History stays.</span>
+                        <span className="text-xs text-ink-3">Stops the agent. History stays.</span>
                       </span>
                     </button>
                   </>
@@ -700,13 +700,13 @@ export function SessionScreen({
         empty={
           view.status === "missing" ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <p className="text-[13px] text-ink-3">Couldn&apos;t load this session.</p>
-              <button type="button" onClick={() => window.location.reload()} className="h-9 rounded-full px-3.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+              <p className="text-sm text-ink-3">Couldn&apos;t load this session.</p>
+              <button type="button" onClick={() => window.location.reload()} className="h-9 rounded-full px-3.5 text-sm font-medium text-ink shadow-btn hover:bg-hover">
                 Reload
               </button>
             </div>
           ) : (
-            <p className="py-16 text-center text-[13px] text-ink-3">No messages yet.</p>
+            <p className="py-16 text-center text-sm text-ink-3">No messages yet.</p>
           )
         }
       />
@@ -717,17 +717,17 @@ export function SessionScreen({
         <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-0 sm:pb-4">
           <div className="mx-auto max-w-(--thread-w) sm:px-8">
             {failed && !busy && (
-              <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-[13px] text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-sm text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
                   <span className="font-medium">Turn failed.</span> {failed}
                 </p>
                 <div className="flex shrink-0 items-center gap-1">
                   {lastUserText && !view.pending.some((p) => p.state === "failed") && (
-                    <button type="button" onClick={() => void send(lastUserText)} className="tap relative h-8 rounded-full px-3 text-[12.5px] font-medium text-ink hover:bg-hover">
+                    <button type="button" onClick={() => void send(lastUserText)} className="tap relative h-8 rounded-full px-3 text-sm font-medium text-ink hover:bg-hover">
                       Retry
                     </button>
                   )}
-                  <button type="button" onClick={() => setHandoffOpen(true)} className="tap relative h-8 rounded-full px-3 text-[12.5px] font-medium text-ink hover:bg-hover">
+                  <button type="button" onClick={() => setHandoffOpen(true)} className="tap relative h-8 rounded-full px-3 text-sm font-medium text-ink hover:bg-hover">
                     Continue in…
                   </button>
                   <button type="button" onClick={() => setDismissedError(failed)} aria-label="Dismiss" className="tap relative grid size-8 place-items-center rounded-full text-ink-2 hover:bg-hover">
@@ -737,7 +737,7 @@ export function SessionScreen({
               </div>
             )}
             {planReady && (
-              <div className="mb-2 flex items-center gap-2 rounded-[12px] bg-accent-tint px-3 py-2 text-[13px] text-accent-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <div className="mb-2 flex items-center gap-2 rounded-[12px] bg-accent-tint px-3 py-2 text-sm text-accent-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1">Plan ready. No files changed yet.</p>
                 <button
                   type="button"
@@ -748,14 +748,14 @@ export function SessionScreen({
                     if (live) void control("mode", next);
                     void send("Go ahead and implement the plan.");
                   }}
-                  className="tap relative h-8 shrink-0 rounded-full bg-ink px-3 text-[12.5px] font-medium text-surface"
+                  className="tap relative h-8 shrink-0 rounded-full bg-ink px-3 text-sm font-medium text-surface"
                 >
                   Implement plan
                 </button>
               </div>
             )}
             {error && (
-              <p role="alert" className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <p role="alert" className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 {error}
               </p>
             )}

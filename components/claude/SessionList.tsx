@@ -59,7 +59,7 @@ export function AgentMark({ agent, className = "" }: { agent: AgentId; className
 }
 
 export function AgentBadge({ agent }: { agent: AgentId }) {
-  return <span className="shrink-0 text-[12px] text-ink-3">{AGENT_LABEL[agent]}</span>;
+  return <span className="shrink-0 text-xs text-ink-3">{AGENT_LABEL[agent]}</span>;
 }
 
 const ago = (ms: number, now: number) => {
@@ -213,7 +213,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts="F2 Delete"
         title={tip}
-        className={`side-row gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
+        className={`side-row gap-2.5 text-sm pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
       >
         <span className="flex w-1.5 shrink-0 justify-center" aria-hidden>
           {status && <span className={`size-1.5 rounded-full ${STATUS_DOT[status]}`} />}
@@ -221,7 +221,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {status && <span className="sr-only">, {STATUS_LABEL[status]}</span>}
         {agent && <span role="img" aria-label={AGENT_LABEL[agent]} className={`size-2 shrink-0 rounded-[2.5px] opacity-80 ${AGENT_TONE[agent]}`} />}
-        <span className={`min-w-7 shrink-0 text-right text-[12px] text-ink-3 tabular-nums ${tail}`}>{time}</span>
+        <span className={`min-w-7 shrink-0 text-right text-xs text-ink-3 tabular-nums ${tail}`}>{time}</span>
       </button>
       <button
         type="button"
@@ -287,7 +287,7 @@ function RenameRow({ title, draft, onDone }: { title: string; draft: { current: 
         autoComplete="off"
         spellCheck={false}
         aria-label="Session name"
-        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none sm:text-[13.5px] sm:pointer-coarse:text-[16px]"
+        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none sm:text-sm sm:pointer-coarse:text-[16px]"
       />
     </div>
   );
@@ -382,7 +382,7 @@ function RowMenu({
     </button>
   );
   const icon = { width: 15, height: 15, strokeWidth: 1.9, "aria-hidden": true } as const;
-  const when = (text: string) => <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{text}</span>;
+  const when = (text: string) => <span className="shrink-0 text-xs text-ink-3 tabular-nums">{text}</span>;
   const PRESET_ICON = { hour: <Clock {...icon} />, tonight: <HalfMoon {...icon} />, tomorrow: <SunLight {...icon} />, "next-week": <Calendar {...icon} /> };
   return createPortal(
     <div
@@ -490,11 +490,11 @@ function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: (
         </>
       }
     >
-      <p className="text-[13.5px] leading-relaxed text-ink-2">
+      <p className="text-sm leading-relaxed text-ink-2">
         <span className="font-medium text-ink [overflow-wrap:anywhere]">{s.title}</span> leaves the list on every device. This can&apos;t be undone.
       </p>
       {fileOk ? (
-        <label className={`mt-3 flex items-start gap-2.5 text-[13.5px] leading-snug ${inTerminal ? "text-ink-3" : "text-ink"}`}>
+        <label className={`mt-3 flex items-start gap-2.5 text-sm leading-snug ${inTerminal ? "text-ink-3" : "text-ink"}`}>
           <input
             type="checkbox"
             checked={transcript && !inTerminal}
@@ -504,21 +504,21 @@ function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: (
           />
           <span>
             Also delete the transcript file
-            <span className="mt-0.5 block text-[12.5px] text-ink-3">
+            <span className="mt-0.5 block text-sm text-ink-3">
               {inTerminal ? "It's open in a terminal, so the file stays." : transcript ? `Removes the history from ${agent}'s own storage too.` : `Otherwise the history stays in ${agent}'s own storage.`}
             </span>
           </span>
         </label>
       ) : (
-        <p className="mt-2 text-[13px] leading-relaxed text-ink-3">The history stays in {agent}&apos;s own storage.</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-3">The history stays in {agent}&apos;s own storage.</p>
       )}
       {running && (
-        <p className="mt-3 rounded-control bg-orange-tint px-2.5 py-2 text-[13px] text-orange-ink">
+        <p className="mt-3 rounded-control bg-orange-tint px-2.5 py-2 text-sm text-orange-ink">
           {(s.web?.pending.length ?? 0) > 0 ? "It's waiting on you. Answer or stop it first." : "It's running. Stop it first."}
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-3 rounded-control bg-red-tint px-2.5 py-2 text-[13px] text-red-ink">
+        <p role="alert" className="mt-3 rounded-control bg-red-tint px-2.5 py-2 text-sm text-red-ink">
           {error}
         </p>
       )}
@@ -543,7 +543,7 @@ function ArchiveDialog({ s, onClose, onArchive }: { s: SessionSummary; onClose: 
         </>
       }
     >
-      <p className="text-[13.5px] leading-relaxed text-ink-2">
+      <p className="text-sm leading-relaxed text-ink-2">
         <span className="font-medium text-ink [overflow-wrap:anywhere]">{s.title}</span> moves to Archived on every device. You can restore it from there.
       </p>
     </Sheet>
@@ -562,7 +562,7 @@ function Section({ label, open, onToggle, action, children }: { label: string; o
             data-nav={`section:${label}`}
             onClick={onToggle}
             aria-expanded={open}
-            className="group/label flex h-7 w-full items-center gap-1 rounded-control px-2.5 text-left text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
+            className="group/label flex h-7 w-full items-center gap-1 rounded-control px-2.5 text-left text-xs font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
           >
             <span className="truncate">{label}</span>
             <NavArrowRight
@@ -590,7 +590,7 @@ const ProjectHeader = memo(function ProjectHeader({ id, name, path, count, open,
       onClick={() => onToggle(id)}
       aria-expanded={open}
       title={path}
-      className="group/ph flex h-7 w-full shrink-0 items-center gap-1.5 rounded-control px-2.5 text-left text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
+      className="group/ph flex h-7 w-full shrink-0 items-center gap-1.5 rounded-control px-2.5 text-left text-xs font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
     >
       <NavArrowRight width={12} height={12} strokeWidth={2.2} aria-hidden className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
       <span className="min-w-0 flex-1 truncate">{name}</span>
@@ -682,7 +682,7 @@ function ViewMenu({
       {checked && <Check width={15} height={15} strokeWidth={2} className="shrink-0 text-ink-2" aria-hidden />}
     </button>
   );
-  const heading = (text: string) => <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">{text}</div>;
+  const heading = (text: string) => <div className="px-2 pt-1 pb-0.5 text-xs text-ink-3">{text}</div>;
   const rule = <div className="mx-2 my-1 h-px bg-line" />;
   return (
     <div className="relative">
@@ -1186,13 +1186,13 @@ export const SessionList = memo(function SessionList({
       }
     />
   );
-  const navBtn = "relative flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
+  const navBtn = "relative flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-lg px-1.5 text-sm text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
   const empty = !shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : !awake.length ? "Everything is snoozed." : null;
 
   return (
     <nav aria-label="Sessions" className="relative flex h-full min-h-0 w-full flex-col">
       <div className="flex h-[52px] shrink-0 items-center gap-0.5 pr-2 pl-4">
-        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold tracking-[-0.01em] text-ink">agent-u</span>
+        <span className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] text-ink">agent-u</span>
         {onCollapse && (
           <IconButton label={collapseLabel} tip={`${collapseLabel}  ${mod} B`} tipPos="bottom-end" onClick={onCollapse}>
             <SidebarCollapse width={18} height={18} strokeWidth={1.8} aria-hidden />
@@ -1204,7 +1204,7 @@ export const SessionList = memo(function SessionList({
         <button
           type="button"
           onClick={onNew}
-          className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] font-medium text-ink shadow-hairline transition-colors duration-150 hover:bg-sidebar-hover pointer-coarse:h-11"
+          className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink shadow-hairline transition-colors duration-150 hover:bg-sidebar-hover pointer-coarse:h-11"
         >
           <EditPencil width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-2" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">New session</span>
@@ -1213,7 +1213,7 @@ export const SessionList = memo(function SessionList({
         <button
           type="button"
           onClick={palette}
-          className="flex h-8 items-center gap-2 rounded-lg bg-field px-2.5 text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink-2 pointer-coarse:h-11"
+          className="flex h-8 items-center gap-2 rounded-lg bg-field px-2.5 text-sm text-ink-3 transition-colors duration-150 hover:text-ink-2 pointer-coarse:h-11"
         >
           <Search width={15} height={15} strokeWidth={1.9} className="shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">Search</span>
@@ -1230,7 +1230,7 @@ export const SessionList = memo(function SessionList({
             >
               <MailIn width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
               <span className="truncate">Inbox</span>
-              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-[11px] leading-[16px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
+              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-2xs leading-[16px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
             </button>
             <button type="button" onClick={() => onView("@agents")} aria-current={activeView === "@agents" ? "page" : undefined} aria-label="Agents and terminals" data-tip="Agents and terminals" className={navBtn}>
               <Terminal width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
@@ -1273,7 +1273,7 @@ export const SessionList = memo(function SessionList({
               name="session-search"
               autoComplete="off"
               aria-label="Filter sessions"
-              className="ml-2 min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[13px] sm:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
+              className="ml-2 min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-sm sm:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
             />
             <button
               type="button"
@@ -1301,12 +1301,12 @@ export const SessionList = memo(function SessionList({
         className="scroll-quiet scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-8"
       >
         {error && (
-          <p role="alert" className="mx-0.5 mb-2 rounded-control bg-red-tint px-2.5 py-2 text-[13px] text-red-ink">
+          <p role="alert" className="mx-0.5 mb-2 rounded-control bg-red-tint px-2.5 py-2 text-sm text-red-ink">
             Couldn&apos;t load sessions: {error}
           </p>
         )}
         {filter !== "all" && !matches && (
-          <div className="mb-1 flex h-8 items-center gap-1.5 px-2.5 text-[13px] text-ink-3">
+          <div className="mb-1 flex h-8 items-center gap-1.5 px-2.5 text-sm text-ink-3">
             <span className="min-w-0 truncate">{AGENT_LABEL[filter]} sessions only</span>
             <button type="button" onClick={() => setAgentFilter("all")} className="tap relative shrink-0 rounded-chip font-medium text-accent-ink hover:underline">
               Show all
@@ -1325,17 +1325,17 @@ export const SessionList = memo(function SessionList({
 
         {matches ? (
           <section className="mt-1">
-            <h2 className="flex h-7 items-center px-2.5 text-[12px] font-medium text-ink-3">
+            <h2 className="flex h-7 items-center px-2.5 text-xs font-medium text-ink-3">
               {matches.length ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : "No matches"}
             </h2>
             {matches.length ? (
               <div className="flex flex-col gap-px">{matches.map((s) => row(s, "match"))}</div>
             ) : (
               <div className="flex flex-col items-start gap-1 px-2.5 py-1">
-                <p className="text-[13px] text-ink-3">
+                <p className="text-sm text-ink-3">
                   Nothing matches <span className="text-ink-2">“{query.trim()}”</span>.
                 </p>
-                <button type="button" onClick={() => setQuery("")} className="tap relative rounded-chip text-[13px] font-medium text-accent-ink hover:underline">
+                <button type="button" onClick={() => setQuery("")} className="tap relative rounded-chip text-sm font-medium text-accent-ink hover:underline">
                   Clear filter
                 </button>
               </div>
@@ -1362,7 +1362,7 @@ export const SessionList = memo(function SessionList({
                           <>
                             {list.map((s) => row(s, "project"))}
                             {(hidden > 0 || fullProjects.has(p.key)) && cap !== null && p.rows.length > cap && (
-                              <button type="button" data-nav={`more:${p.key}`} onClick={() => flipFull(p.key)} className="side-row h-7 gap-2.5 text-[12.5px] text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                              <button type="button" data-nav={`more:${p.key}`} onClick={() => flipFull(p.key)} className="side-row h-7 gap-2.5 text-sm text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
                                 <span className="w-1.5 shrink-0" aria-hidden />
                                 {hidden > 0 ? `Show ${hidden} more` : "Show less"}
                               </button>
@@ -1373,28 +1373,28 @@ export const SessionList = memo(function SessionList({
                     );
                   })}
                   {(projects.length > shownProjects.length || allProjects) && projects.length > PROJECT_CAP && (
-                    <button type="button" data-nav="more:projects" onClick={() => setAllProjects((v) => !v)} className="side-row mt-1.5 h-7 gap-1.5 text-[12px] font-medium text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                    <button type="button" data-nav="more:projects" onClick={() => setAllProjects((v) => !v)} className="side-row mt-1.5 h-7 gap-1.5 text-xs font-medium text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
                       <MoreHoriz width={12} height={12} strokeWidth={2.2} aria-hidden />
                       {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more ${projects.length - shownProjects.length === 1 ? "project" : "projects"}`}
                     </button>
                   )}
-                  {empty && <p className="px-2.5 py-1.5 text-[13px] text-ink-3">{empty}</p>}
+                  {empty && <p className="px-2.5 py-1.5 text-sm text-ink-3">{empty}</p>}
                 </Section>
               ) : (
                 <Section label="Recent" open={!shut.has("recents")} onToggle={() => toggleSection("recents")} action={viewMenu}>
                   {recentGroups.map(([name, list]) => (
                     <div key={name || "all"} className="flex flex-col gap-px">
-                      {name && <h3 className="flex h-7 items-end px-2.5 pb-1 text-[12px] text-ink-3 [&:not(:first-child)]:mt-2">{name}</h3>}
+                      {name && <h3 className="flex h-7 items-end px-2.5 pb-1 text-xs text-ink-3 [&:not(:first-child)]:mt-2">{name}</h3>}
                       {list.map((s) => row(s, "recent"))}
                     </div>
                   ))}
                   {recent.length > recentCap && (
-                    <button type="button" data-nav="more:recent" onClick={() => setRecentCap((c) => c + RECENT_STEP)} className="side-row h-7 gap-2.5 text-[12.5px] text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                    <button type="button" data-nav="more:recent" onClick={() => setRecentCap((c) => c + RECENT_STEP)} className="side-row h-7 gap-2.5 text-sm text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
                       <span className="w-1.5 shrink-0" aria-hidden />
                       Show more
                     </button>
                   )}
-                  {empty && <p className="px-2.5 py-1.5 text-[13px] text-ink-3">{empty}</p>}
+                  {empty && <p className="px-2.5 py-1.5 text-sm text-ink-3">{empty}</p>}
                 </Section>
               )}
 
@@ -1449,7 +1449,7 @@ export const SessionList = memo(function SessionList({
         {toast && (
           <div
             key={toast.n}
-            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-[10px] bg-ink py-1.5 pr-1.5 pl-3 text-[13px] text-page shadow-overlay"
+            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-[10px] bg-ink py-1.5 pr-1.5 pl-3 text-sm text-page shadow-overlay"
             style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both" }}
           >
             <span className="min-w-0 truncate">{toast.text}</span>
@@ -1575,7 +1575,7 @@ export function SessionRail({
             );
           })}
           {live.length > shown.length && (
-            <button type="button" onClick={onExpand} aria-label={`${live.length - shown.length} more`} data-tip="Show all" data-tip-pos="right" className="icon-btn text-[12px] font-medium tabular-nums">
+            <button type="button" onClick={onExpand} aria-label={`${live.length - shown.length} more`} data-tip="Show all" data-tip-pos="right" className="icon-btn text-xs font-medium tabular-nums">
               +{live.length - shown.length}
             </button>
           )}
