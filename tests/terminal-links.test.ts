@@ -17,6 +17,7 @@ describe("findPathLinks", () => {
 
   it("takes a bare file name only with a line number", () => {
     expect(paths("app.ts:40 failed")).toEqual(["app.ts:40"]);
+    expect(paths("and README.md:3, see")).toEqual(["README.md:3"]);
     expect(paths("open app.ts now")).toEqual([]);
   });
 
