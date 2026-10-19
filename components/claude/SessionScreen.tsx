@@ -668,6 +668,7 @@ export function SessionScreen({
             )}
             <Composer
               draftKey={id}
+              agent={agent}
               placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
               history={sentTexts}
               onSend={send}
