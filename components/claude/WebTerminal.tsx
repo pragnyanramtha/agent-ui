@@ -5,6 +5,7 @@ import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
 import { comboFor } from "@/lib/client/shortcuts";
+import { oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -36,37 +37,10 @@ const KEYS: [string, string][] = [
   ["-", "-"],
 ];
 
-/* One Dark-ish, matched to the app's dark page */
-const THEME = {
-  background: "#17181a",
-  foreground: "#e6e8ec",
-  cursor: "#e6e8ec",
-  cursorAccent: "#17181a",
-  selectionBackground: "#3a3d44",
-  black: "#1d1e21",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#c9ccd3",
-  brightBlack: "#6b7079",
-  brightRed: "#f28b94",
-  brightGreen: "#b5e08f",
-  brightYellow: "#f2d398",
-  brightBlue: "#8cc7ff",
-  brightMagenta: "#dc9ef0",
-  brightCyan: "#7fd3dd",
-  brightWhite: "#ffffff",
-};
-
 const SIZE_KEY = "cui:term-font";
 const DOCK_KEY = "cui:term-dock-height";
 const DOCK_MIN = 140;
 const DOCK_DEFAULT = 320;
-/* "#17181a" -> "rgb:1717/1818/1a1a", the form OSC 10/11 replies use */
-const oscColor = (hex: string) => `rgb:${[1, 3, 5].map((i) => hex.slice(i, i + 2).repeat(2)).join("/")}`;
 const NERD = '"Symbols Nerd Font Mono"';
 
 const ctrlOf = (ch: string) => {
@@ -151,7 +125,7 @@ export function WebTerminal({
         fontSize: size,
         cursorBlink: true,
         scrollback: 10000,
-        theme: THEME,
+        theme: readTerminalTheme(),
         allowProposedApi: true,
         macOptionIsMeta: true,
         rightClickSelectsWord: true,
@@ -279,7 +253,8 @@ export function WebTerminal({
       const osc = [10, 11].map((n) =>
         term.parser.registerOscHandler(n, (data) => {
           if (data !== "?") return false;
-          sendData(`\x1b]${n};${oscColor(n === 10 ? THEME.foreground : THEME.background)}\x1b\\`);
+          const theme = term.options.theme ?? {};
+          sendData(`\x1b]${n};${oscColor((n === 10 ? theme.foreground : theme.background) ?? "#000000")}\x1b\\`);
           return true;
         }),
       );
@@ -315,6 +290,16 @@ export function WebTerminal({
       };
       window.addEventListener("online", wake);
       document.addEventListener("visibilitychange", wake);
+      /* light, dark and palette switches all land on <html> */
+      let themeKey = JSON.stringify(term.options.theme);
+      const themeWatch = new MutationObserver(() => {
+        const next = readTerminalTheme();
+        const key = JSON.stringify(next);
+        if (key === themeKey) return;
+        themeKey = key;
+        term.options.theme = next;
+      });
+      themeWatch.observe(document.documentElement, { attributes: true });
       (term as unknown as { __send?: (d: string) => void }).__send = sendData;
       (term as unknown as { __fit?: () => void }).__fit = () => fit.fit();
       connect();
@@ -325,6 +310,7 @@ export function WebTerminal({
         window.removeEventListener("online", wake);
         document.removeEventListener("visibilitychange", wake);
         ro.disconnect();
+        themeWatch.disconnect();
         onData.dispose();
         onResize.dispose();
         osc.forEach((h) => h.dispose());
@@ -410,7 +396,7 @@ export function WebTerminal({
   /* a plain shell (or one that ended before saying what it was) restarts fresh; attaches retry the same target */
   const isShell = kind === "shell" || (!kind && !target.tmux && !target.pid && !target.session && !target.term);
   const dot = conn === "open" ? "bg-green" : conn === "ended" ? "bg-red" : "animate-pulse bg-orange";
-  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-[#c9ccd3] hover:bg-white/10 sm:h-7";
+  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-ink-2 hover:bg-hover hover:text-ink sm:h-7";
   return (
     <div
       className={
@@ -435,17 +421,17 @@ export function WebTerminal({
       <div
         className={
           docked
-            ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#17181a]"
-            : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-[#17181a] shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
+            ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-page"
+            : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-page shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
         }
         style={docked ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
-        <div className={`flex shrink-0 items-center gap-1.5 border-b border-white/10 px-3 text-[12.5px] text-[#c9ccd3] ${docked ? "h-9" : "h-12 sm:h-11"}`}>
+        <div className={`flex shrink-0 items-center gap-1.5 border-b border-line px-3 text-[12.5px] text-ink-2 ${docked ? "h-9" : "h-12 sm:h-11"}`}>
           <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
-          <span className="min-w-0 truncate font-mono text-[12px] text-[#e6e8ec]" title={label}>
+          <span className="min-w-0 truncate font-mono text-[12px] text-ink" title={label}>
             {label}
           </span>
-          {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange">Reconnecting…</span>}
+          {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange-ink">Reconnecting…</span>}
           {conn === "ended" && kind !== "agent" && (
             <button
               type="button"
@@ -453,7 +439,7 @@ export function WebTerminal({
                 if (isShell) setFresh(true);
                 setAttempt((a) => a + 1);
               }}
-              className="ml-1 shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[12px] font-medium text-[#e6e8ec] hover:bg-white/15"
+              className="ml-1 shrink-0 rounded-full bg-hover px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-hover-2"
             >
               {isShell ? "New shell" : kind ? "Reattach" : "Retry"}
             </button>
@@ -462,7 +448,7 @@ export function WebTerminal({
             <button type="button" onClick={() => zoom(-1)} aria-label="Smaller text" className={tool}>
               A−
             </button>
-            <span className="w-5 text-center text-[11px] tabular-nums text-[#6b7079]">{fontSize ?? ""}</span>
+            <span className="w-5 text-center text-[11px] tabular-nums text-ink-3">{fontSize ?? ""}</span>
             <button type="button" onClick={() => zoom(1)} aria-label="Larger text" className={tool}>
               A+
             </button>
@@ -474,19 +460,19 @@ export function WebTerminal({
                 {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
               </button>
             )}
-            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
+            <span className="mx-1 hidden text-[11px] text-ink-3 lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
           </span>
-          <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-[#8b909a] hover:bg-white/10 hover:text-[#e6e8ec] sm:size-8">
+          <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-ink-3 hover:bg-hover hover:text-ink sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />
           </button>
         </div>
-        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red/10 text-[#f2a7a7]" : "bg-orange/10 text-[#f2d398]"}`}>{reason}</p>}
+        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
         <div className="relative min-h-0 flex-1">
           <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5" />
-          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-[#6b7079]">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
         </div>
-        <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-white/10 px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
-          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-white/[0.06] px-3 font-mono text-[12.5px] text-[#c9ccd3] active:bg-white/15">
+        <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
+          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-[12.5px] text-ink-2 active:bg-hover-2">
             Paste
           </button>
           {KEYS.map(([text, seq]) => (
@@ -496,7 +482,7 @@ export function WebTerminal({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => press(seq)}
               aria-pressed={seq === mod || undefined}
-              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-[12.5px] active:bg-white/15 ${seq === mod ? "bg-white/25 text-white" : "bg-white/[0.06] text-[#c9ccd3]"}`}
+              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-[12.5px] active:bg-hover-2 ${seq === mod ? "bg-ink text-page" : "bg-hover text-ink-2"}`}
             >
               {text}
             </button>
