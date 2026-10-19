@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
-import { comboFor } from "@/lib/client/shortcuts";
+import { comboFor, hasMod, isMac, keyLabels } from "@/lib/client/shortcuts";
+import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
+import { isDarkColor, oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
+import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
+import { TerminalFind } from "./TerminalFind";
+import { OPEN_FILES_EVENT } from "./FilesScreen";
+import { findPathLinks, parseOsc7, resolveTerminalPath } from "@/lib/client/terminal-links";
+import { deviceBoxTrusted } from "@/lib/client/terminal-render";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
-export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
+export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string; newTab?: boolean };
+
+/** What a terminal tab shows about itself */
+export type TerminalInfo = { label: string; conn: Conn; id: string | null; kind: string | null; cwd: string | null };
 
 type Conn = "connecting" | "open" | "reconnecting" | "ended";
 
@@ -36,38 +46,72 @@ const KEYS: [string, string][] = [
   ["-", "-"],
 ];
 
-/* One Dark-ish, matched to the app's dark page */
-const THEME = {
-  background: "#17181a",
-  foreground: "#e6e8ec",
-  cursor: "#e6e8ec",
-  cursorAccent: "#17181a",
-  selectionBackground: "#3a3d44",
-  black: "#1d1e21",
-  red: "#e06c75",
-  green: "#98c379",
-  yellow: "#e5c07b",
-  blue: "#61afef",
-  magenta: "#c678dd",
-  cyan: "#56b6c2",
-  white: "#c9ccd3",
-  brightBlack: "#6b7079",
-  brightRed: "#f28b94",
-  brightGreen: "#b5e08f",
-  brightYellow: "#f2d398",
-  brightBlue: "#8cc7ff",
-  brightMagenta: "#dc9ef0",
-  brightCyan: "#7fd3dd",
-  brightWhite: "#ffffff",
-};
-
 const SIZE_KEY = "cui:term-font";
 const DOCK_KEY = "cui:term-dock-height";
 const DOCK_MIN = 140;
 const DOCK_DEFAULT = 320;
-/* "#17181a" -> "rgb:1717/1818/1a1a", the form OSC 10/11 replies use */
-const oscColor = (hex: string) => `rgb:${[1, 3, 5].map((i) => hex.slice(i, i + 2).repeat(2)).join("/")}`;
 const NERD = '"Symbols Nerd Font Mono"';
+
+const LONG_PRESS_MS = 500;
+
+/* a buffer line's text with each character's cell column, so wide characters don't shift link ranges */
+function lineCells(line: import("@xterm/xterm").IBufferLine) {
+  let text = "";
+  const cols: number[] = [];
+  const widths: number[] = [];
+  for (let x = 0; x < line.length; x++) {
+    const cell = line.getCell(x);
+    if (!cell) break;
+    const w = cell.getWidth();
+    if (!w) continue;
+    const ch = cell.getChars() || " ";
+    for (let i = 0; i < ch.length; i++) {
+      cols.push(x);
+      widths.push(w);
+    }
+    text += ch;
+  }
+  return { text, cols, widths };
+}
+
+/* whether a path is a file on the server, remembered per terminal */
+function fileChecker() {
+  const known = new Map<string, Promise<boolean>>();
+  let home: Promise<string | null> | null = null;
+  const get = (p: string) =>
+    fetch(`/api/files?path=${encodeURIComponent(p)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ kind?: string; home?: string }>) : null))
+      .catch(() => null);
+  return {
+    home: () => (home ??= get("/").then((d) => d?.home ?? null)),
+    isFile: (p: string) => {
+      let v = known.get(p);
+      if (!v) {
+        if (known.size > 500) known.clear();
+        v = get(p).then((d) => d?.kind === "file");
+        known.set(p, v);
+      }
+      return v;
+    },
+  };
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* plain http: no async clipboard */
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
 
 const ctrlOf = (ch: string) => {
   const c = ch.toUpperCase().charCodeAt(0);
@@ -88,6 +132,9 @@ export function WebTerminal({
   docked = false,
   hidden = false,
   onDock,
+  tabs,
+  onInfo,
+  enter = true,
 }: {
   target: TerminalTarget;
   onClose: () => void;
@@ -96,13 +143,25 @@ export function WebTerminal({
   /** docked and folded away; the connection stays up */
   hidden?: boolean;
   onDock?: (docked: boolean) => void;
+  /** the tab strip, shown in place of the label */
+  tabs?: ReactNode;
+  onInfo?: (info: TerminalInfo) => void;
+  /** pop in when first shown (a sheet) */
+  enter?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(DOCK_DEFAULT);
   useEffect(() => {
     const stored = Number(localStorage.getItem(DOCK_KEY));
     if (stored >= DOCK_MIN) setHeight(Math.max(DOCK_MIN, Math.min(stored, Math.round(window.innerHeight * 0.8))));
-  }, []);
+    /* tabs share the height: another tab may have been resized while this one was in the background */
+  }, [hidden]);
+  const [popped, setPopped] = useState(!enter);
+  useEffect(() => {
+    if (hidden || popped) return;
+    const t = setTimeout(() => setPopped(true), 250);
+    return () => clearTimeout(t);
+  }, [hidden, popped]);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
@@ -116,10 +175,16 @@ export function WebTerminal({
   closeRef.current = onClose;
   const [fontSize, setFontSize] = useState<number | null>(null);
   const [kind, setKind] = useState<string | null>(null);
+  const [termId, setTermId] = useState<string | null>(target.term ?? null);
+  const [cwd, setCwd] = useState<string | null>(target.cwd ?? null);
   const [output, setOutput] = useState(false);
   /* after a shell exits, "New shell" opens a fresh one in the same folder */
   const [fresh, setFresh] = useState(false);
   const tgt: TerminalTarget = fresh ? { cwd: target.cwd, label: target.label } : target;
+  /* where relative paths in the output start from: the folder the terminal opened in, or the last one it reported */
+  const cwdRef = useRef<string | null>(target.cwd ?? null);
+  const dockedRef = useRef(docked);
+  dockedRef.current = docked;
 
   useEffect(() => {
     let disposed = false;
@@ -128,11 +193,12 @@ export function WebTerminal({
     setConn("connecting");
     setReason(null);
     (async () => {
-      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-unicode11"),
         import("@xterm/addon-web-links"),
+        import("@xterm/addon-search"),
       ]);
       /* xterm measures glyphs on a canvas, which can't resolve CSS variables: use the real families, once loaded */
       const mono = getComputedStyle(document.body).getPropertyValue("--font-mono-face").trim();
@@ -151,7 +217,7 @@ export function WebTerminal({
         fontSize: size,
         cursorBlink: true,
         scrollback: 10000,
-        theme: THEME,
+        theme: readTerminalTheme(),
         allowProposedApi: true,
         macOptionIsMeta: true,
         rightClickSelectsWord: true,
@@ -165,9 +231,50 @@ export function WebTerminal({
       term.loadAddon(new Unicode11Addon());
       term.unicode.activeVersion = "11";
       term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
+      const files = fileChecker();
+      const pathLinks = term.registerLinkProvider({
+        provideLinks(y, callback) {
+          const line = term.buffer.active.getLine(y - 1);
+          const cells = line ? lineCells(line) : null;
+          const matches = cells ? findPathLinks(cells.text).map((m) => ({ ...m, x0: cells.cols[m.start] + 1, x1: cells.cols[m.end - 1] + cells.widths[m.end - 1] })) : [];
+          if (!matches.length) return callback(undefined);
+          void (async () => {
+            const home = matches.some((m) => m.path.startsWith("~/")) ? await files.home() : null;
+            const links = await Promise.all(
+              matches.map(async (m) => {
+                const abs = resolveTerminalPath(m.path, cwdRef.current, home);
+                if (!abs || !(await files.isFile(abs))) return null;
+                return {
+                  range: { start: { x: m.x0, y }, end: { x: m.x1, y } },
+                  text: m.text,
+                  decorations: { underline: true, pointerCursor: true },
+                  activate: () => {
+                    /* a sheet over the page would hide Files; Ctrl+` brings it back on desktop */
+                    const hideTerminal = !dockedRef.current && window.matchMedia("(min-width: 1024px)").matches;
+                    window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: abs, hideTerminal } }));
+                  },
+                };
+              }),
+            );
+            const found = links.filter((l) => l !== null);
+            callback(found.length ? found : undefined);
+          })();
+        },
+      });
+      const search = new SearchAddon({ highlightLimit: 2000 });
+      term.loadAddon(search);
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === "keydown" && e.shiftKey && hasMod(e) && e.code === "KeyF") {
+          e.preventDefault();
+          openFindRef.current();
+          return false;
+        }
+        return true;
+      });
       term.open(hostRef.current);
       /* the GPU renderer draws box art and Nerd Font icons cell-exact; fall back to the DOM renderer without WebGL */
       try {
+        if (!(await deviceBoxTrusted())) throw new Error("device pixel boxes are off");
         const { WebglAddon } = await import("@xterm/addon-webgl");
         const gl = new WebglAddon();
         gl.onContextLoss(() => gl.dispose());
@@ -182,6 +289,7 @@ export function WebTerminal({
         return;
       }
       fit.fit();
+      setSearch(search);
 
       /* connection loop: a kept terminal is re-joined by id from the last byte seen */
       let kept: string | null = tgt.term ?? null;
@@ -219,7 +327,7 @@ export function WebTerminal({
         };
         sock.onmessage = (e) => {
           if (typeof e.data === "string") {
-            let msg: { type: string; id?: string; label?: string; kind?: string; persistent?: boolean; code?: number; offset?: number };
+            let msg: { type: string; id?: string; label?: string; kind?: string; cwd?: string; persistent?: boolean; code?: number; offset?: number };
             try {
               msg = JSON.parse(e.data);
             } catch {
@@ -227,6 +335,11 @@ export function WebTerminal({
             }
             if (msg.type === "hello") {
               if (msg.label) setLabel(msg.label);
+              if (msg.cwd) {
+                cwdRef.current = msg.cwd;
+                setCwd(msg.cwd);
+              }
+              if (msg.id) setTermId(msg.id);
               setKind(msg.kind ?? null);
               /* an attach starts over each time; the multiplexer redraws everything */
               if (msg.persistent && msg.id) {
@@ -279,10 +392,20 @@ export function WebTerminal({
       const osc = [10, 11].map((n) =>
         term.parser.registerOscHandler(n, (data) => {
           if (data !== "?") return false;
-          sendData(`\x1b]${n};${oscColor(n === 10 ? THEME.foreground : THEME.background)}\x1b\\`);
+          const theme = term.options.theme ?? {};
+          sendData(`\x1b]${n};${oscColor((n === 10 ? theme.foreground : theme.background) ?? "#000000")}\x1b\\`);
           return true;
         }),
       );
+      /* shells that report their folder (OSC 7) keep relative paths and new tabs where they cd'd to */
+      const osc7 = term.parser.registerOscHandler(7, (data) => {
+        const dir = parseOsc7(data);
+        if (dir) {
+          cwdRef.current = dir;
+          setCwd(dir);
+        }
+        return true;
+      });
       const onData = term.onData((data) => {
         const m = modRef.current;
         if (m && data.length === 1) {
@@ -315,6 +438,16 @@ export function WebTerminal({
       };
       window.addEventListener("online", wake);
       document.addEventListener("visibilitychange", wake);
+      /* light, dark and palette switches all land on <html> */
+      let themeKey = JSON.stringify(term.options.theme);
+      const themeWatch = new MutationObserver(() => {
+        const next = readTerminalTheme();
+        const key = JSON.stringify(next);
+        if (key === themeKey) return;
+        themeKey = key;
+        term.options.theme = next;
+      });
+      themeWatch.observe(document.documentElement, { attributes: true });
       (term as unknown as { __send?: (d: string) => void }).__send = sendData;
       (term as unknown as { __fit?: () => void }).__fit = () => fit.fit();
       connect();
@@ -325,13 +458,18 @@ export function WebTerminal({
         window.removeEventListener("online", wake);
         document.removeEventListener("visibilitychange", wake);
         ro.disconnect();
+        themeWatch.disconnect();
+        pathLinks.dispose();
         onData.dispose();
         onResize.dispose();
         osc.forEach((h) => h.dispose());
+        osc7.dispose();
         ended = true;
         ws?.close(4000, "closed by viewer");
         term.dispose();
         termRef.current = null;
+        setSearch(null);
+        setFind(null);
       };
     })().catch((err: unknown) => {
       if (disposed) return;
@@ -343,6 +481,10 @@ export function WebTerminal({
       cleanup();
     };
   }, [tgt.term, tgt.tmux, tgt.session, tgt.pid, tgt.cwd, attempt]);
+
+  const onInfoRef = useRef(onInfo);
+  onInfoRef.current = onInfo;
+  useEffect(() => onInfoRef.current?.({ label, conn, id: termId, kind, cwd }), [label, conn, termId, kind, cwd]);
 
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
@@ -402,15 +544,119 @@ export function WebTerminal({
     localStorage.setItem(SIZE_KEY, String(next));
     (t as unknown as { __fit?: () => void }).__fit?.();
   };
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flash = (text: string) => {
+    clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3200);
+  };
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
   const paste = async () => {
-    const text = await navigator.clipboard?.readText().catch(() => "");
+    let text: string | null = null;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      text = null;
+    }
+    if (text === null) return flash(`The browser blocked paste. Use ${isMac() ? "⌘V" : "Ctrl+Shift+V"} instead.`);
     if (text) termRef.current?.paste(text);
+    termRef.current?.focus();
+  };
+
+  const [search, setSearch] = useState<import("@xterm/addon-search").SearchAddon | null>(null);
+  /* the find bar, and a counter that refocuses its field when asked to open again */
+  const [find, setFind] = useState<{ n: number; dark: boolean } | null>(null);
+  const openFindRef = useRef(() => {});
+  openFindRef.current = () => {
+    setMenu(null);
+    setFind((f) => ({ n: (f?.n ?? 0) + 1, dark: isDarkColor(termRef.current?.options.theme?.background ?? "#000000") }));
+  };
+  const closeFind = () => {
+    setFind(null);
+    termRef.current?.focus();
+  };
+  const findKey = keyLabels(["Mod", "Shift", "F"]).join(isMac() ? "" : "+");
+  const [menu, setMenu] = useState<{ x: number; y: number; selection: boolean } | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const open = (x: number, y: number) => setMenu({ x, y, selection: Boolean(termRef.current?.hasSelection()) });
+    let pressAt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let start: { x: number; y: number } | null = null;
+    /* Shift+right-click keeps the browser's own menu */
+    const onContext = (e: MouseEvent) => {
+      if (e.shiftKey || !termRef.current) return;
+      e.preventDefault();
+      if (Date.now() - pressAt < 1000) return;
+      open(e.clientX, e.clientY);
+    };
+    /* iOS has no contextmenu on long-press */
+    const onTouchStart = (e: TouchEvent) => {
+      clearTimeout(timer);
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      start = { x: t.clientX, y: t.clientY };
+      timer = setTimeout(() => {
+        if (!start || !termRef.current) return;
+        pressAt = Date.now();
+        open(start.x, start.y + 8);
+      }, LONG_PRESS_MS);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) clearTimeout(timer);
+    };
+    const onTouchEnd = () => {
+      clearTimeout(timer);
+      start = null;
+    };
+    host.addEventListener("contextmenu", onContext);
+    host.addEventListener("touchstart", onTouchStart, { passive: true });
+    host.addEventListener("touchmove", onTouchMove, { passive: true });
+    host.addEventListener("touchend", onTouchEnd);
+    host.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      clearTimeout(timer);
+      host.removeEventListener("contextmenu", onContext);
+      host.removeEventListener("touchstart", onTouchStart);
+      host.removeEventListener("touchmove", onTouchMove);
+      host.removeEventListener("touchend", onTouchEnd);
+      host.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    termRef.current?.focus();
+  }, []);
+  const act = async (action: TerminalAction) => {
+    setMenu(null);
+    const t = termRef.current;
+    if (!t) return;
+    const selection = t.getSelection();
+    if (action === "find") return openFindRef.current();
+    if (action === "chat") {
+      if (!selection.trim()) return;
+      if (sendToComposer(fenceBlock(selection))) {
+        t.clearSelection();
+        flash("Added to the chat.");
+      } else flash("Open a session to send this to chat.");
+      return;
+    }
+    if (action === "copy") {
+      if (selection) flash((await copyText(selection)) ? "Copied." : "Couldn't copy. Use your copy shortcut instead.");
+    } else if (action === "paste") return void paste();
+    else if (action === "select-all") t.selectAll();
+    else if (action === "clear") t.clear();
+    else if (action === "bottom") t.scrollToBottom();
+    t.focus();
   };
 
   /* a plain shell (or one that ended before saying what it was) restarts fresh; attaches retry the same target */
   const isShell = kind === "shell" || (!kind && !target.tmux && !target.pid && !target.session && !target.term);
   const dot = conn === "open" ? "bg-green" : conn === "ended" ? "bg-red" : "animate-pulse bg-orange";
-  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-[#c9ccd3] hover:bg-white/10 sm:h-7";
+  const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-ink-2 hover:bg-hover hover:text-ink sm:h-7";
   return (
     <div
       className={
@@ -435,17 +681,21 @@ export function WebTerminal({
       <div
         className={
           docked
-            ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#17181a]"
-            : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-[#17181a] shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
+            ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-page"
+            : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-page shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
         }
-        style={docked ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+        style={docked || popped ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
-        <div className={`flex shrink-0 items-center gap-1.5 border-b border-white/10 px-3 text-[12.5px] text-[#c9ccd3] ${docked ? "h-9" : "h-12 sm:h-11"}`}>
-          <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
-          <span className="min-w-0 truncate font-mono text-[12px] text-[#e6e8ec]" title={label}>
-            {label}
-          </span>
-          {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange">Reconnecting…</span>}
+        <div className={`flex shrink-0 items-center gap-1.5 border-b border-line px-3 text-[12.5px] text-ink-2 ${docked ? "h-9" : "h-12 sm:h-11"}`}>
+          {tabs ?? (
+            <>
+              <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
+              <span className="min-w-0 truncate font-mono text-[12px] text-ink" title={label}>
+                {label}
+              </span>
+            </>
+          )}
+          {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange-ink">Reconnecting…</span>}
           {conn === "ended" && kind !== "agent" && (
             <button
               type="button"
@@ -453,7 +703,7 @@ export function WebTerminal({
                 if (isShell) setFresh(true);
                 setAttempt((a) => a + 1);
               }}
-              className="ml-1 shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[12px] font-medium text-[#e6e8ec] hover:bg-white/15"
+              className="ml-1 shrink-0 rounded-full bg-hover px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-hover-2"
             >
               {isShell ? "New shell" : kind ? "Reattach" : "Retry"}
             </button>
@@ -462,7 +712,7 @@ export function WebTerminal({
             <button type="button" onClick={() => zoom(-1)} aria-label="Smaller text" className={tool}>
               A−
             </button>
-            <span className="w-5 text-center text-[11px] tabular-nums text-[#6b7079]">{fontSize ?? ""}</span>
+            <span className="w-5 text-center text-[11px] tabular-nums text-ink-3">{fontSize ?? ""}</span>
             <button type="button" onClick={() => zoom(1)} aria-label="Larger text" className={tool}>
               A+
             </button>
@@ -474,19 +724,26 @@ export function WebTerminal({
                 {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
               </button>
             )}
-            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
+            <span className="mx-1 hidden text-[11px] text-ink-3 lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
           </span>
-          <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-[#8b909a] hover:bg-white/10 hover:text-[#e6e8ec] sm:size-8">
+          <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-ink-3 hover:bg-hover hover:text-ink sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />
           </button>
         </div>
-        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red/10 text-[#f2a7a7]" : "bg-orange/10 text-[#f2d398]"}`}>{reason}</p>}
+        {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
         <div className="relative min-h-0 flex-1">
-          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5" />
-          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-[#6b7079]">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" />
+          {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          {find && search && <TerminalFind search={search} dark={find.dark} focusKey={find.n} onClose={closeFind} />}
+          {notice && (
+            <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-[12px] text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              {notice}
+            </p>
+          )}
+          {menu && <TerminalMenu at={menu} hasSelection={menu.selection} findKey={findKey} onAction={(a) => void act(a)} onClose={closeMenu} />}
         </div>
-        <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-white/10 px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
-          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-white/[0.06] px-3 font-mono text-[12.5px] text-[#c9ccd3] active:bg-white/15">
+        <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
+          <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-[12.5px] text-ink-2 active:bg-hover-2">
             Paste
           </button>
           {KEYS.map(([text, seq]) => (
@@ -496,7 +753,7 @@ export function WebTerminal({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => press(seq)}
               aria-pressed={seq === mod || undefined}
-              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-[12.5px] active:bg-white/15 ${seq === mod ? "bg-white/25 text-white" : "bg-white/[0.06] text-[#c9ccd3]"}`}
+              className={`h-10 min-w-10 shrink-0 rounded-[8px] px-3 font-mono text-[12.5px] active:bg-hover-2 ${seq === mod ? "bg-ink text-page" : "bg-hover text-ink-2"}`}
             >
               {text}
             </button>
