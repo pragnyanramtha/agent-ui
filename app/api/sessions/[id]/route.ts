@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { parseMode, sessionContext } from "@/lib/server/http";
 import { getRun } from "@/lib/server/runner";
 import { terminalFor } from "@/lib/server/sessions";
-import { metaTitle, readHistory } from "@/lib/server/transcript";
+import { metaTitle, placeByTime, readHistory } from "@/lib/server/transcript";
 import type { AgentId } from "@/lib/types";
 import { handoffTitle } from "@/lib/handoff-text";
 import { adapterFor, parseSessionKey, sessionKey } from "@/lib/server/agents";
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const page = ctx ? await readHistory(ctx.file) : { entries: [], cursor: null, end: 0 };
     return NextResponse.json({
       type: "history",
-      entries: run ? [...page.entries, ...run.extras] : page.entries,
+      entries: run ? placeByTime(page.entries, run.extras) : page.entries,
       cursor: page.cursor,
       end: page.end,
       terminal,

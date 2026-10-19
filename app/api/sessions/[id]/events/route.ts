@@ -6,7 +6,7 @@ import { parseMode, readJson, sessionContext } from "@/lib/server/http";
 import { getRun, onRunRegistered, type RunEvent } from "@/lib/server/runner";
 import { isSessionId, terminalFor } from "@/lib/server/sessions";
 import { tailFile } from "@/lib/server/tail";
-import { metaTitle, readHistory } from "@/lib/server/transcript";
+import { metaTitle, placeByTime, readHistory } from "@/lib/server/transcript";
 import { parseSessionKey } from "@/lib/server/agents";
 import { agentEvents } from "@/lib/server/agents/routes";
 import { onSessionEvent } from "@/lib/server/fallback";
@@ -156,10 +156,10 @@ async function stream(req: NextRequest, id: string, fromParam: string | null) {
         permissionMode: parseMode(ctx?.meta.permissionMode),
         profile: (watchedRun?.profile ?? pickProfile("claude", null, id)).id,
       });
-      /* what the run said outside the transcript (slash command output) */
-      if (watchedRun?.extras.length) send({ type: "entries", entries: watchedRun.extras });
-      /* history entries follow in small frames (older clients without ?from still work behind Cloudflare) */
-      for (let i = 0; i < history.entries.length; i += 20) send({ type: "entries", entries: history.entries.slice(i, i + 20) });
+      /* history entries, with what the run said outside the transcript (slash command output) where it happened,
+       * in small frames (older clients without ?from still work behind Cloudflare) */
+      const entries = placeByTime(history.entries, watchedRun?.extras ?? []);
+      for (let i = 0; i < entries.length; i += 20) send({ type: "entries", entries: entries.slice(i, i + 20) });
       if (req.signal.aborted) cleanup();
     },
     cancel() {

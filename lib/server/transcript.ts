@@ -208,6 +208,20 @@ export const parseLines = (lines: string[]) => lines.flatMap((line) => {
   return rec ? parseRecord(rec) : [];
 });
 
+/** Entries from outside the transcript (a web run's slash command output, notices; oldest first) placed among a
+ * history page by time, so they stay where they happened. Ones without a usable time go last. */
+export function placeByTime(page: Entry[], extras: Entry[]): Entry[] {
+  if (!extras.length) return page;
+  const out: Entry[] = [];
+  let j = 0;
+  for (const e of page) {
+    const at = Date.parse(e.ts);
+    while (j < extras.length && Date.parse(extras[j].ts) < at) out.push(extras[j++]);
+    out.push(e);
+  }
+  return [...out, ...extras.slice(j)];
+}
+
 /**
  * Reads the complete lines inside [start, end). A start mid-line skips to the
  * next line break; a trailing partial line (still being written) is left out,
