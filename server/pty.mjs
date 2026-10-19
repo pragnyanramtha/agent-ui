@@ -55,6 +55,12 @@ const TMUX_PREFIX = "agentu-";
 
 const SECRET = process.env.UI_SECRET ?? "";
 if (SECRET.length < 32) throw new Error("UI_SECRET must be set to at least 32 characters");
+/* the cookie key and the login password stay in this process: shells, agents and any tmux server started from here
+ * inherit process.env (the same keys as lib/server/child-env.ts) */
+const APP_SECRETS = ["UI_SECRET", "UI_PASSWORD", "UI_PASSWORD_HASH"];
+/* part of the cookie HMAC, as in lib/auth.ts: the hash wins when both are set */
+const PASSWORD = process.env.UI_PASSWORD_HASH || process.env.UI_PASSWORD || "";
+for (const k of APP_SECRETS) delete process.env[k];
 const CLAUDE_HOME = process.env.CLAUDE_HOME ?? path.join(os.homedir(), ".claude");
 const INTERNAL_KEY = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
 
@@ -74,6 +80,29 @@ const TMUX = which("tmux");
 /* a tmux server started from this service would live in its cgroup and die on restart; give it its own scope */
 const SYSTEMD_RUN = process.env.INVOCATION_ID && which("systemd-run") ? which("systemd-run") : null;
 
+/* the session epoch the app writes on "Sign out everywhere" (lib/auth.ts sessionEpoch, same file and rules) */
+const AUTH_FILE = path.join(process.env.AGENT_U_HOME || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "agent-u"), "auth.json");
+let epochCache = null;
+function sessionEpoch() {
+  let st;
+  try {
+    st = fs.statSync(AUTH_FILE);
+  } catch {
+    return "";
+  }
+  const key = `${st.ino}:${st.mtimeMs}:${st.size}`;
+  if (epochCache?.key === key) return epochCache.epoch;
+  let epoch = "invalid";
+  try {
+    const value = JSON.parse(fs.readFileSync(AUTH_FILE, "utf8")).epoch;
+    if (typeof value === "string" && value) epoch = value;
+  } catch {
+    /* unreadable or not JSON */
+  }
+  epochCache = { key, epoch };
+  return epoch;
+}
+
 function validCookie(header) {
   const raw = /(?:^|;\s*)cui_session=([^;]+)/.exec(header ?? "")?.[1];
   if (!raw) return false;
@@ -84,8 +113,10 @@ function validCookie(header) {
     return false;
   }
   const [expires, sig, extra] = value.split(".");
-  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || Number(expires) < Date.now()) return false;
-  const want = createHmac("sha256", SECRET).update(expires).digest("base64url");
+  /* the same lifetime as lib/auth.ts: SESSION_DAYS (30) plus a minute */
+  const until = Number(expires);
+  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || until < Date.now() || until > Date.now() + 30 * 86_400_000 + 60_000) return false;
+  const want = createHmac("sha256", SECRET).update(`${expires}\n${sessionEpoch()}\n${PASSWORD}`).digest("base64url");
   return want.length === sig.length && timingSafeEqual(Buffer.from(want), Buffer.from(sig));
 }
 
@@ -97,6 +128,25 @@ function sameOrigin(req) {
   } catch {
     return false;
   }
+}
+
+/* Host allowlist, the same rules as lib/hosts.ts: loopback names, ALLOWED_HOSTS and PUBLIC_HOSTNAME; any Host when unset */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+function splitHost(value) {
+  const m = /^(\[[0-9a-f:.]+\]|[^:/\s[\]]+)(?::(\d{1,5}))?$/.exec(String(value ?? "").trim().toLowerCase());
+  return m ? [m[1].replace(/\.$/, ""), m[2] ?? ""] : ["", ""];
+}
+const ALLOWED_HOSTS = (() => {
+  const raw = [...(process.env.ALLOWED_HOSTS ?? "").split(","), process.env.PUBLIC_HOSTNAME ?? ""].map((s) => s.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""));
+  const list = raw.filter(Boolean).map(splitHost).filter(([name]) => name);
+  return list.length ? list : null;
+})();
+if (!ALLOWED_HOSTS) console.warn("agent-u pty: neither ALLOWED_HOSTS nor PUBLIC_HOSTNAME is set, so any Host header is accepted (DNS rebinding). Set one in .env.local.");
+function hostOk(req) {
+  if (!ALLOWED_HOSTS) return true;
+  const [name, port] = splitHost(req.headers.host);
+  if (!name) return false;
+  return LOOPBACK.has(name) || ALLOWED_HOSTS.some(([n, p]) => n === name && (!p || p === port));
 }
 
 const envOf = (pid, key) => {
@@ -186,11 +236,21 @@ const tmuxHas = (name) => {
 };
 
 const META = ["label", "kind", "cwd", "profile", "session", "created"];
+/* values are stored URI-encoded (marked by @agentu_enc), so a tab or newline in a label or folder name can't split
+ * the list below into fields or entries of its own; sessions started before that are read as they are */
+const encodeMeta = (v) => encodeURIComponent(String(v));
+const decodeMeta = (v) => {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+};
 function tmuxList() {
   if (!TMUX) return [];
   let out = "";
   try {
-    const fmt = ["#{session_name}", "#{session_attached}", "#{pane_dead}", "#{pane_dead_status}", "#{pane_pid}", ...META.map((k) => `#{@agentu_${k}}`)].join("\t");
+    const fmt = ["#{session_name}", "#{session_attached}", "#{pane_dead}", "#{pane_dead_status}", "#{pane_pid}", "#{@agentu_enc}", ...META.map((k) => `#{@agentu_${k}}`)].join("\t");
     out = tmux(["list-panes", "-a", "-F", fmt]);
   } catch {
     return [];
@@ -200,9 +260,9 @@ function tmuxList() {
     .split("\n")
     .filter(Boolean)
     .map((line) => line.split("\t"))
-    .filter(([name]) => name.startsWith(TMUX_PREFIX) && !seen.has(name) && seen.add(name))
-    .map(([name, attached, dead, deadStatus, pid, ...meta]) => {
-      const m = Object.fromEntries(META.map((k, i) => [k, meta[i] ?? ""]));
+    .filter((f) => f.length === 6 + META.length && TMUX_NAME.test(f[0]) && f[0].startsWith(TMUX_PREFIX) && !seen.has(f[0]) && seen.add(f[0]))
+    .map(([name, attached, dead, deadStatus, pid, enc, ...meta]) => {
+      const m = Object.fromEntries(META.map((k, i) => [k, enc === "1" ? decodeMeta(meta[i] ?? "") : (meta[i] ?? "")]));
       return {
         id: name,
         backing: "tmux",
@@ -229,6 +289,12 @@ const tmuxArg = (s) => (s.endsWith(";") ? `${s.slice(0, -1)}\\;` : s);
 
 function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, rows }) {
   const name = `${TMUX_PREFIX}${randomBytes(4).toString("hex")}`;
+  /* a tmux server started by an older version of this service still holds the app's secrets in its global environment */
+  try {
+    tmux(APP_SECRETS.flatMap((k, i) => [...(i ? [";"] : []), "set-environment", "-g", "-u", k]));
+  } catch {
+    /* no server yet: the one started below gets this process's environment */
+  }
   /* profile secrets would show in /proc/<pid>/cmdline as `-e KEY=value` (tmux has no value-less -e), so the shell
    * reads them from a private file and deletes it */
   let envDir = null;
@@ -245,7 +311,8 @@ function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, 
   /* -c is format-expanded: a folder named "#(cmd)" would run cmd; "##" is a literal "#" */
   const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd.replace(/#/g, "##")), tmuxArg(line)];
   const meta = { label, kind, cwd, profile, session, created: Date.now() };
-  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, tmuxArg(String(v)));
+  argv.push(";", "set-option", "@agentu_enc", "1");
+  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, encodeMeta(v));
   /* phones can't spare a status bar's worth of rows; the mouse wheel scrolls tmux history */
   argv.push(";", "set-option", "-w", "remain-on-exit", "on", ";", "set-option", "status", "off", ";", "set-option", "mouse", "on");
   const [bin, all] = SYSTEMD_RUN ? [SYSTEMD_RUN, ["--user", "--scope", "--quiet", "--collect", TMUX, ...argv]] : [TMUX, argv];
@@ -402,12 +469,13 @@ function onClientMessage(ws, raw, isBinary, write, onResize) {
   }
 }
 
-/** Cloudflare drops idle sockets; ping, and drop sockets that stopped answering */
-function keepAlive(ws) {
+/** Cloudflare drops idle sockets; ping, and drop sockets that stopped answering or whose session ended */
+function keepAlive(ws, cookie) {
   let alive = true;
   ws.on("pong", () => (alive = true));
   const timer = setInterval(() => {
     if (!alive) return ws.terminate();
+    if (!validCookie(cookie)) return ws.close(4401, "Signed out. Reload to sign in.");
     alive = false;
     if (ws.readyState === ws.OPEN) ws.ping();
   }, 20_000);
@@ -490,13 +558,13 @@ function attachOnce(ws, cmd, cols, rows, hello) {
   });
 }
 
-function start(ws, url) {
+function start(ws, url, cookie) {
   const q = url.searchParams;
   const cols = clamp(Number(q.get("cols")), 10, 500, 100);
   const rows = clamp(Number(q.get("rows")), 5, 200, 30);
   sockets++;
   ws.on("close", () => sockets--);
-  keepAlive(ws);
+  keepAlive(ws, cookie);
 
   const termId = q.get("term");
   if (termId) {
@@ -561,14 +629,15 @@ function internalOk(req) {
 }
 
 const strList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-const strMap = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([k, x]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof x === "string"));
+const strMap = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([k, x]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof x === "string" && !APP_SECRETS.includes(k)));
 
-async function internal(req, res, url) {
+/** `route` is the raw request path: a normalized one would let /pty/%2e%2e/internal/... (which the tunnel forwards) in */
+async function internal(req, res, route) {
   if (!internalOk(req)) return reply(res, 401, { error: "unauthorized" });
-  if (req.method === "GET" && url.pathname === "/internal/terminals") {
+  if (req.method === "GET" && route === "/internal/terminals") {
     return reply(res, 200, { terminals: [...[...terms.values()].map(describe), ...tmuxList()].sort((a, b) => b.createdAt - a.createdAt), tmux: Boolean(TMUX) });
   }
-  if (req.method === "POST" && url.pathname === "/internal/launch") {
+  if (req.method === "POST" && route === "/internal/launch") {
     let body;
     try {
       body = await readBody(req);
@@ -601,7 +670,7 @@ async function internal(req, res, url) {
       return reply(res, 500, { error: `Couldn't start: ${String(err?.stderr || err?.message || err).trim().slice(0, 300)}` });
     }
   }
-  if (req.method === "POST" && url.pathname === "/internal/kill") {
+  if (req.method === "POST" && route === "/internal/kill") {
     let body;
     try {
       body = await readBody(req);
@@ -628,9 +697,12 @@ async function internal(req, res, url) {
 }
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url ?? "/", "http://local");
-  if (url.pathname.startsWith("/internal/")) {
-    internal(req, res, url).catch((err) => reply(res, 500, { error: String(err?.message ?? err) }));
+  if (!hostOk(req)) return res.writeHead(421).end();
+  const route = (req.url ?? "/").split("?")[0];
+  if (route.startsWith("/internal/")) {
+    /* only the app on this machine calls these; anything a proxy or the tunnel forwarded is refused */
+    if (req.headers["cf-ray"] || req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]) return reply(res, 403, { error: "forbidden" });
+    internal(req, res, route).catch((err) => reply(res, 500, { error: String(err?.message ?? err) }));
     return;
   }
   res.writeHead(404).end();
@@ -643,14 +715,15 @@ server.on("upgrade", (req, socket, head) => {
     socket.write(`HTTP/1.1 ${code} ${msg}\r\nConnection: close\r\n\r\n`);
     socket.destroy();
   };
-  if (url.pathname !== "/pty") return refuse(404, "Not Found");
+  if (!hostOk(req)) return refuse(421, "Misdirected Request");
+  if ((req.url ?? "/").split("?")[0] !== "/pty") return refuse(404, "Not Found");
   if (!sameOrigin(req)) return refuse(403, "Bad Origin");
   /* past the origin check, refusals go over the socket: a browser only sees a raw HTTP refusal as a network error */
   const why = !validCookie(req.headers.cookie) ? [4401, "Signed out. Reload to sign in."] : sockets >= MAX_SOCKETS ? [4429, "Too many terminals are open. Close one first."] : null;
   wss.handleUpgrade(req, socket, head, (ws) => {
     if (why) return ws.close(why[0], why[1]);
     try {
-      start(ws, url);
+      start(ws, url, req.headers.cookie);
     } catch (err) {
       console.error("pty start failed:", err);
       if (ws.readyState === ws.OPEN) ws.close(4500, `The terminal failed to start: ${String(err?.message ?? err)}`.slice(0, 120));

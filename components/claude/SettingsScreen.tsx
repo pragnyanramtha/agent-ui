@@ -182,6 +182,21 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
                 Sign out
               </button>
             </Row>
+            <Row label="Sign out everywhere" note="Ends the session on every device, this one too. Agents keep running.">
+              <button
+                type="button"
+                onClick={() =>
+                  void api("/api/auth/logout", { everywhere: true })
+                    .catch(() => undefined)
+                    .then(() => {
+                      window.location.href = "/login";
+                    })
+                }
+                className="tap relative h-8 rounded-[8px] px-3 text-[12.5px] font-medium text-red-ink shadow-btn hover:bg-hover"
+              >
+                Sign out everywhere
+              </button>
+            </Row>
           </Section>
         </div>
       </div>

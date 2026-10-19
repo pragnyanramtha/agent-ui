@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
+import { childEnv } from "./child-env";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +37,7 @@ export async function inputTarget(pid: number): Promise<InputTarget | null> {
   return null;
 }
 
-const run = (cmd: string, args: string[]) => execFileAsync(cmd, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }).then((r) => r.stdout);
+const run = (cmd: string, args: string[]) => execFileAsync(cmd, args, { env: childEnv(), timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }).then((r) => r.stdout);
 
 /** The visible screen of the pane; `ansi` keeps styling (needed to tell dim placeholders from typed text). */
 export async function paneScreen(target: InputTarget, ansi = false) {

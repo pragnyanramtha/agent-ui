@@ -3,9 +3,10 @@ tunnel: <TUNNEL_ID>
 credentials-file: /home/<user>/.cloudflared/<TUNNEL_ID>.json
 no-autoupdate: true
 ingress:
-  # the web terminal's WebSocket backend
+  # the web terminal's WebSocket backend: exactly /pty (the query isn't part of the path). A looser pattern
+  # such as ^/pty would also forward /pty/../internal/..., which only the app on this machine may call.
   - hostname: claude.example.com
-    path: ^/pty
+    path: ^/pty$
     service: http://127.0.0.1:3312
   - hostname: claude.example.com
     service: http://127.0.0.1:3311

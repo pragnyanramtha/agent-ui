@@ -4,6 +4,7 @@ import { confirmAsk, promptAsk } from "./Ask";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Copy, Download, EditPencil, Eye, EyeClosed, Folder, FolderPlus, Menu, MoreHoriz, NavArrowLeft, NavArrowUp, OpenNewWindow, Page, Refresh, Trash, Upload, Xmark } from "iconoir-react";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
+import { withPreviewCsp } from "@/lib/client/html-preview";
 import { formatBytes, uploadFile } from "@/lib/client/upload";
 import { CodeCard, copyText } from "./CodeCard";
 import { Markdown } from "./Markdown";
@@ -433,7 +434,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
         />
       );
     if (kind === "html" && !source)
-      return <iframe title={name} sandbox="allow-scripts allow-popups allow-forms" srcDoc={text.text} className="h-full min-h-[60vh] w-full rounded-[10px] bg-white shadow-hairline" />;
+      return <iframe title={name} sandbox="allow-scripts" srcDoc={withPreviewCsp(text.text)} className="h-full min-h-[60vh] w-full rounded-[10px] bg-white shadow-hairline" />;
     if (kind === "markdown" && !source)
       return (
         <div className="px-1">

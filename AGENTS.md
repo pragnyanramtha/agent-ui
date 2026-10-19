@@ -20,7 +20,9 @@ All machine-specific values live in gitignored env files; `.env.example` documen
  `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
  `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
  `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, checkpoint limits (`CHECKPOINT_MAX_FILE_MB`, `CHECKPOINT_MAX_TOTAL_MB`,
- `CHECKPOINT_MAX_AGE_DAYS`), plus any secrets profiles reference as `${NAME}`.
+ `CHECKPOINT_MAX_AGE_DAYS`), `PUBLIC_HOSTNAME` (written by `scripts/setup.sh`) and `ALLOWED_HOSTS` (comma list of
+ other names the site is reached by, `host` or `host:port`; see Security model), `TRUST_PROXY_HEADERS` (`1` behind the
+ tunnel, also written by setup.sh), plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
 - Optional, also on your machine and gitignored: `.env.server` (KEY=value lines `scripts/setup.sh` merges into the server's
  `.env.local`) and `agent-u.config.json` (the profiles file it installs).
@@ -66,7 +68,8 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 3. Public URL: never expose the ports directly. Use a Cloudflare named tunnel (quick tunnels can't stream GET SSE):
    `cloudflared tunnel create $TUNNEL_NAME`, `cloudflared tunnel route dns $TUNNEL_NAME $PUBLIC_HOSTNAME`, copy the credentials
    JSON to the server's `~/.cloudflared/`, write `~/.cloudflared/agent-u.yml` from `deploy/cloudflared.example.yml`
-   (routes `^/pty` to the terminal backend, everything else to the app), and enable `deploy/agent-u-tunnel.service`.
+   (routes exactly `/pty`, `path: ^/pty$`, to the terminal backend, everything else to the app; a looser `^/pty` also
+   forwards `/pty/../internal/...`), and enable `deploy/agent-u-tunnel.service`.
 4. Codex sandbox on Ubuntu 24.04+: install `deploy/apparmor-codex-bwrap` as `/etc/apparmor.d/codex-bwrap` (fill in the user)
    and `sudo apparmor_parser -r` it, otherwise workspace-write mode fails with bwrap uid-map/loopback errors.
 5. Agent logins happen on the server in a terminal (or the web terminal): `claude` (login), `codex login`,
@@ -76,8 +79,23 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 ## Security model
 - One password for everything; the site can open a shell on the server, so treat the password like an SSH key.
 - Middleware gates every page and API route on the signed `cui_session` cookie (HttpOnly, SameSite=strict, Secure behind
-  HTTPS); state-changing API calls also need a same-origin `Origin`. Login is rate limited per IP.
-- The web terminal backend (`server/pty.mjs`) re-checks the cookie and origin on the WebSocket upgrade.
+  HTTPS); state-changing API calls also need a same-origin `Origin`. Login is rate limited (`lib/server/login-limit.ts`):
+  8 attempts per 15 minutes per client and 30 failures per 10 minutes overall. Clients are told apart by
+  `cf-connecting-ip` (IPv6 by /64) only with `TRUST_PROXY_HEADERS=1`; otherwise they share one bucket.
+- Host allowlist against DNS rebinding (`lib/hosts.ts`, copied in `server/pty.mjs`): only loopback names, `PUBLIC_HOSTNAME`
+  and `ALLOWED_HOSTS` are answered; other Hosts get 421 and the WebSocket is refused. With neither variable set (servers
+  set up before this existed) any Host is accepted and a warning is logged; rerun `scripts/setup.sh` or set one.
+- The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade. Its
+  `/internal/*` API is matched on the raw request path (so `/pty/%2e%2e/internal/...` can't reach it) and refuses
+  anything carrying `cf-ray`, `cf-connecting-ip` or `x-forwarded-for`.
+- `UI_SECRET`, `UI_PASSWORD` and `UI_PASSWORD_HASH` never reach child processes: every spawn takes its env from
+  `lib/server/child-env.ts`, profiles can't expand them, and `server/pty.mjs` drops them from its own env at startup
+  (and from the global env of a tmux server it reuses). Session cookies expiring more than 30 days out are refused.
+- The cookie HMAC covers the expiry, a session epoch (`auth.json` next to `config.json`, chmod 600) and the password, so
+  changing the password or "Sign out everywhere" (`POST /api/auth/logout` with `{"everywhere": true}`, which writes a new
+  epoch) ends every session; the terminal backend reads the same file and closes sockets whose session ended.
+- App responses carry X-Frame-Options DENY, nosniff, Referrer-Policy no-referrer, COOP same-origin and, over HTTPS,
+  HSTS (`next.config.ts`). The login redirect is built from the vetted Host, never from `x-forwarded-host`.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes

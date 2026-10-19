@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { PendingAsk, StreamDelta } from "@/lib/types";
+import { childEnv } from "../child-env";
 import { activeProfile } from "../profiles";
 import type { CliRunState } from "./types";
 
@@ -78,7 +79,7 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
   const profile = activeProfile();
   const child = spawn(spec.cmd, [...(profile?.args ?? []), ...spec.args], {
     cwd: spec.cwd,
-    env: { ...process.env, ...spec.env, ...profile?.env },
+    env: childEnv(spec.env, profile?.env),
     stdio: [piped ? "pipe" : "ignore", "pipe", "pipe"],
     /* its own process group, so Stop also ends the commands and helpers the agent started */
     detached: true,

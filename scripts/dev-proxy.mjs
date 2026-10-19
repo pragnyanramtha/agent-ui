@@ -8,7 +8,7 @@ import net from "node:net";
 const port = Number(process.env.DEV_PROXY_PORT ?? 3310);
 const app = 3311;
 const pty = Number(process.env.PTY_PORT ?? 3312);
-const target = (url = "") => (/^\/pty(\/|\?|$)/.test(url) ? pty : app);
+const target = (url = "") => (/^\/pty(\?|$)/.test(url) ? pty : app);
 
 const server = http.createServer((req, res) => {
   const up = http.request({ host: "127.0.0.1", port: target(req.url), path: req.url, method: req.method, headers: req.headers }, (r) => {

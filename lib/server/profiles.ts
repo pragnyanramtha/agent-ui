@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo } from "@/lib/types";
+import { APP_SECRETS } from "./child-env";
 
 /* Agent profiles: which CLI to run for an agent kind, with what arguments and environment.
  * Every installed agent has a built-in profile under its own id ("claude", "codex", ...).
@@ -137,7 +138,8 @@ function userProfiles(): Profile[] {
 
 const builtin = (agent: AgentId): Profile => ({ id: agent, label: AGENT_LABEL[agent], agent, bin: process.env[BIN_ENV[agent]] || undefined });
 
-const expand = (v: string) => v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k: string) => process.env[k] ?? "");
+/* the app's own secrets never reach an agent, also not through a profile that names them */
+const expand = (v: string) => v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k: string) => ((APP_SECRETS as readonly string[]).includes(k) ? "" : (process.env[k] ?? "")));
 
 function resolve(p: Profile, isBuiltin: boolean): ResolvedProfile {
   const bin = p.bin ?? process.env[BIN_ENV[p.agent]] ?? DEFAULT_BIN[p.agent];
