@@ -60,6 +60,27 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   }
 }
 
+const sameValue = (a: unknown, b: unknown) => a === b || (typeof a === "object" && typeof b === "object" && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
+function sameRow(a: SessionSummary, b: SessionSummary) {
+  const ka = Object.keys(a) as (keyof SessionSummary)[];
+  return ka.length === Object.keys(b).length && ka.every((k) => sameValue(a[k], b[k]));
+}
+
+/** `next`, reusing each of `prev`'s rows that didn't change (and `prev` itself when none did), so memoized rows and
+ * screens that only read the list skip the re-render. */
+export function shareRows(prev: SessionSummary[] | undefined, next: SessionSummary[]): SessionSummary[] {
+  if (!prev?.length) return next;
+  const old = new Map(prev.map((s) => [s.id, s]));
+  let same = prev.length === next.length;
+  const rows = next.map((s, i) => {
+    const o = old.get(s.id);
+    const row = o && sameRow(o, s) ? o : s;
+    if (row !== prev[i]) same = false;
+    return row;
+  });
+  return same ? prev : rows;
+}
+
 /** Session list, refreshed every few seconds while the tab is visible. */
 export function useSessions(intervalMs = 5000) {
   const [data, setData] = useState<Listing | null>(null);
@@ -68,17 +89,16 @@ export function useSessions(intervalMs = 5000) {
   const inflight = useRef<Promise<void> | null>(null);
   const fails = useRef(0);
   const loaded = useRef(false);
-  const last = useRef("");
 
   const load = useCallback(async () => {
     try {
       const next = await api<Listing>("/api/sessions");
-      /* the poll mostly returns what's on screen; same text, same object, no re-render of the list */
-      const text = JSON.stringify(next);
-      if (text !== last.current) {
-        last.current = text;
-        setData(next);
-      }
+      /* the poll mostly returns what's on screen: unchanged rows keep their objects, an unchanged list keeps the state */
+      setData((prev) => {
+        const sessions = shareRows(prev?.sessions, next.sessions);
+        const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
+        return prev && sessions === prev.sessions && projects === prev.projects ? prev : { sessions, projects };
+      });
       setError(null);
       fails.current = 0;
       loaded.current = true;
