@@ -139,7 +139,8 @@ export function bindPointerSwipe(el: HTMLElement, opts: SwipeOptions): () => voi
 }
 
 /** Touch events, for swipes that start over a scroller we don't own (the thread): a browser that starts a scroll ends
- * pointer events with pointercancel, but touch events keep coming. All passive, so scrolling never waits on them. */
+ * pointer events with pointercancel, but touch events keep coming. Only a move that has locked sideways is cancelled,
+ * which keeps Chrome from reading a swipe in from the edge as Back; vertical scrolling is never held up. */
 export function bindTouchSwipe(el: HTMLElement | Document, opts: SwipeOptions): () => void {
   const t = tracker(opts);
   const start = (e: Event) => {
@@ -150,7 +151,7 @@ export function bindTouchSwipe(el: HTMLElement | Document, opts: SwipeOptions): 
   };
   const move = (e: Event) => {
     const p = (e as TouchEvent).changedTouches[0];
-    if (p) t.move(p.identifier, p.clientX, p.clientY);
+    if (p && t.move(p.identifier, p.clientX, p.clientY) && e.cancelable) e.preventDefault();
   };
   const end = (cancelled: boolean) => (e: Event) => {
     for (const p of Array.from((e as TouchEvent).changedTouches)) t.end(p.identifier, cancelled);
@@ -158,7 +159,7 @@ export function bindTouchSwipe(el: HTMLElement | Document, opts: SwipeOptions): 
   const up = end(false);
   const cancel = end(true);
   el.addEventListener("touchstart", start, { passive: true });
-  el.addEventListener("touchmove", move, { passive: true });
+  el.addEventListener("touchmove", move, { passive: false });
   el.addEventListener("touchend", up, { passive: true });
   el.addEventListener("touchcancel", cancel, { passive: true });
   return () => {
