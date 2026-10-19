@@ -3,13 +3,14 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX } from "react";
 import { Check, Copy } from "iconoir-react";
 import type { Components, ExtraProps, MathPlugin, PluginConfig, StreamdownProps } from "streamdown";
-import { CodeCard, copyText } from "./CodeCard";
+import { CodeCard, COLLAPSE_LINES, copyText } from "./CodeCard";
 import { useOverflow } from "@/lib/client/a11y";
 
 /* ── Streamdown loads as its own chunk ──────────────────────────────────
- * It brings ~100 kB (marked, remend, unified, sanitize, and a rehype-raw we don't use
- * but can't tree-shake). Fetching starts as soon as the app bundle runs, in parallel
- * with the first session fetch, so it is normally ready before any message renders. */
+ * It brings marked, remend, unified and sanitize (the browser build swaps the unused
+ * rehype-raw for a stub, see next.config.ts). Fetching starts once the page is idle, or
+ * when a session opens (preloadMarkdown), in parallel with its history fetch, so it is
+ * normally ready before any message renders. */
 /* An image in agent output is a request to whatever host the text names, and the URL can carry anything the
  * agent read; it loads only when asked. */
 function RemoteImage({ src, alt }: { src: string; alt: string }) {
@@ -31,7 +32,12 @@ type SD = typeof import("streamdown");
 let sd: SD | null = null;
 let sdLoad: Promise<SD> | null = null;
 const loadStreamdown = () => (sdLoad ??= import("streamdown").then((m) => (sd = m)));
-if (typeof window !== "undefined") void loadStreamdown().catch(() => (sdLoad = null));
+/** Starts fetching the markdown renderer (once); call when a screen that shows messages opens. */
+export const preloadMarkdown = () => void loadStreamdown().catch(() => (sdLoad = null));
+if (typeof window !== "undefined") {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(preloadMarkdown, { timeout: 4000 });
+  else setTimeout(preloadMarkdown, 1500);
+}
 
 /* ── hast helpers (local types; hast isn't a direct dependency) ───────── */
 
@@ -212,7 +218,7 @@ const components: Components = {
   inlineCode: ({ children }) => <code className="md-code">{children}</code>,
   code: ({ className, children }) => {
     const lang = /language-([\w+#.-]+)/.exec(className ?? "")?.[1];
-    return <CodeCard code={String(children ?? "")} label={lang} />;
+    return <CodeCard code={String(children ?? "")} label={lang} collapseAfter={COLLAPSE_LINES} />;
   },
   a: ({ node: _node, href, children, className, ...rest }) =>
     href?.startsWith("#") ? (

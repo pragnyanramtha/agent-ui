@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummary } from "@/lib/types";
-import { api, ApiError } from "./api";
+import { ApiError } from "./api";
 
-type Listing = { sessions: SessionSummary[]; projects: string[] };
+type Listing = { sessions: SessionSummary[]; projects: string[]; more?: boolean };
+
+/** rows per page; the list asks for another when it is scrolled to its end */
+export const SESSIONS_PAGE = 120;
 
 export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
@@ -94,6 +97,45 @@ export async function deleteSession(id: string, transcript: boolean): Promise<vo
   }
 }
 
+const sameValue = (a: unknown, b: unknown) => a === b || (typeof a === "object" && typeof b === "object" && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
+function sameRow(a: SessionSummary, b: SessionSummary) {
+  const ka = Object.keys(a) as (keyof SessionSummary)[];
+  return ka.length === Object.keys(b).length && ka.every((k) => sameValue(a[k], b[k]));
+}
+
+/** `next`, reusing each of `prev`'s rows that didn't change (and `prev` itself when none did), so memoized rows and
+ * screens that only read the list skip the re-render. */
+export function shareRows(prev: SessionSummary[] | undefined, next: SessionSummary[]): SessionSummary[] {
+  if (!prev?.length) return next;
+  const old = new Map(prev.map((s) => [s.id, s]));
+  let same = prev.length === next.length;
+  const rows = next.map((s, i) => {
+    const o = old.get(s.id);
+    const row = o && sameRow(o, s) ? o : s;
+    if (row !== prev[i]) same = false;
+    return row;
+  });
+  return same ? prev : rows;
+}
+
+/** The listing at `url`, or null when the server says it's unchanged since `etag` (which follows each answer). */
+export async function getListing(url: string, etag: { current: string | null }): Promise<Listing | null> {
+  const res = await fetch(url, { cache: "no-store", headers: etag.current ? { "If-None-Match": etag.current } : undefined });
+  /* read even though it's empty: an unread body leaves the request marked as cancelled */
+  if (res.status === 304) {
+    await res.text().catch(() => "");
+    return null;
+  }
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new ApiError("Signed out", 401);
+  }
+  const data = (await res.json().catch(() => ({}))) as Listing & { error?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+  etag.current = res.headers.get("etag");
+  return data;
+}
+
 /** Session list, refreshed every few seconds while the tab is visible. */
 export function useSessions(intervalMs = 5000) {
   const [data, setData] = useState<Listing | null>(null);
@@ -102,17 +144,22 @@ export function useSessions(intervalMs = 5000) {
   const inflight = useRef<Promise<void> | null>(null);
   const fails = useRef(0);
   const loaded = useRef(false);
-  const last = useRef("");
+  const limit = useRef(SESSIONS_PAGE);
+  const growing = useRef(false);
+  const etag = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const next = await api<Listing>("/api/sessions");
-      /* the poll mostly returns what's on screen; same text, same object, no re-render of the list */
-      const text = JSON.stringify(next);
-      if (text !== last.current) {
-        last.current = text;
-        setData(next);
-      }
+      const next = await getListing(`/api/sessions?limit=${limit.current}`, etag);
+      /* the poll mostly returns what's on screen (or a 304, null): unchanged rows keep their objects, an unchanged
+       * list keeps the state */
+      if (next)
+        setData((prev) => {
+          const sessions = shareRows(prev?.sessions, next.sessions);
+          const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
+          const more = Boolean(next.more);
+          return prev && sessions === prev.sessions && projects === prev.projects && more === prev.more ? prev : { sessions, projects, more };
+        });
       setError(null);
       fails.current = 0;
       loaded.current = true;
@@ -181,5 +228,13 @@ export function useSessions(intervalMs = 5000) {
   }, [data, version]);
 
   const refreshNow = useCallback(() => refresh(), [refresh]);
-  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow };
+  const more = Boolean(data?.more);
+  /** Asks for the next page of older sessions (once at a time; nothing when the server has no more). */
+  const loadMore = useCallback(() => {
+    if (!more || growing.current) return;
+    growing.current = true;
+    limit.current += SESSIONS_PAGE;
+    void refresh(true).finally(() => (growing.current = false));
+  }, [more, refresh]);
+  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow, more, loadMore };
 }
