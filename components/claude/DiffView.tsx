@@ -4,11 +4,13 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavArrowDown, Refresh } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/lib/client/diff";
+import { DEFAULT_DIFF_PREFS, readDiffPrefs, writeDiffPrefs, type DiffPrefs } from "@/lib/client/diff-prefs";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { PathLabel } from "./PathLabel";
 
-export type DiffScope = "uncommitted" | "checkpoint" | "branch";
-type GitDiff = { scope: DiffScope; base: string; baseLabel: string; files: PatchFile[]; additions: number; deletions: number; truncated: boolean };
+/** "turn": the session's newest checkpoint against now, so what the last message changed */
+export type DiffScope = "uncommitted" | "checkpoint" | "branch" | "turn";
+type GitDiff = { scope: Exclude<DiffScope, "turn">; base: string; baseLabel: string; files: PatchFile[]; additions: number; deletions: number; truncated: boolean };
 type CheckpointOption = { id: string; at: number; label: string };
 
 const HATCH = "repeating-linear-gradient(45deg, var(--red) 0, var(--red) 1.5px, transparent 1.5px, transparent 3px)";
@@ -16,7 +18,6 @@ const SPLIT_MIN_WIDTH = 680;
 const BIG_FILE_LINES = 400;
 const HIGHLIGHT_MAX_LINES = 3000;
 const POLL_MS = 8000;
-const PREFS = "agent-u:diff";
 
 const STATUS: Record<PatchStatus, { letter: string; tone: string; label: string }> = {
   added: { letter: "A", tone: "text-green", label: "Added" },
@@ -29,14 +30,6 @@ const STATUS: Record<PatchStatus, { letter: string; tone: string; label: string 
 const field =
   "h-9 min-w-0 rounded-full bg-field px-3 text-[16px] text-ink shadow-hairline outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40 sm:h-8 sm:text-[13px]";
 
-type Prefs = { ws: boolean; split: boolean };
-const readPrefs = (): Prefs => {
-  try {
-    return { ws: false, split: false, ...(JSON.parse(localStorage.getItem(PREFS) ?? "{}") as Partial<Prefs>) };
-  } catch {
-    return { ws: false, split: false };
-  }
-};
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
   return (
@@ -77,7 +70,7 @@ export function DiffView({
 }) {
   const [scope, setScope] = useState<DiffScope>(initialScope);
   const [cp, setCp] = useState<string | undefined>(initialCheckpoint ?? (initialScope === "checkpoint" ? checkpoints[0]?.id : undefined));
-  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [prefs, setPrefs] = useState<DiffPrefs | null>(null);
   const [data, setData] = useState<GitDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -89,19 +82,27 @@ export function DiffView({
   /* the last response as text: a poll that brings the same diff keeps the old object, so nothing re-highlights */
   const lastText = useRef("");
 
-  useEffect(() => setPrefs(readPrefs()), []);
+  useEffect(() => {
+    try {
+      setPrefs(readDiffPrefs(localStorage));
+    } catch {
+      setPrefs(DEFAULT_DIFF_PREFS);
+    }
+  }, []);
   const ready = prefs !== null;
   const ws = prefs?.ws ?? false;
-  const savePrefs = (p: Partial<Prefs>) =>
+  const savePrefs = (p: Partial<DiffPrefs>) =>
     setPrefs((cur) => {
-      const next = { ws: false, split: false, ...cur, ...p };
+      const next = { ...DEFAULT_DIFF_PREFS, ...cur, ...p };
       try {
-        localStorage.setItem(PREFS, JSON.stringify(next));
+        writeDiffPrefs(localStorage, next);
       } catch {}
       return next;
     });
 
-  const checkpointId = scope === "checkpoint" ? cp : undefined;
+  const latest = checkpoints[0];
+  const checkpointId = scope === "checkpoint" ? cp : scope === "turn" ? latest?.id : undefined;
+  const needsCheckpoint = scope === "checkpoint" || scope === "turn";
 
   useEffect(() => {
     const el = root.current;
@@ -115,7 +116,7 @@ export function DiffView({
     /* fresh: a new comparison, so the old one is cleared; refresh: same one, kept while it loads; background: silent */
     async (mode: "fresh" | "refresh" | "background" = "fresh") => {
       if (!ready) return;
-      if (scope === "checkpoint" && !checkpointId) {
+      if (needsCheckpoint && !checkpointId) {
         lastText.current = "";
         setData(null);
         setLoading(false);
@@ -127,7 +128,7 @@ export function DiffView({
         lastText.current = "";
         setData(null);
       }
-      const q = new URLSearchParams({ session, scope });
+      const q = new URLSearchParams({ session, scope: scope === "turn" ? "checkpoint" : scope });
       if (checkpointId) q.set("checkpoint", checkpointId);
       if (ws) q.set("ws", "1");
       try {
@@ -150,7 +151,7 @@ export function DiffView({
         if (n === seq.current) setLoading(false);
       }
     },
-    [ready, session, scope, checkpointId, ws],
+    [ready, session, scope, checkpointId, needsCheckpoint, ws],
   );
 
   useEffect(() => {
@@ -177,13 +178,15 @@ export function DiffView({
   const files = data?.files ?? [];
   const isOpen = (f: PatchFile) => open[f.path] ?? lineCount(f) <= BIG_FILE_LINES;
   const split = Boolean(prefs?.split) && wide;
+  const wrap = prefs?.wrap ?? false;
 
   const jump = (path: string) => {
     setOpen((o) => ({ ...o, [path]: true }));
     requestAnimationFrame(() => fileRefs.current.get(path)?.scrollIntoView({ block: "start", behavior: "smooth" }));
   };
   const allOpen = files.length > 0 && files.every(isOpen);
-  const toggleAll = () => setOpen(Object.fromEntries(files.map((f) => [f.path, !allOpen])));
+  const noneOpen = !files.some(isOpen);
+  const setAll = (v: boolean) => setOpen(Object.fromEntries(files.map((f) => [f.path, v])));
   const toggleFile = useCallback((f: PatchFile) => setOpen((o) => ({ ...o, [f.path]: !(o[f.path] ?? lineCount(f) <= BIG_FILE_LINES) })), []);
   const fileRef = useCallback((path: string, el: HTMLElement | null) => {
     if (el) fileRefs.current.set(path, el);
@@ -201,6 +204,7 @@ export function DiffView({
             setScope(next);
           }} aria-label="Compare" className={field}>
           <option value="uncommitted">Uncommitted</option>
+          {(checkpoints.length > 0 || scope === "turn") && <option value="turn">Last turn</option>}
           <option value="checkpoint" disabled={!checkpoints.length}>
             Since checkpoint
           </option>
@@ -236,6 +240,18 @@ export function DiffView({
         >
           Hide whitespace
         </button>
+        {/* split columns always wrap */}
+        {!split && (
+          <button
+            type="button"
+            aria-pressed={wrap}
+            onClick={() => savePrefs({ wrap: !wrap })}
+            title="Wrap long lines instead of scrolling sideways"
+            className={`h-8 shrink-0 rounded-full px-3 text-[12.5px] font-medium shadow-hairline transition-colors duration-150 sm:h-7 ${wrap ? "bg-ink text-surface" : "text-ink-2 hover:bg-hover hover:text-ink"}`}
+          >
+            Wrap lines
+          </button>
+        )}
         {wide && (
           <Segmented
             label="Layout"
@@ -247,15 +263,20 @@ export function DiffView({
             ]}
           />
         )}
-        {files.length > 1 && (
-          <button type="button" onClick={toggleAll} className="ml-auto shrink-0 text-[12.5px] font-medium text-ink-2 hover:text-ink">
-            {allOpen ? "Collapse all" : "Expand all"}
-          </button>
+        {files.length > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-3">
+            <button type="button" onClick={() => setAll(true)} disabled={allOpen} className="text-[12.5px] font-medium text-ink-2 hover:text-ink disabled:text-ink-3 disabled:opacity-60">
+              Expand all
+            </button>
+            <button type="button" onClick={() => setAll(false)} disabled={noneOpen} className="text-[12.5px] font-medium text-ink-2 hover:text-ink disabled:text-ink-3 disabled:opacity-60">
+              Collapse all
+            </button>
+          </span>
         )}
       </div>
 
       {error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-[12.5px] text-red-ink">{error}</p>}
-      {scope === "checkpoint" && !checkpoints.length && <p className="py-8 text-center text-[13px] text-ink-3">No checkpoints yet.</p>}
+      {needsCheckpoint && !checkpoints.length && <p className="py-8 text-center text-[13px] text-ink-3">No checkpoints yet.</p>}
       {loading && !data && !error && <p className="py-8 text-center text-[13px] text-ink-3">Loading diff…</p>}
       {data && files.length === 0 && <p className="py-8 text-center text-[13px] text-ink-3">No changes.</p>}
 
@@ -268,6 +289,11 @@ export function DiffView({
             <span className="font-mono text-[12px] tabular-nums">
               <span className="text-green">+{data.additions}</span> <span className="text-red">-{data.deletions}</span>
             </span>
+            {scope === "turn" && latest && (
+              <span className="min-w-0 truncate" title={latest.label}>
+                vs before <span className="text-ink-2">{latest.label}</span>
+              </span>
+            )}
             {data.scope !== "checkpoint" && (
               <span className="min-w-0 truncate" title={data.base}>
                 vs <span className="font-mono text-ink-2">{data.baseLabel}</span>
@@ -299,6 +325,7 @@ export function DiffView({
                 file={f}
                 open={isOpen(f)}
                 split={split}
+                wrap={wrap}
                 onToggle={toggleFile}
                 refCb={fileRef}
               />
@@ -327,12 +354,14 @@ const FileDiff = memo(function FileDiff({
   file: f,
   open,
   split,
+  wrap,
   onToggle,
   refCb,
 }: {
   file: PatchFile;
   open: boolean;
   split: boolean;
+  wrap: boolean;
   onToggle: (f: PatchFile) => void;
   refCb: (path: string, el: HTMLElement | null) => void;
 }) {
@@ -379,7 +408,7 @@ const FileDiff = memo(function FileDiff({
           {note && <p className="px-3 py-2.5 text-[12.5px] text-ink-3">{note}</p>}
           {f.hunks.length > 0 && (
             <div tabIndex={0} translate="no" className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-[12px] leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!">
-              <div className="relative min-w-fit">
+              <div className={`relative ${wrap && !split ? "" : "min-w-fit"}`}>
                 {f.hunks.map((h, hi) => (
                   <div key={hi}>
                     <div className="sticky left-0 truncate bg-inset px-3 py-0.5 text-[11px] text-ink-3">{h.header}</div>
@@ -390,7 +419,7 @@ const FileDiff = memo(function FileDiff({
                             <Cell line={r.right} side="new" plain={plain} wrap border />
                           </div>
                         ))
-                      : h.lines.map((l, i) => <UnifiedRow key={i} line={l} num={num} plain={plain} />)}
+                      : h.lines.map((l, i) => <UnifiedRow key={i} line={l} num={num} plain={plain} wrap={wrap} />)}
                   </div>
                 ))}
               </div>
@@ -409,13 +438,13 @@ const Bar = ({ type }: { type: PatchLine["type"] }) =>
   type === "ctx" ? null : <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: type === "add" ? "var(--green)" : HATCH }} />;
 const NoEol = () => <span className="ml-2 select-none font-sans text-[10.5px] text-ink-3">no newline at end</span>;
 
-function UnifiedRow({ line: l, num, plain }: { line: PatchLine; num: string; plain: boolean }) {
+function UnifiedRow({ line: l, num, plain, wrap }: { line: PatchLine; num: string; plain: boolean; wrap: boolean }) {
   return (
     <div className={`relative grid items-start ${tint(l.type)}`} style={{ gridTemplateColumns: `${num} ${num} minmax(0,1fr)` }}>
       <Bar type={l.type} />
       <span className={`select-none pr-1.5 text-right text-[11px] tabular-nums ${numTone(l.type)}`}>{l.oldNo ?? ""}</span>
       <span className={`select-none pr-1.5 text-right text-[11px] tabular-nums ${numTone(l.type)}`}>{l.newNo ?? ""}</span>
-      <code className="pr-4 pl-2 whitespace-pre">
+      <code className={`pr-4 pl-2 ${wrap ? "min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"}`}>
         {plain ? l.text : highlight(l.text)}
         {l.noEol && <NoEol />}
       </code>

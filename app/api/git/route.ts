@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readJson, str } from "@/lib/server/http";
 import { sessionCwd, turnRunning } from "@/lib/server/checkpoints";
-import { checkpoint, commitAll, GitError, listCheckpoints, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
+import { autoFetch, checkpoint, commitAll, GitError, listCheckpoints, pull, pullRequest, push, rewind, sinceCheckpoint, status, suggestCommitMessage } from "@/lib/server/git";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +16,15 @@ export async function GET(req: NextRequest) {
     if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const st = await status(cwd);
     if (!st) return NextResponse.json({ repo: null, cwd });
+    /* the panel polls this while it's open, which keeps ahead/behind current */
+    if (st.remote) void autoFetch(st.root);
     return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session) });
   } catch (err) {
     return fail(err);
   }
 }
 
-/** { session, action: "checkpoint" | "since" | "rewind" | "commit" | "push" | "pr", id?, message?, title? } */
+/** { session, action: "checkpoint" | "since" | "rewind" | "commit" | "push" | "pull" | "pr" | "suggest-message", id?, message?, title? } */
 export async function POST(req: NextRequest) {
   const body = await readJson(req);
   const session = str(body.session) ?? "";
@@ -45,6 +47,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ commit: await commitAll(cwd, str(body.message) ?? "") });
       case "push":
         return NextResponse.json({ branch: await push(cwd) });
+      case "pull":
+        return NextResponse.json({ branch: await pull(cwd) });
+      case "suggest-message":
+        return NextResponse.json(await suggestCommitMessage(cwd));
       case "pr":
         return NextResponse.json({ url: await pullRequest(cwd, str(body.title)) });
       default:
