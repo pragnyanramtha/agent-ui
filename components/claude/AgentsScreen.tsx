@@ -1,12 +1,14 @@
 "use client";
 
 import { confirmAsk, promptAsk } from "./Ask";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Menu, Plus, Terminal, Trash } from "iconoir-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check as CheckIcon, Copy, Menu, Plus, Terminal, Trash } from "iconoir-react";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo, type ServerTerminal } from "@/lib/types";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
+import type { Check as HealthRow, CheckStatus as HealthStatus, DoctorReport } from "@/lib/server/doctor";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
+import { copyText } from "./CodeCard";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { FolderPicker } from "./FolderPicker";
 import { AGENT_TONE } from "./SessionList";
@@ -32,6 +34,7 @@ export function AgentsScreen({ onMenu, extra, onOpenSession, projects }: { onMen
           <Launcher projects={projects} />
           <Terminals onOpenSession={onOpenSession} />
           <Profiles />
+          <HealthCheck />
         </div>
       </div>
     </section>
@@ -193,6 +196,114 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/* ── health check ──────────────────────────────────────────── */
+
+const DOT: Record<HealthStatus, string> = { ok: "bg-green", warn: "bg-orange", fail: "bg-red", unknown: "bg-line-strong" };
+const SAYS: Record<HealthStatus, string> = { ok: "OK", warn: "Warning", fail: "Problem", unknown: "Unknown" };
+
+function HealthCheck() {
+  const [report, setReport] = useState<DoctorReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const check = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setReport(await api<DoctorReport>("/api/doctor"));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rows = report?.checks ?? [];
+  /* agents this server doesn't have fold into one line */
+  const absent = rows.filter((r) => r.group === "agents" && r.status === "unknown" && r.detail === "Not installed");
+  const agents = rows.filter((r) => r.group === "agents" && !absent.includes(r));
+  const system = rows.filter((r) => r.group === "system");
+  const fails = rows.filter((r) => r.status === "fail").length;
+  const warns = rows.filter((r) => r.status === "warn").length;
+  const summary = !report ? null : fails || warns ? [fails && `${fails} ${fails === 1 ? "problem" : "problems"}`, warns && `${warns} ${warns === 1 ? "warning" : "warnings"}`].filter(Boolean).join(", ") : "Everything looks fine";
+
+  return (
+    <section aria-labelledby="health-h">
+      <H
+        aside={
+          <button type="button" onClick={() => void check()} disabled={busy} className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover disabled:opacity-60">
+            {busy ? "Checking…" : report ? "Check again" : "Run check"}
+          </button>
+        }
+      >
+        <span id="health-h">Health check</span>
+      </H>
+      <p className="px-1 pb-2 text-[12px] text-ink-3" aria-live="polite">
+        {summary ? `${summary} · ${new Date(report!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}
+      </p>
+      {error && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">{error}</p>}
+      {report && (
+        <div className="flex flex-col gap-3">
+          <HealthList rows={agents} footer={absent.length ? `Not installed: ${absent.map((r) => r.label).join(", ")}` : undefined} />
+          <HealthList rows={system} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HealthList({ rows, footer }: { rows: HealthRow[]; footer?: string }) {
+  if (!rows.length && !footer) return null;
+  return (
+    <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
+      {rows.map((r) => (
+        <li key={r.id} className="flex min-h-12 gap-3 px-3 py-2.5">
+          <span className={`mt-[7px] size-2 shrink-0 rounded-full ${DOT[r.status]}`} aria-hidden />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[13.5px] text-ink">
+              <span className="sr-only">{SAYS[r.status]}: </span>
+              {r.label}
+            </span>
+            <span className="text-[12px] break-words text-ink-3" translate="no">
+              {r.detail}
+            </span>
+            {r.fix && <FixCommand command={r.fix} />}
+          </div>
+        </li>
+      ))}
+      {footer && <li className="px-3 py-2.5 text-[12px] text-ink-3">{footer}</li>}
+    </ul>
+  );
+}
+
+function FixCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = () =>
+    copyText(command).then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1500);
+    });
+  return (
+    <div className="mt-1 flex min-w-0 items-center gap-1 rounded-[8px] bg-inset py-0.5 pr-0.5 pl-2.5">
+      <code className="no-scrollbar min-w-0 flex-1 overflow-x-auto font-mono text-[11.5px] whitespace-nowrap text-ink-2" translate="no">
+        {command}
+      </code>
+      <button
+        type="button"
+        onClick={() => void copy()}
+        aria-label={copied ? "Copied" : `Copy ${command}`}
+        className={`flex h-8 shrink-0 items-center gap-1 rounded-[6px] px-2 text-[12px] font-medium hover:bg-hover ${copied ? "text-green" : "text-ink-3 hover:text-ink"}`}
+      >
+        {copied ? <CheckIcon width={13} height={13} strokeWidth={2.2} /> : <Copy width={13} height={13} strokeWidth={1.8} />}
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
