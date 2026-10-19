@@ -22,6 +22,8 @@ import { AttachmentChips, useAttachments } from "./Attachments";
 import { effortLabel, effortOptions } from "@/lib/agent-traits";
 import { insertMention, mentionAt } from "@/lib/client/mentions";
 import { useFileSearch } from "@/lib/client/useFileSearch";
+import { arrangeModels } from "@/lib/model-prefs";
+import { ModelMarks } from "./ModelMarks";
 import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
 
 /* The composer: a two-row card. The text on top; under it a footer with the "+" menu, the agent and model,
@@ -365,6 +367,9 @@ export function Composer({
 
   /* close on Escape, outside taps, or focus leaving the composer; return focus to the trigger */
   const [modelQ, setModelQ] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const [favoriteModels] = useSetting("favoriteModels");
+  const [hiddenModels] = useSetting("hiddenModels");
   useEffect(() => {
     if (openMenu !== "pick") setModelQ("");
   }, [openMenu]);
@@ -528,18 +533,31 @@ export function Composer({
   const modelRow = (m: { key: string; name: string }, list: { key: string }[], on: boolean, onPick: () => void) => {
     /* the Default row says what it resolves to */
     const hint = m.key !== "" ? null : model && !list.some((x) => x.key === model) ? modelName(model) : m.name === "Default" ? (defaultModel ? modelName(defaultModel) : null) : null;
-    return (
+    const row = (
       <button key={m.key || "default"} type="button" role="menuitemradio" aria-checked={on} onClick={onPick} className={menuRow}>
         <span className="min-w-0 truncate">{m.name}</span>
         {hint && <span className="truncate text-xs text-ink-3">{hint}</span>}
         {on && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
       </button>
     );
+    return m.key === "" ? row : (
+      <div key={m.key} className="group/model flex min-w-0 items-center">
+        {row}
+        <ModelMarks id={m.key} name={m.name} />
+      </div>
+    );
   };
 
   /* long CLI lists (Cursor has hundreds) get a filter; Default and the current model stay visible */
   const q = modelQ.trim().toLowerCase();
-  const shownModels = q ? models.filter((m) => m.key === "" || m.key === model || `${m.key} ${m.name}`.toLowerCase().includes(q)) : models;
+  const modelPrefs = { favorites: favoriteModels, hidden: hiddenModels };
+  const arranged = arrangeModels(models, modelPrefs, { current: model, query: q, showHidden });
+  const shownModels = arranged.rows;
+  const showHiddenRow = arranged.hiddenCount > 0 && !q && (
+    <button type="button" role="menuitem" onClick={() => setShowHidden((v) => !v)} className={`${menuRow} text-ink-3`}>
+      {showHidden ? "Leave out hidden models" : `Show ${arranged.hiddenCount} hidden`}
+    </button>
+  );
   const modelList = (
     <>
       {models.length > 12 && (
@@ -568,6 +586,7 @@ export function Composer({
           }),
         )}
         {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-sm text-ink-3">No models match.</p>}
+        {showHiddenRow}
       </div>
     </>
   );
@@ -820,7 +839,7 @@ export function Composer({
               <>
                 <div role="group" aria-label="Claude">
                   <MenuLabel>Claude</MenuLabel>
-                  {(agent === "claude" ? models : MODELS).map((m, _i, list) =>
+                  {arrangeModels(agent === "claude" ? models : MODELS, modelPrefs, { current: agent === "claude" ? model : null, showHidden: true }).rows.map((m, _i, list) =>
                     modelRow(m, list, agent === "claude" && modelOn(m.key, list), () => {
                       if (agent !== "claude") onAgentChange("claude");
                       onModelChange(m.key);
