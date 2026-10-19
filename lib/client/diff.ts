@@ -55,6 +55,8 @@ export type PatchFile = {
   hunks: PatchHunk[];
   truncated?: boolean;
   modeChange?: { from: string; to: string };
+  /** no text diff; status still says whether it was added, deleted or renamed */
+  binary?: boolean;
 };
 
 const ESC: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
@@ -64,20 +66,21 @@ function unquote(s: string): string {
   if (!s.startsWith('"') || !s.endsWith('"') || s.length < 2) return s;
   const bytes: number[] = [];
   const body = s.slice(1, -1);
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i];
-    if (c !== "\\") {
-      bytes.push(...new TextEncoder().encode(c));
-      continue;
-    }
-    const n = body[i + 1] ?? "";
+  const enc = new TextEncoder();
+  for (let i = 0; i < body.length; ) {
+    /* plain stretches are encoded whole: one UTF-16 unit at a time would split emoji into lone surrogates */
+    const at = body.indexOf("\\", i);
+    const end = at === -1 ? body.length : at;
+    if (end > i) bytes.push(...enc.encode(body.slice(i, end)));
+    if (at === -1) break;
+    const n = body[at + 1] ?? "";
     if (/[0-7]/.test(n)) {
-      const oct = /^[0-7]{1,3}/.exec(body.slice(i + 1))![0];
+      const oct = /^[0-7]{1,3}/.exec(body.slice(at + 1))![0];
       bytes.push(parseInt(oct, 8) & 0xff);
-      i += oct.length;
+      i = at + 1 + oct.length;
     } else {
       bytes.push(ESC[n] ?? n.charCodeAt(0));
-      i += 1;
+      i = at + 2;
     }
   }
   return new TextDecoder().decode(new Uint8Array(bytes));
@@ -110,6 +113,8 @@ const HUNK = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 export function parseUnifiedPatch(patch: string): PatchFile[] {
   const files: PatchFile[] = [];
   const lines = patch.split("\n");
+  /* the final newline isn't an empty context line, even when a cut-off hunk still expects more */
+  if (lines.at(-1) === "") lines.pop();
   let file: PatchFile | null = null;
   let hunk: PatchHunk | null = null;
   let oldLeft = 0;
@@ -123,7 +128,8 @@ export function parseUnifiedPatch(patch: string): PatchFile[] {
 
   const finish = () => {
     if (!file) return;
-    file.status = binary ? "binary" : added ? "added" : deleted ? "deleted" : renamed || (file.oldPath && file.oldPath !== file.path) ? "renamed" : "modified";
+    file.status = added ? "added" : deleted ? "deleted" : renamed || (file.oldPath && file.oldPath !== file.path) ? "renamed" : binary ? "binary" : "modified";
+    if (binary) file.binary = true;
     if (file.oldPath === file.path) delete file.oldPath;
     files.push(file);
     file = null;

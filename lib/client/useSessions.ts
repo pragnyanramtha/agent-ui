@@ -13,7 +13,20 @@ const overrides = new Map<string, Partial<SessionSummary>>();
 const hooks = new Set<{ bump: () => void; refresh: (fresh?: boolean) => Promise<void> }>();
 const bumpAll = () => hooks.forEach((h) => h.bump());
 
-/** Pin, archive or rename a session: shows at once, saves, then reloads the list. Throws when the save fails. */
+const chains = new Map<string, Promise<unknown>>();
+/** Runs `task` once the previous task queued under `key` has settled (either way), so they land in order. */
+export function inOrder<T>(key: string, task: () => Promise<T>, queues: Map<string, Promise<unknown>> = chains): Promise<T> {
+  const run = (queues.get(key) ?? Promise.resolve()).then(task, task);
+  queues.set(key, run);
+  const done = () => {
+    if (queues.get(key) === run) queues.delete(key);
+  };
+  run.then(done, done);
+  return run;
+}
+
+/** Pin, archive or rename a session: shows at once, saves (after any earlier save of the same session, so an
+ * archive and its quick undo can't swap), then reloads the list. Throws when the save fails. */
 export async function patchSession(id: string, change: SessionChange): Promise<void> {
   const shown: Partial<SessionSummary> = { ...overrides.get(id) };
   if (change.pinned !== undefined) shown.pinned = change.pinned;
@@ -24,21 +37,23 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   overrides.set(id, shown);
   bumpAll();
   try {
-    const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(change),
-      cache: "no-store",
+    await inOrder(id, async () => {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(change),
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        throw new ApiError("Signed out", 401);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+      }
+      await Promise.all([...hooks].map((h) => h.refresh(true)));
     });
-    if (res.status === 401) {
-      window.location.href = "/login";
-      throw new ApiError("Signed out", 401);
-    }
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
-    }
-    await Promise.all([...hooks].map((h) => h.refresh(true)));
   } finally {
     if (overrides.get(id) === shown) overrides.delete(id);
     bumpAll();

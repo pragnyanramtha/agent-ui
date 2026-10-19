@@ -17,6 +17,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "jump", keys: ["Alt", "1–9"], label: "Go to tab", group: "Sessions" },
   { id: "find", keys: ["Mod", "F"], label: "Find in session", group: "Sessions" },
   { id: "terminal", keys: ["Mod", "J"], label: "Toggle terminal", group: "Panels" },
+  { id: "terminal-anywhere", keys: ["Ctrl", "`"], label: "Toggle terminal (also from inside it)", group: "Panels" },
   { id: "panel", keys: ["Mod", "Alt", "B"], label: "Toggle side panel", group: "Panels" },
   { id: "close-terminal", keys: ["Ctrl", "Shift", "X"], label: "Close terminal", group: "Panels" },
   { id: "send", keys: ["Mod", "Enter"], label: "Send message", group: "Composer" },
@@ -25,6 +26,9 @@ export const SHORTCUTS: Shortcut[] = [
 ];
 
 export const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** The "Mod" key of a key event: Cmd alone on a Mac, Ctrl alone elsewhere. */
+export const hasMod = (e: { ctrlKey: boolean; metaKey: boolean }, mac = isMac()) => (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey);
 
 const GLYPH: Record<string, string> = { Mod: "⌘", Alt: "⌥", Shift: "⇧", Ctrl: "⌃", Enter: "↵" };
 
@@ -37,6 +41,9 @@ export function comboFor(id: string, mac = isMac()) {
   const s = SHORTCUTS.find((x) => x.id === id);
   return s ? keyLabels(s.keys, mac).join(mac ? "" : "+") : "";
 }
+
+/** True while a dialog is up. The phone drawer and tab sheet stay in the DOM when closed, marked aria-hidden. */
+export const modalOpen = () => typeof document !== "undefined" && Boolean(document.querySelector('[aria-modal="true"]:not([aria-hidden="true"])'));
 
 /** True when keyboard focus is in a field, where single-key shortcuts must not fire. */
 export const isTyping = (t: EventTarget | null) =>

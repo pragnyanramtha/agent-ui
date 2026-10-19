@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { PendingAsk, StreamDelta } from "@/lib/types";
 import { activeProfile } from "../profiles";
@@ -26,6 +27,8 @@ export type Run = {
   deltas: Map<string, StreamDelta>;
   /** answers to the approvals in state.pending, by request id */
   asks: Map<string, (a: Answer) => void>;
+  /** set by failTurn: the turn ends as an error with this message, however the process exits */
+  failure?: string;
 };
 
 export type Answer = { allow: boolean; always: boolean };
@@ -139,8 +142,9 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
     buf = "";
     if (run.state.status !== "running") return;
     run.asks.clear();
-    run.state =
-      code === 0 || signal === "SIGTERM" || signal === "SIGKILL"
+    run.state = run.failure
+      ? { ...run.state, status: "error", error: run.failure, pending: [] }
+      : code === 0 || signal === "SIGTERM" || signal === "SIGKILL"
         ? { ...run.state, status: "idle", pending: [] }
         : { ...run.state, status: "error", error: lastLine(run.stderr) || `Exited with code ${code}`, pending: [] };
     run.deltas.clear();
@@ -166,6 +170,16 @@ function release(run: Run) {
 const lastLine = (s: string) => s.trim().split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 300) ?? "";
 
 export const turnState = (key: string) => runs.get(key)?.state ?? null;
+
+/** The agent reported the turn failed (its own message, clearer than stderr): it ends as an error, kept until the next turn. */
+export function failTurn(run: Run, error: string) {
+  run.failure = error;
+  if (run.state.status === "running") return;
+  run.state = { ...run.state, status: "error", error };
+  /* a clean finish may already have been forgotten */
+  if (!runs.has(run.key)) runs.set(run.key, run);
+  run.listeners.forEach((fn) => fn(run.state));
+}
 
 /** The agent asks before acting: the approval shows in the session (and the inbox) until it's answered or the turn ends. */
 export function askUser(run: Run, ask: PendingAsk, onAnswer: (a: Answer) => void) {
@@ -222,9 +236,81 @@ export function killGroup(child: ChildProcess) {
   setTimeout(() => signal("SIGKILL"), 5000).unref();
 }
 
+/** ppid and process group of every process (empty without /proc) */
+function processTable(): Map<number, { ppid: number; pgid: number }> {
+  const out = new Map<number, { ppid: number; pgid: number }>();
+  let names: string[];
+  try {
+    names = fs.readdirSync("/proc");
+  } catch {
+    return out;
+  }
+  for (const n of names) {
+    if (!/^\d+$/.test(n)) continue;
+    try {
+      const stat = fs.readFileSync(`/proc/${n}/stat`, "utf8");
+      /* the command name (field 2) can hold spaces and parentheses; state, ppid and pgrp follow it */
+      const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      out.set(Number(n), { ppid: Number(f[1]), pgid: Number(f[2]) });
+    } catch {
+      /* gone */
+    }
+  }
+  return out;
+}
+
+/** What to signal so `pid` and everything it started end: the process groups inside its tree (negative), else single pids. */
+function treeTargets(pid: number): number[] {
+  const table = processTable();
+  const kids = new Map<number, number[]>();
+  for (const [p, { ppid }] of table) kids.set(ppid, [...(kids.get(ppid) ?? []), p]);
+  const tree = new Set([pid]);
+  for (const queue = [pid]; queue.length; ) {
+    for (const k of kids.get(queue.shift()!) ?? []) {
+      if (tree.has(k)) continue;
+      tree.add(k);
+      queue.push(k);
+    }
+  }
+  /* a group led from outside the tree isn't ours to end */
+  const out = new Set<number>();
+  for (const p of tree) {
+    const g = table.get(p)?.pgid;
+    if (p !== pid) out.add(g && tree.has(g) ? -g : p);
+  }
+  out.delete(-pid);
+  return [...out];
+}
+
+/**
+ * killGroup plus the process groups the agent's descendants made for themselves (Gemini runs each shell command
+ * detached). The tree is read before the first signal: once a parent dies its children move to init and can't be found.
+ */
+export function killTree(child: ChildProcess) {
+  const pid = child.pid;
+  if (!pid) return;
+  const targets = new Set(treeTargets(pid));
+  const signal = (sig: NodeJS.Signals) => {
+    for (const t of targets) {
+      try {
+        process.kill(t, sig);
+      } catch {
+        /* gone */
+      }
+    }
+  };
+  signal("SIGTERM");
+  killGroup(child);
+  setTimeout(() => {
+    /* only while the pid is still ours: once Node has reaped it, it may belong to someone else */
+    if (child.exitCode === null && child.signalCode === null) for (const t of treeTargets(pid)) targets.add(t);
+    signal("SIGKILL");
+  }, 5000).unref();
+}
+
 export function stopTurn(key: string) {
   const run = runs.get(key);
-  if (run?.state.status === "running") killGroup(run.child);
+  if (run?.state.status === "running") killTree(run.child);
 }
 
 export function onTurn(key: string, fn: (s: CliRunState) => void) {
