@@ -137,7 +137,7 @@ function attachForPid(start) {
       const via = sock ? ["-S", sock] : [];
       try {
         const name = execFileSync(TMUX ?? "tmux", [...via, "display-message", "-p", "-t", pane, "#S"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
-        return name ? ["tmux", ...via, "attach-session", "-t", `=${name}`] : null;
+        return name ? ["tmux", "-u", ...via, "attach-session", "-t", `=${name}`] : null;
       } catch {
         return null;
       }
@@ -242,7 +242,8 @@ function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, 
   const dropEnv = () => envDir && fs.rmSync(envDir, { recursive: true, force: true });
   const line = loginArgv(cmd, args, prelude).map(shellQuote).join(" ");
   /* the pane starts with remain-on-exit already set (via the chained commands), so a crash at startup stays readable */
-  const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd), tmuxArg(line)];
+  /* -c is format-expanded: a folder named "#(cmd)" would run cmd; "##" is a literal "#" */
+  const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd.replace(/#/g, "##")), tmuxArg(line)];
   const meta = { label, kind, cwd, profile, session, created: Date.now() };
   for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, tmuxArg(String(v)));
   /* phones can't spare a status bar's worth of rows; the mouse wheel scrolls tmux history */
@@ -251,11 +252,16 @@ function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, 
   try {
     execFileSync(bin, all, { encoding: "utf8", timeout: 15_000, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, TERM: "xterm-256color" } });
   } catch (err) {
-    dropEnv();
-    throw err;
+    /* a timeout or a failing chained set-option can still leave the session running, and its shell may not have
+     * sourced the env file yet; that shell deletes the file itself */
+    if (!tmuxHas(name)) {
+      dropEnv();
+      throw err;
+    }
+    console.error(`tmux launch of ${name} reported an error but the session is running:`, String(err?.stderr || err?.message || err).trim().slice(0, 300));
   }
-  /* in case the shell never got as far as deleting it */
-  if (envDir) setTimeout(dropEnv, 120_000).unref();
+  /* in case the shell never got as far as deleting it (a slow login profile still has to source it first) */
+  if (envDir) setTimeout(dropEnv, 10 * 60_000).unref();
   return name;
 }
 
@@ -272,9 +278,12 @@ function bridge(cmd, { cwd, env, cols, rows }) {
   const base = { ...process.env };
   for (const k of NESTING) delete base[k];
   base.PATH = [...new Set([...(base.PATH ?? "").split(":").filter(Boolean), ...EXTRA_PATH, "/usr/local/bin", "/usr/bin", "/bin"])].join(":");
+  const all = { ...base, ...env };
+  /* a bare service env has no locale, and tmux/shells then draw non-ASCII as "_" or "?" */
+  if (!all.LANG && !all.LC_ALL && !all.LC_CTYPE) all.LANG = "C.UTF-8";
   return spawn("python3", [path.join(here, "pty_bridge.py"), ...cmd], {
     cwd,
-    env: { ...base, ...env, TERM: "xterm-256color", COLORTERM: "truecolor", PTY_COLS: String(cols), PTY_ROWS: String(rows) },
+    env: { ...all, TERM: "xterm-256color", COLORTERM: "truecolor", PTY_COLS: String(cols), PTY_ROWS: String(rows) },
     stdio: ["pipe", "pipe", "ignore", "pipe"],
   });
 }
@@ -499,7 +508,7 @@ function start(ws, url) {
   if (name) {
     if (!TMUX_NAME.test(name) || !tmuxHas(name)) return ws.close(4404, "That terminal has ended.");
     const info = tmuxList().find((x) => x.tmux === name);
-    return attachOnce(ws, ["tmux", "attach-session", "-t", `=${name}`], cols, rows, { id: name, kind: info?.kind ?? "tmux", label: info?.label ?? name, cwd: info?.cwd ?? "", backing: "tmux" });
+    return attachOnce(ws, ["tmux", "-u", "attach-session", "-t", `=${name}`], cols, rows, { id: name, kind: info?.kind ?? "tmux", label: info?.label ?? name, cwd: info?.cwd ?? "", backing: "tmux" });
   }
   const pid = Number(q.get("pid"));
   if (Number.isInteger(pid) && pid > 1 && fs.existsSync(`/proc/${pid}`)) {

@@ -172,4 +172,21 @@ describe("web terminal backend", () => {
     expect(list.terminals.find((t: { id: string }) => t.id === id)).toMatchObject({ label: "ends with;", backing: "tmux" });
     await fetch(`http://${HOST}/internal/kill`, { method: "POST", headers: { "x-agent-u-internal": key, "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
   });
+
+  it.skipIf(!hasTmux)("tmux launches take a folder named like a tmux format literally", async () => {
+    const key = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
+    const dir = path.join(home, "x#(echo hi)#{session_name}y");
+    fs.mkdirSync(dir);
+    const out = path.join(home, "pwd.out");
+    const res = await fetch(`http://${HOST}/internal/launch`, {
+      method: "POST",
+      headers: { "x-agent-u-internal": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "sh", args: ["-c", `pwd -P > ${out}; sleep 30`], cwd: dir, label: "formats" }),
+    });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    await until(() => fs.existsSync(out) && fs.readFileSync(out, "utf8").length > 0);
+    expect(fs.readFileSync(out, "utf8").trim()).toBe(fs.realpathSync(dir));
+    await fetch(`http://${HOST}/internal/kill`, { method: "POST", headers: { "x-agent-u-internal": key, "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  });
 });
