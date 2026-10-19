@@ -3,14 +3,12 @@ import { promisify } from "node:util";
 import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE, SESSION_DAYS, signSession } from "@/lib/auth";
 import { readJson, str } from "@/lib/server/http";
+import { clientKey, LoginLimiter } from "@/lib/server/login-limit";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number, opts: object) => Promise<Buffer>;
 
-/* Small in-memory limiter: 8 attempts per 15 minutes per client address. */
-const WINDOW_MS = 15 * 60_000;
-const MAX_ATTEMPTS = 8;
-const g = globalThis as typeof globalThis & { __claudeUiLogin?: Map<string, number[]> };
-const attempts = (g.__claudeUiLogin ??= new Map());
+const g = globalThis as typeof globalThis & { __agentuLoginLimit?: LoginLimiter };
+const limiter = (g.__agentuLoginLimit ??= new LoginLimiter());
 
 async function checkPassword(password: string) {
   /* plain UI_PASSWORD is allowed for convenience; the hash wins when both are set */
@@ -30,24 +28,24 @@ async function checkPassword(password: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  const now = Date.now();
-  if (attempts.size > 10_000) {
-    for (const [key, times] of attempts) if (times.every((t: number) => now - t >= WINDOW_MS)) attempts.delete(key);
+  const key = clientKey(req.headers);
+  /* counted before the slow hash, so parallel requests can't all slip under the limit */
+  const gate = limiter.begin(key);
+  if (!gate.ok) {
+    const minutes = Math.max(1, Math.ceil(gate.retryAfter / 60));
+    return NextResponse.json(
+      { error: `Too many attempts. Wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again.` },
+      { status: 429, headers: { "Retry-After": String(Math.max(1, gate.retryAfter)) } },
+    );
   }
-  const recent = (attempts.get(ip) ?? []).filter((t: number) => now - t < WINDOW_MS);
-  if (recent.length >= MAX_ATTEMPTS) {
-    return NextResponse.json({ error: "Too many attempts. Wait 15 minutes and try again." }, { status: 429 });
-  }
-  /* count the attempt before the slow hash, so parallel requests can't all slip under the limit */
-  attempts.set(ip, [...recent, now]);
 
   const password = str((await readJson(req)).password);
   if (!password || password.length > 1024 || !(await checkPassword(password))) {
+    limiter.failed();
     return NextResponse.json({ error: "Wrong password." }, { status: 401 });
   }
 
-  attempts.delete(ip);
+  limiter.succeeded(key);
   const res = NextResponse.json({ ok: true });
   res.cookies.set(COOKIE, await signSession(), {
     httpOnly: true,

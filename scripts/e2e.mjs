@@ -23,7 +23,10 @@ const APP = process.env.E2E_APP ?? "http://127.0.0.1:3311";
 const PTY = process.env.E2E_PTY ?? `127.0.0.1:${env.PTY_PORT || 3312}`;
 const AGENT = process.env.E2E_AGENT ?? "cursor";
 const expires = Date.now() + 3600_000;
-const COOKIE = `cui_session=${expires}.${createHmac("sha256", env.UI_SECRET).update(String(expires)).digest("base64url")}`;
+/* signed as lib/auth.ts does: expiry, session epoch (auth.json next to config.json) and password */
+const authFile = path.join(env.AGENT_U_HOME || process.env.AGENT_U_HOME || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "agent-u"), "auth.json");
+const epoch = fs.existsSync(authFile) ? (() => { try { return JSON.parse(fs.readFileSync(authFile, "utf8")).epoch || "invalid"; } catch { return "invalid"; } })() : "";
+const COOKIE = `cui_session=${expires}.${createHmac("sha256", env.UI_SECRET).update(`${expires}\n${epoch}\n${env.UI_PASSWORD_HASH || env.UI_PASSWORD || ""}`).digest("base64url")}`;
 const headers = { Cookie: COOKIE, Origin: APP, "Content-Type": "application/json" };
 
 let failed = 0;

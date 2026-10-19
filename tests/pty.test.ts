@@ -15,7 +15,8 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), "agentu-pty-"));
 let server: ChildProcess;
 let logs = "";
 
-const cookie = (secret = SECRET, expires = Date.now() + 3600_000) => `cui_session=${expires}.${createHmac("sha256", secret).update(String(expires)).digest("base64url")}`;
+/* signed as lib/auth.ts does: expiry, session epoch ("" with no auth.json yet) and password (none here) */
+const cookie = (secret = SECRET, expires = Date.now() + 3600_000) => `cui_session=${expires}.${createHmac("sha256", secret).update(`${expires}\n\n`).digest("base64url")}`;
 
 type Conn = { ws: WebSocket; out: () => string; msgs: Record<string, unknown>[]; closed: Promise<{ code: number; reason: string }>; opened: Promise<void> };
 function connect(query: string, headers: Record<string, string> = {}): Conn {

@@ -14,8 +14,11 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "no-referrer" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
     ];
     return [
+      /* only over HTTPS (the tunnel says so in x-forwarded-proto); browsers ignore it over plain HTTP anyway */
+      { source: "/:path*", has: [{ type: "header", key: "x-forwarded-proto", value: "https" }], headers: [{ key: "Strict-Transport-Security", value: "max-age=31536000" }] },
       /* file bytes set their own, stricter policy (sandboxed, no script) in the route */
       { source: "/api/files/raw", headers: common },
       {

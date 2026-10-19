@@ -24,6 +24,27 @@ function serial<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** the body, refused before it's read when Content-Length is over `max`, and as soon as it passes `max` without one */
+async function readCapped(req: NextRequest, max: number): Promise<Buffer> {
+  const declared = req.headers.get("content-length");
+  if (declared !== null && !(Number(declared) <= max)) throw new FsError("Chunk too large.", 413);
+  if (!req.body) return Buffer.alloc(0);
+  const parts: Buffer[] = [];
+  let size = 0;
+  const reader = req.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new FsError("Chunk too large.", 413);
+    }
+    parts.push(Buffer.from(value));
+  }
+  return Buffer.concat(parts, size);
+}
+
 /**
  * Resumable upload in chunks: POST ?dir=<abs>&name=<file>&offset=<n>&total=<bytes>&key=<id>[&replace=1] with the raw bytes.
  * The partial file is kept next to the target; an offset that doesn't match what's there gets a 409 with
@@ -46,8 +67,7 @@ export async function POST(req: NextRequest) {
     /* the client's key (size and modified time) keeps a different file of the same name from resuming this one */
     const key = (q.get("key") ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40);
     const part = path.join(dir, `.${name}.${key || total}.agentu-upload`);
-    const body = Buffer.from(await req.arrayBuffer());
-    if (body.length > CHUNK_MAX) throw new FsError("Chunk too large.", 413);
+    const body = await readCapped(req, CHUNK_MAX);
     if (offset + body.length > total) throw new FsError("More bytes than the file's size.", 400);
 
     return await serial(part, async () => {
