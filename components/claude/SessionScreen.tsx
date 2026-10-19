@@ -178,7 +178,7 @@ export function SessionScreen({
     const close = (e: PointerEvent) => !inside(e.target) && setMenuOpen(false);
     const onFocus = (e: FocusEvent) => !inside(e.target) && setMenuOpen(false);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       setMenuOpen(false);
       menuButtonRef.current?.focus();
     };
