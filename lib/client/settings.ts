@@ -316,6 +316,7 @@ export async function flush(): Promise<void> {
 
 /** Takes the server's settings, keeping local changes it hasn't confirmed yet. */
 function merge(server: unknown) {
+  ensurePending();
   const next: Record<string, unknown> = { ...pickValid(server, "synced").values };
   for (const [k, v] of Object.entries({ ...inflight, ...pending })) {
     if (v === null) delete next[k];
