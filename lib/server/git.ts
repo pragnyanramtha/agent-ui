@@ -10,6 +10,7 @@ import { getProfile, type ResolvedProfile } from "./profiles";
 import { childEnv } from "./child-env";
 import { storedSetting, syncedSetting } from "./settings";
 import type { Settings } from "@/lib/settings-schema";
+import { choiceMs, DEFAULT_FETCH_INTERVAL_MS, parseFetchInterval } from "@/lib/git-interval";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
  * throwaway index so HEAD, the branch and the staging area are never touched), rewinding to one, the branch's
@@ -668,16 +669,14 @@ export async function status(cwd: string): Promise<GitStatus | null> {
 /* ── background fetch ───────────────────────────────── */
 
 /** How often a repo someone is looking at gets fetched when nothing else says; 0 turns it off. */
-export const GIT_FETCH_INTERVAL_MS = 60_000;
+export const GIT_FETCH_INTERVAL_MS = DEFAULT_FETCH_INTERVAL_MS;
 
-/** The fetch interval in force: Settings > Git > Check the remote once someone picked one, else GIT_FETCH_INTERVAL_MS
- * from the server's environment, else a minute. */
+/** The fetch interval in force: Settings > Git > Check the remote once someone picked an interval, else
+ * GIT_FETCH_INTERVAL_MS from the server's environment, else a minute. */
 export function fetchIntervalMs(): number {
   const choice = storedSetting("gitFetchInterval");
-  if (choice !== undefined) return choice === "off" ? 0 : Number(choice) * 60_000;
-  const env = process.env.GIT_FETCH_INTERVAL_MS?.trim();
-  const n = env ? Number(env) : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : GIT_FETCH_INTERVAL_MS;
+  const ms = choice === undefined ? null : choiceMs(choice);
+  return ms ?? parseFetchInterval(process.env.GIT_FETCH_INTERVAL_MS);
 }
 const FETCH_TIMEOUT_MS = 20_000;
 

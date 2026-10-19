@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { readSynced, updateSynced } from "@/lib/server/settings";
+import { readSynced, serverDefaults, updateSynced } from "@/lib/server/settings";
 
 export const dynamic = "force-dynamic";
 
-/** the settings shared by every browser signed in to this server */
+/** the settings shared by every browser signed in to this server, and what "server default" means here */
 export function GET() {
-  return NextResponse.json(readSynced());
+  return NextResponse.json({ ...readSynced(), defaults: serverDefaults() });
 }
 
 /** a JSON merge of synced settings: `{ "palette": "nord", "accent": null }` (null goes back to the default) */

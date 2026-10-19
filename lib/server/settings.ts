@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DEFAULTS, pickValid, validatePatch, type SettingKey, type Settings } from "@/lib/settings-schema";
+import { DEFAULTS, pickValid, validatePatch, type ServerDefaults, type SettingKey, type Settings } from "@/lib/settings-schema";
+import { parseFetchInterval } from "@/lib/git-interval";
 import { CONFIG_DIR } from "./profiles";
 
 /* Synced settings (lib/settings-schema.ts, scope "synced"): one small JSON file next to the profiles config, so every
@@ -50,6 +51,9 @@ function readCached(): SyncedFile {
 export function storedSetting<K extends SettingKey>(key: K): Settings[K] | undefined {
   return readCached().settings[key] as Settings[K] | undefined;
 }
+
+/** What the server does for settings left at "server default": the browser shows these in place of the plain word. */
+export const serverDefaults = (): ServerDefaults => ({ gitFetchIntervalMs: parseFetchInterval(process.env.GIT_FETCH_INTERVAL_MS) });
 
 /** A synced setting's value, or its registry default. */
 export const syncedSetting = <K extends SettingKey>(key: K): Settings[K] => storedSetting(key) ?? DEFAULTS[key];
