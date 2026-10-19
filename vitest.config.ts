@@ -3,5 +3,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: { alias: { "@": path.resolve(__dirname) } },
+  esbuild: { jsx: "automatic" },
   test: { include: ["tests/**/*.test.ts"], setupFiles: ["tests/setup-env.ts"], environment: "node", testTimeout: 20_000, pool: "forks" },
 });

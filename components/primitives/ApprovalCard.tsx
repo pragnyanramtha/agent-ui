@@ -328,7 +328,7 @@ export default function ApprovalCard({
                   >
                     <div className="pr-7 text-[14px] font-medium text-ink">{question.q}</div>
                     <GlideMenu className="mt-2.5 flex flex-col gap-1" highlightClassName="inset-x-0 rounded-control bg-hover">
-                      {question.options.map((option, i) => {
+                      {(Array.isArray(question.options) ? question.options : []).map((option, i) => {
                         const on = picked.includes(i);
                         return (
                           <button

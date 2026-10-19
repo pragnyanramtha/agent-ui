@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Boundary } from "./Boundary";
 
 const WIDTH_KEY = "cui:panel-width";
 const MIN = 340;
@@ -12,7 +13,7 @@ const MAIN_MIN = 420;
  * The right-hand panel column on desktop (Changes, Git, Usage): a drag handle on its left edge,
  * width remembered. Below lg the panel inside covers the session as a sheet, so this adds nothing.
  */
-export function PanelSlot({ children }: { children: ReactNode }) {
+export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode; resetKey?: unknown; onClose?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const stored = Number(localStorage.getItem(WIDTH_KEY));
@@ -57,7 +58,32 @@ export function PanelSlot({ children }: { children: ReactNode }) {
         }}
         className="absolute inset-y-0 -left-1 z-30 hidden w-2 cursor-col-resize transition-colors hover:bg-accent/40 lg:block"
       />
-      {children}
+      <Boundary resetKey={resetKey} label="panel" fallback={(retry) => <PanelFallback retry={retry} onClose={onClose} />}>
+        {children}
+      </Boundary>
     </div>
+  );
+}
+
+const BTN = "tap relative h-9 rounded-full px-3.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover";
+
+function PanelFallback({ retry, onClose }: { retry: () => void; onClose?: () => void }) {
+  return (
+    <aside
+      role="alert"
+      className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-page px-6 text-center lg:static lg:inset-auto lg:border-l lg:border-line"
+    >
+      <p className="text-[13px] text-ink-3">This panel failed to load.</p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={retry} className={BTN}>
+          Retry
+        </button>
+        {onClose && (
+          <button type="button" onClick={onClose} className={BTN}>
+            Close
+          </button>
+        )}
+      </div>
+    </aside>
   );
 }

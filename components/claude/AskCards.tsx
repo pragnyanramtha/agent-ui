@@ -5,6 +5,7 @@ import ApprovalCard from "@/components/primitives/ApprovalCard";
 import { Button } from "@/components/atoms/Button";
 import type { PendingAsk } from "@/lib/types";
 import { summarizeTool } from "@/lib/client/tools";
+import { Boundary, EntryFallback } from "./Boundary";
 import { DiffBlock } from "./DiffBlock";
 
 type Respond = (body: { requestId: string; allow: boolean; always?: boolean; answers?: Record<string, string> }) => Promise<void>;
@@ -29,7 +30,8 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
     setBusy(choice);
     await respond({ requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" }).catch(() => setBusy(null));
   };
-  const summary = summarizeTool(ask.toolName, ask.input);
+  const input = ask.input ?? {};
+  const summary = summarizeTool(ask.toolName, input);
 
   return (
     <div className="w-full overflow-hidden rounded-card bg-surface shadow-card" role="group" aria-label="Approval needed" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
@@ -38,7 +40,7 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
           <p className="text-[14px] font-medium text-ink">{ask.title}</p>
           {ask.description && <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{ask.description}</p>}
         </div>
-        <Preview toolName={ask.toolName} input={ask.input} />
+        <Preview toolName={ask.toolName} input={input} />
       </div>
       {/* Phones: the tool label sits on its own line and the three actions share the row
        * evenly at full tap height. From sm up it is one compact Beautiful UI footer. */}
@@ -66,17 +68,19 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
 
 /** AskUserQuestion, answered through Beautiful UI's ApprovalCard. */
 function QuestionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "question" }>; respond: Respond }) {
+  const questions = (Array.isArray(ask.questions) ? ask.questions : []).filter((q) => q && typeof q === "object");
+  const options = (q: (typeof questions)[number]) => (Array.isArray(q.options) ? q.options : []);
   return (
     <ApprovalCard
       className="max-w-none sm:max-w-[420px]"
       resettable={false}
       labels={{ skip: "Skip", send: "Send answers", sentMessage: "Answers sent" }}
-      questions={ask.questions.map((q) => ({ q: q.question, type: q.multiSelect ? "check" : "radio", options: q.options.map((o) => o.label) }))}
+      questions={questions.map((q) => ({ q: String(q.question ?? ""), type: q.multiSelect ? "check" : "radio", options: options(q).map((o) => String(o?.label ?? "")) }))}
       onDismiss={() => void respond({ requestId: ask.requestId, allow: false }).catch(() => {})}
       onSubmitted={(picked, custom) => {
         const answers = Object.fromEntries(
-          ask.questions.map((q, i) => {
-            const chosen = (picked[i] ?? []).map((idx) => q.options[idx]?.label).filter(Boolean);
+          questions.map((q, i) => {
+            const chosen = (picked[i] ?? []).map((idx) => options(q)[idx]?.label).filter(Boolean);
             if (custom[i]?.trim()) chosen.push(custom[i].trim());
             return [q.question, chosen.join(", ")];
           }),
@@ -91,9 +95,30 @@ export function AskCards({ pending, respond }: { pending: PendingAsk[]; respond:
   if (!pending.length) return null;
   return (
     <div className="flex flex-col gap-3" aria-live="polite">
-      {pending.map((ask) =>
-        ask.kind === "permission" ? <PermissionCard key={ask.requestId} ask={ask} respond={respond} /> : <QuestionCard key={ask.requestId} ask={ask} respond={respond} />,
-      )}
+      {pending.map((ask) => (
+        <Boundary
+          key={ask.requestId}
+          resetKey={ask}
+          label="approval card"
+          fallback={() => (
+            <EntryFallback
+              entry={ask}
+              message="Couldn't show this request."
+              actions={
+                <button
+                  type="button"
+                  onClick={() => void respond({ requestId: ask.requestId, allow: false }).catch(() => {})}
+                  className="tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink"
+                >
+                  {ask.kind === "permission" ? "Deny" : "Skip"}
+                </button>
+              }
+            />
+          )}
+        >
+          {ask.kind === "permission" ? <PermissionCard ask={ask} respond={respond} /> : <QuestionCard ask={ask} respond={respond} />}
+        </Boundary>
+      ))}
     </div>
   );
 }
