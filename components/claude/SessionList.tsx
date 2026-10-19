@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
+import { Archive, Check, EditPencil, Folder, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { patchSession, type SessionChange } from "@/lib/client/useSessions";
@@ -322,17 +322,21 @@ function RenameRow({
   );
 }
 
-/** Pin, rename, archive and copy link for one row, floating at the pointer or under the "..." button. */
+type RowAction = "pin" | "rename" | "read" | "archive" | "link";
+
+/** Pin, rename, mark read, archive and copy link for one row, floating at the pointer or under the "..." button. */
 function RowMenu({
   s,
   at,
+  unread,
   onClose,
   onAction,
 }: {
   s: SessionSummary;
   at: MenuAt;
+  unread: boolean;
   onClose: (restoreFocus: boolean) => void;
-  onAction: (action: "pin" | "rename" | "archive" | "link") => void;
+  onAction: (action: RowAction) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<CSSProperties>({});
@@ -410,6 +414,7 @@ function RowMenu({
     >
       {item("pin", s.pinned ? "Unpin" : "Pin", s.pinned ? <PinSlash {...icon} /> : <Pin {...icon} />)}
       {item("rename", "Rename", <EditPencil {...icon} />)}
+      {item("read", unread ? "Mark as read" : "Mark as unread", unread ? <MailOpen {...icon} /> : <Mail {...icon} />)}
       {item("archive", s.archived ? "Unarchive" : "Archive", <Archive {...icon} />)}
       <div className="mx-2 my-1 h-px bg-line" />
       {item("link", "Copy link", <Link {...icon} />)}
@@ -644,11 +649,13 @@ export function SessionList({
   activeView,
   inbox = 0,
   finished = NONE_FINISHED,
+  onUnread,
 }: {
   sessions: SessionSummary[] | null;
   activeId: string | null;
   /** sessions that finished a turn this device hasn't opened since */
   finished?: Finished;
+  onUnread?: (s: SessionSummary, unread: boolean) => void;
   /** kept for callers; open tabs no longer change how a row reads */
   openIds?: { id: string }[];
   onPick: (id: string) => void;
@@ -735,7 +742,7 @@ export function SessionList({
     }
     setMenu(null);
   }, []);
-  const onAction = (action: "pin" | "rename" | "archive" | "link") => {
+  const onAction = (action: RowAction) => {
     if (!menu) return;
     const { s, where } = menu;
     if (action === "rename") {
@@ -746,6 +753,7 @@ export function SessionList({
     }
     closeMenu(true);
     if (action === "pin") void change(s, { pinned: !s.pinned });
+    else if (action === "read") onUnread?.(s, !finished[s.id]);
     else if (action === "archive" && s.archived) void change(s, { archived: false });
     else if (action === "archive") {
       const wasPinned = Boolean(s.pinned);
@@ -1042,7 +1050,7 @@ export function SessionList({
         )}
       </div>
 
-      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} onClose={closeMenu} onAction={onAction} />}
+      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} unread={Boolean(finished[menu.s.id])} onClose={closeMenu} onAction={onAction} />}
 
       <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
         {toast && (
