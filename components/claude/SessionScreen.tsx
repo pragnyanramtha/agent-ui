@@ -731,7 +731,7 @@ export function SessionScreen({
                   size="inline"
                   tone="error"
                   className="py-2.5"
-                  icon={<FolderWarning width={16} height={16} strokeWidth={1.8} />}
+                  icon={<FolderWarning width={15} height={15} strokeWidth={1.8} />}
                   {...folderGoneCopy(shortPath(view.cwd))}
                   actions={[
                     { label: "New session", onClick: onNew, primary: true },

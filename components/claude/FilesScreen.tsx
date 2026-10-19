@@ -275,7 +275,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
             {...unopened.copy}
             actions={[
               { label: "Try again", onClick: () => void open(unopened.target) },
-              ...(unopened.target ? [{ label: "Open home folder", onClick: () => void open() }] : []),
+              ...(unopened.target ? [{ label: "Open home folder", onClick: () => void open(), primary: true }] : []),
             ]}
           />
         ) : listing === null ? (

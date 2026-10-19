@@ -1219,7 +1219,7 @@ export const SessionList = memo(function SessionList({
   const empty = emptyKind && (
     <EmptyState
       size="inline"
-      icon={emptyKind === "snoozed" ? <Alarm width={16} height={16} strokeWidth={1.8} /> : <ChatBubbleEmpty width={16} height={16} strokeWidth={1.8} />}
+      icon={emptyKind === "snoozed" ? <Alarm width={15} height={15} strokeWidth={1.8} /> : <ChatBubbleEmpty width={15} height={15} strokeWidth={1.8} />}
       {...sidebarEmptyCopy(emptyKind, filter !== "all" ? AGENT_LABEL[filter] : "")}
       actions={[
         emptyKind === "agent"
@@ -1348,7 +1348,7 @@ export const SessionList = memo(function SessionList({
             size="inline"
             tone="error"
             className="mb-2"
-            icon={<CloudXmark width={16} height={16} strokeWidth={1.8} />}
+            icon={<CloudXmark width={15} height={15} strokeWidth={1.8} />}
             {...loadError}
             actions={[{ label: retrying ? "Trying again…" : "Try again", onClick: retry, disabled: retrying }]}
           />
@@ -1373,16 +1373,16 @@ export const SessionList = memo(function SessionList({
 
         {matches ? (
           <section className="mt-1">
-            <h2 className="flex h-7 items-center px-2.5 text-xs font-medium text-ink-3">
-              {matches.length ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : "No matches"}
-            </h2>
             {matches.length ? (
-              <div className="flex flex-col gap-px">{matches.map((s) => row(s, "match"))}</div>
+              <>
+                <h2 className="flex h-7 items-center px-2.5 text-xs font-medium text-ink-3">{`${matches.length} ${matches.length === 1 ? "match" : "matches"}`}</h2>
+                <div className="flex flex-col gap-px">{matches.map((s) => row(s, "match"))}</div>
+              </>
             ) : (
               <EmptyState
                 size="inline"
                 announce
-                icon={<Search width={16} height={16} strokeWidth={1.8} />}
+                icon={<Search width={15} height={15} strokeWidth={1.8} />}
                 {...noMatchCopy(query, "The filter checks titles, folders and agents. Search also looks inside messages.")}
                 actions={[
                   { label: "Search messages", onClick: () => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT, { detail: { query: query.trim() } })) },

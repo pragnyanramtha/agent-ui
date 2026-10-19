@@ -41,31 +41,33 @@ export function EmptyState({
   const panel = size === "panel";
   const error = tone === "error";
   const tile = error ? "bg-red-tint text-red-ink" : "bg-surface text-ink-3 shadow-hairline";
+  const buttons = actions.length > 0 && (
+    <div className={`flex flex-wrap gap-2 ${panel ? "justify-center pt-1" : "pt-1.5"}`}>
+      {actions.map((a) => (
+        <button key={a.label} type="button" onClick={a.onClick} disabled={a.disabled} className={BTN[size][a.primary ? "primary" : "secondary"]}>
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
   return (
     <div
       role={error ? "alert" : announce ? "status" : undefined}
       data-empty={tone}
-      className={`flex min-w-0 flex-col ${panel ? "items-center gap-3 px-4 py-12 text-center text-balance" : "items-start gap-2 px-2.5 py-2"} ${className}`}
+      className={`flex min-w-0 ${panel ? "flex-col items-center gap-3 px-4 py-12 text-center text-balance" : "items-start gap-2.5 px-2.5 py-2"} ${className}`}
       style={{ animation: "fade-in 200ms ease both" }}
     >
       {icon && (
-        <span aria-hidden className={`grid shrink-0 place-items-center ${panel ? "size-10 rounded-[12px]" : "size-8 rounded-[10px]"} ${tile}`}>
+        <span aria-hidden className={`grid shrink-0 place-items-center ${panel ? "size-10 rounded-[12px]" : "size-7 rounded-[9px]"} ${tile}`}>
           {icon}
         </span>
       )}
-      <div className={`flex min-w-0 flex-col gap-1 ${panel ? "max-w-[44ch] items-center" : ""}`}>
+      <div className={`flex min-w-0 flex-col gap-0.5 ${panel ? "max-w-[44ch] items-center gap-1" : "flex-1 pt-[3px]"}`}>
         <p className={`font-medium [overflow-wrap:anywhere] ${panel ? "text-base text-ink" : "text-sm text-ink-2"}`}>{title}</p>
         {body && <p className="text-sm leading-snug text-ink-3 [overflow-wrap:anywhere]">{body}</p>}
+        {!panel && buttons}
       </div>
-      {actions.length > 0 && (
-        <div className={`flex flex-wrap gap-2 ${panel ? "justify-center pt-1" : "pt-0.5"}`}>
-          {actions.map((a) => (
-            <button key={a.label} type="button" onClick={a.onClick} disabled={a.disabled} className={BTN[size][a.primary ? "primary" : "secondary"]}>
-              {a.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {panel && buttons}
     </div>
   );
 }

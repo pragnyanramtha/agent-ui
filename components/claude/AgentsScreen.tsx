@@ -191,7 +191,7 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
       {data === null ? (
         <p className="px-1 text-sm text-ink-3">Loading terminals…</p>
       ) : data.terminals.length === 0 ? (
-        <EmptyState size="inline" className="px-1" icon={<Terminal width={16} height={16} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
+        <EmptyState size="inline" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {data.terminals.map((t) => (
