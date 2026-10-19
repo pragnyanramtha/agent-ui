@@ -279,4 +279,15 @@ describe("diff", () => {
     expect(c).not.toBe(a);
     expect(c).toEqual(a);
   });
+
+  it("doesn't hand a request a diff that started before it", async () => {
+    const first = g.diff(repo, "s1", { scope: "uncommitted" });
+    await new Promise((r) => setTimeout(r, 80));
+    write("late.txt", "late\n");
+    const [a, b, c] = await Promise.all([first, g.diff(repo, "s1", { scope: "uncommitted" }), g.diff(repo, "s2", { scope: "uncommitted" })]);
+    expect(b).toBe(c);
+    expect(b.files.map((f) => f.path)).toContain("late.txt");
+    expect(a).not.toBe(b);
+    fs.rmSync(path.join(repo, "late.txt"));
+  });
 });

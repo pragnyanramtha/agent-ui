@@ -115,7 +115,8 @@ function untrackedFiles(root: string, env: Record<string, string>, limit = Infin
   });
 }
 
-type Snapshot = { tree: string; excluded: string[]; excludedBytes: number };
+/** `unreadable`: paths git couldn't add (an unreadable file, a nested repo without commits), which the tree leaves out */
+type Snapshot = { tree: string; excluded: string[]; excludedBytes: number; unreadable: string[] };
 
 /** The working tree as git would commit it right now (ignored files left out), through a copy of the index.
  * Untracked files over CHECKPOINT_MAX_FILE_MB stay out too. With `strict` (a checkpoint, kept by a ref), too many
@@ -149,18 +150,19 @@ async function snapshotTree(root: string, opts: { strict?: boolean } = {}): Prom
     /* a pathspec file, not argv: no length limit, and literal magic keeps any file name exact */
     if (excluded.length) await fs.writeFile(specs, [".", ...excluded.map((p) => `:(exclude,literal)${p}`)].join("\0") + "\0", { mode: 0o600 });
     const spec = excluded.length ? [`--pathspec-from-file=${specs}`, "--pathspec-file-nul"] : ["--", "."];
-    /* --ignore-errors: what git can't add (an untracked nested repo without commits) is left out and git exits 1
-     * after writing the rest; a fatal error (128), a timeout or no index at all still fail the snapshot */
-    const failed = await new Promise<{ code: unknown; message: string } | null>((resolve) =>
+    /* --ignore-errors: what git can't add is left out and git exits 1 after writing the rest; a fatal error (128),
+     * a timeout, no index at all, or an error that names no path still fail the snapshot */
+    const failed = await new Promise<{ code: unknown; message: string; stderr: string } | null>((resolve) =>
       execFile(
         "git",
         ["add", "-A", "--ignore-errors", ...spec],
         { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...env }, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
-        (err, _out, stderr) => resolve(err ? { code: err.code, message: stderr.trim().split("\n").filter(Boolean).slice(-3).join(" ") || err.message } : null),
+        (err, _out, stderr) => resolve(err ? { code: err.code, stderr, message: stderr.trim().split("\n").filter(Boolean).slice(-3).join(" ") || err.message } : null),
       ),
     );
-    if (failed && !(failed.code === 1 && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
-    return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes };
+    const unreadable = failed ? skippedPaths(failed.stderr) : [];
+    if (failed && !(failed.code === 1 && unreadable.length && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
+    return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes, unreadable };
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
     await fs.rm(specs, { force: true }).catch(() => undefined);
@@ -179,6 +181,15 @@ function parseSkipped(body: string): Skipped | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function skippedPaths(stderr: string): string[] {
+  const out = new Set<string>();
+  for (const line of stderr.split("\n")) {
+    const m = /^error: unable to index file '(.+)'$/.exec(line) ?? /^error: '(.+?)\/?' does not have a commit checked out$/.exec(line);
+    if (m) out.add(m[1]);
+  }
+  return [...out];
 }
 
 export async function listCheckpoints(cwd: string, session: string): Promise<Checkpoint[]> {
@@ -219,8 +230,9 @@ async function save(root: string, session: string, label: string): Promise<{ cp:
   if (list[0]?.tree === snap.tree && JSON.stringify(list[0].skipped) === JSON.stringify(skipped)) return { cp: list[0], snap };
   const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
   const subject = label.replace(/\s+/g, " ").trim().slice(0, 120) || "Checkpoint";
-  const message = skipped ? `${subject}\n\n${SKIPPED_TRAILER}${JSON.stringify(skipped)}` : subject;
-  const commit = (await git(root, ["commit-tree", snap.tree, ...(head ? ["-p", head] : []), "-m", message], { env: BOT })).trim();
+  /* rewinding must not delete what this checkpoint couldn't see */
+  const body = [...(skipped ? [`${SKIPPED_TRAILER}${JSON.stringify(skipped)}`] : []), ...snap.unreadable.map((p) => `${SKIPPED}${JSON.stringify(p)}`)].join("\n");
+  const commit = (await git(root, ["commit-tree", snap.tree, ...(head ? ["-p", head] : []), "-m", subject, ...(body ? ["-m", body] : [])], { env: BOT })).trim();
   const id = `${Date.now()}-${crypto.randomBytes(2).toString("hex")}`;
   await git(root, ["update-ref", `${refBase(session)}/${id}`, commit]);
   for (const old of list.slice(MAX_CHECKPOINTS - 1)) await git(root, ["update-ref", "-d", `${refBase(session)}/${old.id}`]).catch(() => undefined);
@@ -259,6 +271,22 @@ async function maybePrune(root: string) {
   if (now - (pruned.get(root) ?? 0) < PRUNE_EVERY_MS) return;
   pruned.set(root, now);
   await pruneCheckpoints(root, now).catch(() => 0);
+}
+
+const SKIPPED = "Skipped: ";
+
+/** paths a checkpoint couldn't read when it was taken */
+async function skippedIn(root: string, commit: string): Promise<string[]> {
+  const body = await git(root, ["show", "-s", "--format=%b", commit]).catch(() => "");
+  return body.split("\n").flatMap((l) => {
+    if (!l.startsWith(SKIPPED)) return [];
+    try {
+      const p: unknown = JSON.parse(l.slice(SKIPPED.length));
+      return typeof p === "string" && p ? [p] : [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /** Checkpoints taken before a session had its id (a first message) move to it once it does. */
@@ -404,19 +432,26 @@ async function defaultBase(root: string): Promise<string | null> {
 }
 
 type DiffOpts = { scope: DiffScope; checkpoint?: string; ignoreWhitespace?: boolean; maxBytes?: number };
-/* several tabs poll the same diff; one snapshot and diff serves every identical request in flight */
-const diffsInFlight = new Map<string, Promise<GitDiff>>();
+/* several tabs poll the same diff, so identical requests share runs. A run that started more than JOIN_MS ago
+ * snapshotted before the request (a refresh after a turn or a commit), so the request waits for the next run
+ * instead, which everyone who asked meanwhile shares. */
+type Flight = { p: Promise<GitDiff>; at: number; next?: Promise<GitDiff> };
+const diffsInFlight = new Map<string, Flight>();
+const JOIN_MS = 50;
 
 /** The folder as it is now (untracked files in, ignored ones out) against HEAD, a checkpoint of this session, or where the branch left the default branch. */
 export async function diff(cwd: string, session: string, opts: DiffOpts): Promise<GitDiff> {
   const root = await needRoot(cwd);
   const key = [root, opts.scope, opts.scope === "checkpoint" ? `${session}/${opts.checkpoint}` : "", opts.ignoreWhitespace ? "w" : "", opts.maxBytes ?? ""].join("|");
-  let p = diffsInFlight.get(key);
-  if (!p) {
-    p = diffAt(root, session, opts).finally(() => diffsInFlight.delete(key));
-    diffsInFlight.set(key, p);
-  }
-  return p;
+  const fly = (): Promise<GitDiff> => {
+    const f: Flight = { at: Date.now(), p: diffAt(root, session, opts).finally(() => diffsInFlight.get(key) === f && diffsInFlight.delete(key)) };
+    diffsInFlight.set(key, f);
+    return f.p;
+  };
+  const cur = diffsInFlight.get(key);
+  if (!cur) return fly();
+  if (Date.now() - cur.at < JOIN_MS) return cur.p;
+  return (cur.next ??= cur.p.then(fly, fly));
 }
 
 async function diffAt(root: string, session: string, opts: DiffOpts): Promise<GitDiff> {
@@ -489,11 +524,13 @@ export async function rewind(cwd: string, session: string, id: string) {
    * removed, and one the checkpoint has an older copy of stays as it is, since the undo couldn't bring it back. */
   const excluded = new Set(saved.snap.excluded);
   const kept = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=D", "-z", cp.tree, before.tree])).split("\0").filter((p) => p && excluded.has(p));
-  /* nor is one the checkpoint itself left out: it existed then, the checkpoint just has no copy of it */
-  const leftOut = new Set(cp.skipped?.paths ?? []);
+  /* nor is one the checkpoint itself left out (too large, or unreadable): it existed then, the checkpoint just has no copy of it */
+  const large = new Set(cp.skipped?.paths ?? []);
+  const unreadable = await skippedIn(root, cp.commit);
+  const leftOut = (p: string) => large.has(p) || unreadable.some((s) => p === s || p.startsWith(`${s}/`));
   const newer = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", cp.tree, before.tree])).split("\0").filter(Boolean);
-  const added = newer.filter((p) => !leftOut.has(p));
-  const keep = new Set([...kept, ...newer.filter((p) => leftOut.has(p))]);
+  const added = newer.filter((p) => !leftOut(p));
+  const keep = new Set([...kept, ...newer.filter(leftOut)]);
   const changes = numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, before.tree])).filter((f) => !keep.has(f.path));
   const tmp = path.join(os.tmpdir(), `agent-u-index-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
   try {

@@ -165,6 +165,24 @@ describe("rewinding around files left out", () => {
     expect(files((await g.listCheckpoints(repo, "r3")).find((c) => c.id === res.undo)!.commit)).toContain("shrinks.bin");
     clean();
   });
+
+  it.skipIf(process.getuid?.() === 0)("keeps both a large and an unreadable file the checkpoint left out", async () => {
+    write("large.bin", big());
+    write("locked.txt", "secret\n");
+    fs.chmodSync(path.join(repo, "locked.txt"), 0o000);
+    const cp = await g.checkpoint(repo, "r4", "both left out");
+    expect(files(cp!.commit)).not.toContain("locked.txt");
+    expect(cp!.skipped?.paths).toEqual(["large.bin"]);
+    fs.chmodSync(path.join(repo, "locked.txt"), 0o644);
+    write("large.bin", "small now\n");
+    write("made.txt", "made since\n");
+    const res = await g.rewind(repo, "r4", cp!.id);
+    expect(res).toMatchObject({ removed: 1, kept: 2 });
+    expect(exists("made.txt")).toBe(false);
+    expect(read("locked.txt").toString()).toBe("secret\n");
+    expect(read("large.bin").toString()).toBe("small now\n");
+    clean();
+  });
 });
 
 describe("pruning old checkpoints", () => {
