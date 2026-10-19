@@ -5,6 +5,7 @@ import { GitBranch, NavArrowDown, Xmark } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
+import { modalOpen } from "@/lib/client/shortcuts";
 
 type Status = {
   root: string;
@@ -57,7 +58,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   useEffect(() => {
     void load();
     ref.current?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [load]);

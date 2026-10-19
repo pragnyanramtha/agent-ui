@@ -5,7 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
-import { CodeCard } from "./CodeCard";
+import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
 import { PathLabel } from "./PathLabel";
@@ -638,7 +638,7 @@ export const ToolRun = memo(function ToolRun({
 
 /** Copy or save a proposed plan as Markdown. */
 function PlanActions({ plan }: { plan: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<boolean | null>(null);
   const btn = "tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
   return (
     <div className="flex items-center gap-1.5">
@@ -646,13 +646,15 @@ function PlanActions({ plan }: { plan: string }) {
         type="button"
         className={btn}
         onClick={() =>
-          void navigator.clipboard?.writeText(plan).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
+          void copyText(plan)
+            .catch(() => false)
+            .then((ok) => {
+              setCopied(ok);
+              setTimeout(() => setCopied(null), 1500);
+            })
         }
       >
-        {copied ? "Copied" : "Copy plan"}
+        {copied ? "Copied" : copied === false ? "Couldn't copy" : "Copy plan"}
       </button>
       <button
         type="button"

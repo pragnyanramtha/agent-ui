@@ -281,7 +281,11 @@ export function CommandPalette({
         combo: "sidebar",
         keywords: "sidebar collapse expand hide show panel rail",
         icon: <SidebarCollapse width={15} height={15} strokeWidth={1.8} />,
-        run: () => window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT)),
+        run: () => {
+          /* on a phone this opens the drawer, which takes focus */
+          navigated.current = !window.matchMedia("(min-width: 1024px)").matches;
+          window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT));
+        },
       },
       {
         id: "a:theme",
@@ -298,7 +302,10 @@ export function CommandPalette({
         combo: "shortcuts",
         keywords: "keyboard shortcuts keys hotkeys bindings help",
         icon: <KeyCommand width={15} height={15} strokeWidth={1.8} />,
-        run: () => window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT)),
+        run: () => {
+          navigated.current = true;
+          window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT));
+        },
       },
       {
         id: "a:signout",

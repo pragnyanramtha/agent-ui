@@ -114,6 +114,27 @@ describe("agy transcript", () => {
     expect(entries.some((e) => e.id.startsWith("s8"))).toBe(false);
   });
 
+  it("never pairs a result with a call from an earlier step or turn", () => {
+    const out = agyTranscriptEntries(
+      jsonl(
+        { step_index: 0, type: "CORTEX_STEP_TYPE_USER_INPUT", content: "<USER_REQUEST>run ls</USER_REQUEST>" },
+        { step_index: 1, type: "CORTEX_STEP_TYPE_PLANNER_RESPONSE", content: "ok", tool_calls: [{ name: "run_command", args: { CommandLine: "ls" } }] },
+        { step_index: 2, type: "CORTEX_STEP_TYPE_USER_INPUT", content: "<USER_REQUEST>never mind, run pwd</USER_REQUEST>" },
+        { step_index: 3, type: "CORTEX_STEP_TYPE_PLANNER_RESPONSE", content: "", tool_calls: [{ name: "run_command", args: { CommandLine: "pwd" } }] },
+        { step_index: 4, type: "CORTEX_STEP_TYPE_SOMETHING_NEW", content: { output: "not a result" } },
+        { step_index: 5, type: "CORTEX_STEP_TYPE_RUN_COMMAND", status: "DONE", content: { output: "/home/u" } },
+        { step_index: 6, type: "PLANNER_RESPONSE", content: "", tool_calls: [{ name: "view_file", args: {} }] },
+        { step_index: 7, type: "PLANNER_RESPONSE", content: "", tool_calls: [{ name: "custom_tool", args: {} }] },
+        { step_index: 8, type: "CUSTOM_TOOL", content: "custom output" },
+      ),
+    );
+    const results = out.filter((e) => e.kind === "result").map((e) => e.kind === "result" && [e.toolUseId, e.result.text]);
+    expect(results).toEqual([
+      ["s3:c0", "/home/u"],
+      ["s7:c0", "custom output"],
+    ]);
+  });
+
   it("never throws on junk", () => {
     expect(agyTranscriptEntries("")).toEqual([]);
     expect(agyTranscriptEntries("null\n[]\n{}\n{\"type\":5}\n")).toEqual([]);
@@ -211,6 +232,20 @@ describe("agy summaries", () => {
       expect((await agy.history(CID, null)).entries.map((e) => e.kind)).toEqual(["user", "text"]);
       expect((await agy.history("older-1", null)).entries).toEqual([expect.objectContaining({ kind: "notice", text: "Transcript not available. an older preview\nsecond line" })]);
       expect(await agy.get("sub-1")).toBeNull();
+    });
+
+    it("won't resume a conversation whose folder is unknown or gone", async () => {
+      const prevBin = process.env.AGY_BIN;
+      process.env.AGY_BIN = "/bin/sh";
+      try {
+        const { default: agy } = await import("@/lib/server/agents/antigravity");
+        await expect(agy.send(CID, "hi", { mode: "bypassPermissions" })).rejects.toThrow(`This session's folder is gone: ${path.join(home, "proj")}`);
+        await expect(agy.send("older-1", "hi", { mode: "bypassPermissions" })).rejects.toThrow("Can't find this session's folder.");
+        await expect(agy.send("nope", "hi", { mode: "bypassPermissions" })).rejects.toThrow(/not found/);
+      } finally {
+        if (prevBin === undefined) delete process.env.AGY_BIN;
+        else process.env.AGY_BIN = prevBin;
+      }
     });
   });
 });

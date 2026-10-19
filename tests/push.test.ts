@@ -81,4 +81,19 @@ describe("push store", () => {
     await push.pushAll(msg, "https://push.example/a");
     expect(sent.map((s) => s.endpoint)).toEqual(["https://push.example/a"]);
   });
+
+  it("never replaces a damaged file with new keys", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const key = push.vapidPublicKey();
+    const good = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, "{ not json");
+    expect(push.vapidPublicKey()).toBe(key);
+    expect(warn).toHaveBeenCalledTimes(1);
+    push.resetPushCache();
+    expect(() => push.vapidPublicKey()).toThrow(/Can't read/);
+    expect(fs.readFileSync(file, "utf8")).toBe("{ not json");
+    fs.writeFileSync(file, good);
+    expect(push.vapidPublicKey()).toBe(key);
+    warn.mockRestore();
+  });
 });

@@ -147,10 +147,19 @@ async function snapshotTree(root: string, opts: { strict?: boolean } = {}): Prom
     }
     if (opts.strict && total > max.total) throw new CheckpointSkipped(`${fmtMB(total)} of new files that git doesn't ignore`);
     /* a pathspec file, not argv: no length limit, and literal magic keeps any file name exact */
-    if (excluded.length) {
-      await fs.writeFile(specs, [".", ...excluded.map((p) => `:(exclude,literal)${p}`)].join("\0") + "\0", { mode: 0o600 });
-      await git(root, ["add", "-A", `--pathspec-from-file=${specs}`, "--pathspec-file-nul"], { env, timeout: 60_000 });
-    } else await git(root, ["add", "-A", "--", "."], { env, timeout: 60_000 });
+    if (excluded.length) await fs.writeFile(specs, [".", ...excluded.map((p) => `:(exclude,literal)${p}`)].join("\0") + "\0", { mode: 0o600 });
+    const spec = excluded.length ? [`--pathspec-from-file=${specs}`, "--pathspec-file-nul"] : ["--", "."];
+    /* --ignore-errors: what git can't add (an untracked nested repo without commits) is left out and git exits 1
+     * after writing the rest; a fatal error (128), a timeout or no index at all still fail the snapshot */
+    const failed = await new Promise<{ code: unknown; message: string } | null>((resolve) =>
+      execFile(
+        "git",
+        ["add", "-A", "--ignore-errors", ...spec],
+        { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...env }, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+        (err, _out, stderr) => resolve(err ? { code: err.code, message: stderr.trim().split("\n").filter(Boolean).slice(-3).join(" ") || err.message } : null),
+      ),
+    );
+    if (failed && !(failed.code === 1 && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
     return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes };
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
@@ -344,7 +353,7 @@ function gitCapped(cwd: string, args: string[], cap: number): Promise<{ out: str
   });
 }
 
-type Stat = { path: string; oldPath?: string; status: PatchStatus; additions: number; deletions: number };
+type Stat = { path: string; oldPath?: string; status: PatchStatus; additions: number; deletions: number; binary?: boolean };
 
 /** `--raw --numstat -z`: status letters first, then counts (files with no change left under -w have no counts) */
 function rawNumstat(out: string): Stat[] {
@@ -362,7 +371,8 @@ function rawNumstat(out: string): Stat[] {
       kinds.set(p, letter);
       continue;
     }
-    const [a, d, name] = tok.split("\t");
+    const [a, d, ...rest] = tok.split("\t");
+    const name = rest.join("\t");
     let p = name;
     let oldPath: string | undefined;
     if (!name) {
@@ -371,8 +381,9 @@ function rawNumstat(out: string): Stat[] {
       i += 2;
     }
     const k = kinds.get(p) ?? "M";
-    const status: PatchStatus = a === "-" ? "binary" : k === "A" ? "added" : k === "D" ? "deleted" : oldPath ? "renamed" : "modified";
-    stats.push({ path: p, oldPath, status, additions: a === "-" ? 0 : Number(a), deletions: d === "-" ? 0 : Number(d) });
+    const binary = a === "-";
+    const status: PatchStatus = k === "A" ? "added" : k === "D" ? "deleted" : oldPath ? "renamed" : binary ? "binary" : "modified";
+    stats.push({ path: p, oldPath, status, additions: binary ? 0 : Number(a), deletions: d === "-" ? 0 : Number(d), ...(binary ? { binary } : {}) });
   }
   return stats;
 }
@@ -392,9 +403,23 @@ async function defaultBase(root: string): Promise<string | null> {
   return null;
 }
 
+type DiffOpts = { scope: DiffScope; checkpoint?: string; ignoreWhitespace?: boolean; maxBytes?: number };
+/* several tabs poll the same diff; one snapshot and diff serves every identical request in flight */
+const diffsInFlight = new Map<string, Promise<GitDiff>>();
+
 /** The folder as it is now (untracked files in, ignored ones out) against HEAD, a checkpoint of this session, or where the branch left the default branch. */
-export async function diff(cwd: string, session: string, opts: { scope: DiffScope; checkpoint?: string; ignoreWhitespace?: boolean; maxBytes?: number }): Promise<GitDiff> {
+export async function diff(cwd: string, session: string, opts: DiffOpts): Promise<GitDiff> {
   const root = await needRoot(cwd);
+  const key = [root, opts.scope, opts.scope === "checkpoint" ? `${session}/${opts.checkpoint}` : "", opts.ignoreWhitespace ? "w" : "", opts.maxBytes ?? ""].join("|");
+  let p = diffsInFlight.get(key);
+  if (!p) {
+    p = diffAt(root, session, opts).finally(() => diffsInFlight.delete(key));
+    diffsInFlight.set(key, p);
+  }
+  return p;
+}
+
+async function diffAt(root: string, session: string, opts: DiffOpts): Promise<GitDiff> {
   const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
   let base: string;
   let baseLabel: string;
