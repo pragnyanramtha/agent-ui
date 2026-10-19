@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatBubble, ChatLines, Check, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Palette, Search, Settings, SidebarCollapse, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
+import { ChatLines, Check, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Palette, Search, Settings, SidebarCollapse, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
+import { AgentIcon } from "./AgentIcon";
 import { applyAppearance, applyTheme, getSettings, setSetting, type Settings as SettingValues } from "@/lib/client/settings";
 import { comboFor, isCommand, isMac, terminalOwns, useBindings } from "@/lib/client/shortcuts";
 import type { CommandId } from "@/lib/keybindings";
@@ -262,7 +263,7 @@ export function CommandPalette({
             <Pulse busy={isBusy(s)} />
           </span>
         ) : (
-          <ChatBubble width={15} height={15} strokeWidth={1.8} />
+          <AgentIcon agent={s.agent} size={15} tone={false} />
         ),
         run: () => {
           if (s.id !== activeId) navigated.current = true;
