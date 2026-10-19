@@ -201,7 +201,7 @@ describe("web terminal backend: internal API", () => {
   });
 
   it("refuses requests a proxy or the tunnel forwarded, even with the key", async () => {
-    for (const h of [{ "cf-ray": "8abc-LHR" }, { "cf-connecting-ip": "203.0.113.5" }, { "x-forwarded-for": "203.0.113.5" }]) {
+    for (const h of [{ "cf-ray": "8abc-LHR" }, { "cf-connecting-ip": "203.0.113.5" }, { "x-forwarded-for": "203.0.113.5" }] as Record<string, string>[]) {
       expect((await request("/internal/terminals", { "x-agent-u-internal": INTERNAL, ...h })).status).toBe(403);
     }
     const ok = await request("/internal/terminals", { "x-agent-u-internal": INTERNAL });
