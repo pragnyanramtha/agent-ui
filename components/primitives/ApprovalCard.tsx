@@ -222,10 +222,13 @@ export default function ApprovalCard({
     setQi(Math.min(Math.max(next, 0), questions.length - 1));
   };
 
+  /* the auto-advance timer calls send from the render before the pick; it must see the pick */
+  const latest = useRef({ answers, custom });
+  latest.current = { answers, custom };
   const send = () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     setError(null);
-    const done = onSubmitted?.(answers, custom);
+    const done = onSubmitted?.(latest.current.answers, latest.current.custom);
     if (!done) return setSent(true);
     setSent("sending");
     done.then(
