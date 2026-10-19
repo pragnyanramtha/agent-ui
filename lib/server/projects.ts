@@ -176,7 +176,8 @@ export function parseProject(raw: unknown, known?: KnownProfiles): ProjectConfig
       out.actions.push({ id, name: act.name, command: act.command, icon: act.icon });
     }
   }
-  return out;
+  const { actions, ...rest } = out;
+  return { ...rest, actions };
 }
 
 /* ── the file ─────────────────────────────────────────────── */
@@ -210,8 +211,8 @@ function writeProjects(list: ProjectConfig[]) {
   cache = null;
 }
 
-/* unset fields stay out of the file */
-const lean = (p: ProjectConfig) => JSON.parse(JSON.stringify(p)) as ProjectConfig;
+/* unset fields stay out of the file, actions last */
+const lean = ({ actions, ...rest }: ProjectConfig) => ({ ...(JSON.parse(JSON.stringify(rest)) as Omit<ProjectConfig, "actions">), actions });
 
 const isDir = (p: string) => {
   try {
