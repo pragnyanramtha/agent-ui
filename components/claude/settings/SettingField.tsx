@@ -2,7 +2,7 @@
 
 import { useId, type ReactNode } from "react";
 import { useSetting, useSettings } from "@/lib/client/settings";
-import { ACCENTS, PALETTES, settingDef, type EnumSetting, type NumberSetting, type SettingKey, type Settings } from "@/lib/settings-schema";
+import { ACCENTS, PALETTES, isShown, settingDef, type EnumSetting, type NumberSetting, type SettingKey, type Settings } from "@/lib/settings-schema";
 import { Row, Segmented, Select, Slider, Swatches, Switch } from "./controls";
 import { PalettePicker, useDarkClass } from "./PalettePicker";
 
@@ -44,7 +44,7 @@ export function SettingField({ k, note }: { k: SettingKey; note?: ReactNode }) {
   const def = settingDef(k);
   const values = useSettings();
   const id = useId();
-  if (def.showIf && values[def.showIf[0] as SettingKey] !== def.showIf[1]) return null;
+  if (!isShown(def, values)) return null;
   const wide = def.type === "enum" && (def.control === "palette" || def.control === "swatches");
   /* switches and native fields take a <label>; groups name themselves with aria-label */
   const labelled = def.type === "boolean" || def.type === "string" || def.type === "color" || (def.type === "enum" && def.control === "select") || (def.type === "number" && def.control !== "segmented");
