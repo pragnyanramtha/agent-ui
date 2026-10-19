@@ -6,7 +6,9 @@ import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, Na
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { patchSession, type SessionChange } from "@/lib/client/useSessions";
+import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
+import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
 import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
@@ -147,6 +149,8 @@ type RowControl = {
   draft: { current: string | null };
   openMenu: (s: SessionSummary, at: MenuAt, where: RowWhere) => void;
   rename: (s: SessionSummary, where: RowWhere, title: string | null, viaKey: boolean) => void;
+  /** finished a turn this device hasn't opened since */
+  unread: (id: string) => boolean;
 };
 
 /** Focus a row after a re-render: the same list if it's still there, else wherever it moved. */
@@ -177,7 +181,7 @@ function Row({
   ctl: RowControl;
   where: RowWhere;
 }) {
-  const waiting = (s.web?.pending.length ?? 0) > 0;
+  const status = sessionStatus(s, ctl.unread(s.id));
   const key = `${where}:${s.id}`;
   const r = ctl.renaming;
   if (r?.id === s.id && (r.where === where || (MAIN_LISTS.includes(r.where) && MAIN_LISTS.includes(where))))
@@ -185,6 +189,7 @@ function Row({
   const menuOpen = ctl.menuFor === key;
   /* the "..." button takes the trailing label's place on hover */
   const tail = menuOpen ? "hidden" : "pointer-fine:group-hover/item:hidden pointer-fine:group-focus-within/item:hidden";
+  const agentLabel = showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>;
   return (
     <div
       className="group/item relative"
@@ -205,13 +210,18 @@ function Row({
       >
         {lead}
         <span className="min-w-0 flex-1 truncate">{s.title}</span>
-        {waiting ? (
-          <span className={`flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-orange-ink ${tail}`}>
-            <span className="size-1.5 rounded-full bg-orange" aria-hidden />
-            Needs you
-          </span>
+        {status === "unread" ? (
+          <>
+            {agentLabel}
+            <span className={`flex size-4 shrink-0 items-center justify-center ${tail}`}>
+              <span className="size-1.5 rounded-full bg-green" aria-hidden />
+              <span className="sr-only">, {STATUS_LABEL.unread.toLowerCase()}</span>
+            </span>
+          </>
+        ) : status ? (
+          <StatusPill status={status} className={tail} />
         ) : (
-          showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>
+          agentLabel
         )}
       </button>
       <button
@@ -225,6 +235,23 @@ function Row({
         <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
       </button>
     </div>
+  );
+}
+
+const PILL_TONE: Record<Exclude<SessionStatus, "unread">, { text: string; dot: string }> = {
+  approval: { text: "font-medium text-orange-ink", dot: "bg-orange" },
+  input: { text: "font-medium text-accent-ink", dot: "bg-accent" },
+  working: { text: "text-ink-3", dot: "bg-accent motion-safe:animate-pulse" },
+  failed: { text: "font-medium text-red-ink", dot: "bg-red" },
+};
+
+function StatusPill({ status, className = "" }: { status: Exclude<SessionStatus, "unread">; className?: string }) {
+  const tone = PILL_TONE[status];
+  return (
+    <span className={`flex shrink-0 items-center gap-1.5 text-[12px] ${tone.text} ${className}`}>
+      <span className={`size-1.5 rounded-full ${tone.dot}`} aria-hidden />
+      {STATUS_LABEL[status]}
+    </span>
   );
 }
 
@@ -603,6 +630,7 @@ const RECENT_STEP = 40;
 
 type SectionKey = "pinned" | "live" | "projects" | "recents";
 const UNDO_MS = 5000;
+const NONE_FINISHED: Finished = {};
 
 export function SessionList({
   sessions,
@@ -615,9 +643,12 @@ export function SessionList({
   onView,
   activeView,
   inbox = 0,
+  finished = NONE_FINISHED,
 }: {
   sessions: SessionSummary[] | null;
   activeId: string | null;
+  /** sessions that finished a turn this device hasn't opened since */
+  finished?: Finished;
   /** kept for callers; open tabs no longer change how a row reads */
   openIds?: { id: string }[];
   onPick: (id: string) => void;
@@ -737,6 +768,7 @@ export function SessionList({
       const t = title.replace(/\s+/g, " ").trim();
       if (t !== s.title) void change(s, { title: t || null });
     },
+    unread: (id) => Boolean(finished[id]),
   };
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();

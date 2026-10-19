@@ -282,7 +282,7 @@ export function App() {
   const dismissSheet = useCallback(() => setSheet(false), []);
   const closeDrawer = useCallback(() => setDrawer(false), []);
   const list = (onCollapse: () => void) => (
-    <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} />
+    <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} finished={finished} />
   );
   const tabsButton = (
     <TabsButton count={infos.length} attention={infos.some((t) => t.needsYou && t.id !== active)} onClick={() => setSheet(true)} />
