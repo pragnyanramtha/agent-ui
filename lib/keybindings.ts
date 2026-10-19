@@ -226,10 +226,16 @@ export const composing = (e: KeyEventLike) => Boolean(e.isComposing) || e.keyCod
 /** AltGr types characters on Windows and Linux layouts, where it arrives as Ctrl+Alt. */
 const altGraph = (e: KeyEventLike, mac: boolean) => !mac && Boolean(e.getModifierState?.("AltGraph"));
 
-/** Whether an event is this chord. Never while composing; AltGr text never counts as Ctrl or Alt off a Mac. */
-export function matchesChord(e: KeyEventLike, c: Chord, mac: boolean): boolean {
+/** Whether an event is this chord. Never while composing; AltGr text never counts as Ctrl or Alt off a Mac.
+ * In a text field (`inField`), keys that type text stay text: a key without Ctrl or Cmd, and on a Mac an Option
+ * key that types another ASCII character (Option+5 is "[" on a German layout). */
+export function matchesChord(e: KeyEventLike, c: Chord, mac: boolean, inField = false): boolean {
   if (composing(e) || MODIFIER_KEYS.has(e.key)) return false;
   const m = resolveMods(c, mac);
+  if (inField && !m.ctrl && !m.meta && e.key.length === 1) {
+    if (!m.alt) return false;
+    if (mac && /^[!-~]$/.test(e.key) && e.key.toUpperCase() !== c.key) return false;
+  }
   let { ctrlKey, altKey } = e;
   if (altGraph(e, mac)) {
     if (m.ctrl || m.alt) return false;
@@ -343,10 +349,10 @@ const chord = (text: string) => {
 };
 
 /** Whether an event is one of the command's chords. */
-export function matchesCommand(e: KeyEventLike, id: CommandId, bindings: Bindings, mac: boolean): boolean {
+export function matchesCommand(e: KeyEventLike, id: CommandId, bindings: Bindings, mac: boolean, inField = false): boolean {
   for (const k of keysFor(id, bindings)) {
     const c = chord(k);
-    if (c && matchesChord(e, c, mac)) return true;
+    if (c && matchesChord(e, c, mac, inField)) return true;
   }
   return false;
 }
