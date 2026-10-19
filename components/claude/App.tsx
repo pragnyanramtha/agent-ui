@@ -9,6 +9,7 @@ import { TerminalDrawer } from "./TerminalDrawer";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
+import { useSessionCommands } from "./useSessionCommands";
 import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
@@ -149,6 +150,7 @@ export function App() {
     [open, refresh],
   );
   useNotifications({ sessions, activeId: sessionId, looking, finished, onOpen: openSession });
+  useSessionCommands({ sessions, activeId: sessionId, finished, onOpen: openSession });
   /* the service worker: a tapped notification opens its session, a push means the list just changed */
   useEffect(() => {
     registerWorker();

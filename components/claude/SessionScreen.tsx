@@ -30,6 +30,7 @@ import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { useSessionPalette } from "./useSessionCommands";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -383,6 +384,33 @@ export function SessionScreen({
     effortRef.current = e || fallbackEffort;
     if (live) void control("effort", effortRef.current);
   };
+
+  useSessionPalette({
+    id,
+    agent,
+    agentName,
+    openPanel: setPanel,
+    togglePanel,
+    changes: changes.length,
+    hasFolder: Boolean(view.cwd),
+    exportable: view.entries.length > 0,
+    onHandoff: view.status === "open" ? () => setHandoffOpen(true) : null,
+    onStop: busy && (run || terminal) ? () => (live ? void control("interrupt") : void pressKey("Escape")) : null,
+    models: profileModels(profileInfo, agent === "claude" ? MODELS : agentModels),
+    model,
+    onModel: (m) => {
+      setLocalModel(m || null);
+      if (live) void control("model", m);
+    },
+    mode,
+    onMode: (m) => {
+      setLocalMode(m);
+      if (live) void control("mode", m);
+    },
+    effort: localEffort,
+    defaultEffort: fallbackEffort || null,
+    onEffort: pickEffort,
+  });
 
   const closeMenu = () => {
     setMenuOpen(false);

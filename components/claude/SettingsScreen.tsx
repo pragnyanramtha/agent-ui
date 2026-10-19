@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
 import { OPEN_SETTINGS_SECTION_EVENT, resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
 import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
+import { SETTINGS_SEARCH_EVENT, takeSettingsSearch } from "@/lib/client/settings-link";
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
 import { SECTION_ICONS, SectionBody } from "./settings/sections";
@@ -144,6 +145,16 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
     };
     window.addEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
     return () => window.removeEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
+  }, []);
+
+  useEffect(() => {
+    const take = () => {
+      const q = takeSettingsSearch();
+      if (q) setQuery(q);
+    };
+    take();
+    window.addEventListener(SETTINGS_SEARCH_EVENT, take);
+    return () => window.removeEventListener(SETTINGS_SEARCH_EVENT, take);
   }, []);
 
   /* "/" or Ctrl/Cmd+F jumps to the search field */
