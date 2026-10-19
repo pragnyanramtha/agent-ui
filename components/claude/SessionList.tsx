@@ -1098,7 +1098,7 @@ export const SessionList = memo(function SessionList({
       tip={rowTitle(s, now)}
       status={sessionStatus(s, Boolean(finished[s.id]))}
       time={time ?? timeOf(sort === "created" ? s.created || s.mtime : s.mtime)}
-      agent={showAgents ? s.agent : null}
+      agent={showAgents && s.agent !== "claude" ? s.agent : null}
       active={s.id === activeId}
       where={where}
       menuOpen={menu?.id === s.id}
@@ -1180,7 +1180,7 @@ export const SessionList = memo(function SessionList({
       }
     />
   );
-  const navBtn = "relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
+  const navBtn = "relative flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
   const empty = !shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : !awake.length ? "Everything is snoozed." : null;
 
   return (
@@ -1214,7 +1214,7 @@ export const SessionList = memo(function SessionList({
           <Kbd keys={["Mod", "K"]} />
         </button>
         {onView && (
-          <div className="grid grid-cols-3 gap-1">
+          <div className="flex gap-1">
             <button
               type="button"
               onClick={() => onView("@inbox")}
@@ -1369,7 +1369,7 @@ export const SessionList = memo(function SessionList({
                   {(projects.length > shownProjects.length || allProjects) && projects.length > PROJECT_CAP && (
                     <button type="button" data-nav="more:projects" onClick={() => setAllProjects((v) => !v)} className="side-row mt-1.5 h-7 gap-1.5 text-[12px] font-medium text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
                       <MoreHoriz width={12} height={12} strokeWidth={2.2} aria-hidden />
-                      {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more projects`}
+                      {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more ${projects.length - shownProjects.length === 1 ? "project" : "projects"}`}
                     </button>
                   )}
                   {empty && <p className="px-2.5 py-1.5 text-[13px] text-ink-3">{empty}</p>}

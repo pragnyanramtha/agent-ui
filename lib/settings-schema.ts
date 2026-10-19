@@ -432,7 +432,7 @@ export const SETTINGS = {
     section: "sidebar",
     group: "Rows",
     label: "Show agent on rows",
-    description: "A colored mark for each session's agent, when more than one agent has sessions.",
+    description: "A colored mark on sessions from agents other than Claude, when more than one has sessions.",
     keywords: ["claude", "codex", "gemini", "icon", "badge"],
     scope: "synced",
     default: true,
