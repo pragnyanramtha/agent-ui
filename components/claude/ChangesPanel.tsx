@@ -7,7 +7,7 @@ import type { Entry, ToolResult } from "@/lib/types";
 import { lineDiff } from "@/lib/client/diff";
 import { DiffBlock } from "./DiffBlock";
 import { PathLabel } from "./PathLabel";
-import { OPEN_FILES_EVENT } from "./FilesScreen";
+import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { modalOpen } from "@/lib/client/shortcuts";
 
 type Edit = { before: string; after: string; ts: string; kind: "edit" | "write"; failed: boolean };

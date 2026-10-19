@@ -4,20 +4,18 @@ import { AskHost } from "./Ask";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSessions } from "@/lib/client/useSessions";
 import { CommandPalette, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "./CommandPalette";
-import { WebTerminal, type TerminalTarget } from "./WebTerminal";
+import type { TerminalTarget } from "./WebTerminal";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
 import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
-import { SettingsScreen } from "./SettingsScreen";
-import { ShortcutsDialog } from "./ShortcutsDialog";
 import { applyTheme, useSetting } from "@/lib/client/settings";
 import { InboxScreen, inboxCount } from "./InboxScreen";
 import { useFinished } from "@/lib/client/useFinished";
-import { AgentsScreen } from "./AgentsScreen";
-import { FilesScreen, OPEN_FILES_EVENT } from "./FilesScreen";
+import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, ShortcutsDialog, WebTerminal } from "./lazy";
+import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
@@ -109,7 +107,9 @@ export function App() {
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
   const { finished, dismiss } = useFinished(sessions, sessionId);
   useEffect(() => {
-    if (sessionId) preloadMarkdown();
+    if (!sessionId) return;
+    preloadMarkdown();
+    preloadSessionChunks();
   }, [sessionId]);
   const inbox = inboxCount(sessions, finished);
 
