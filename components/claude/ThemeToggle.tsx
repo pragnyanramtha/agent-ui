@@ -9,6 +9,14 @@ export function ThemeToggle() {
   const [theme] = useSetting("theme");
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const [, setOsFlips] = useState(0);
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = () => setOsFlips((n) => n + 1);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [theme]);
   const dark = !mounted ? null : theme === "system" ? prefersDark() : theme === "dark";
 
   function apply(next: boolean) {

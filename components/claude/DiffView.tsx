@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavArrowDown, Refresh } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/lib/client/diff";
@@ -86,6 +86,8 @@ export function DiffView({
   const root = useRef<HTMLDivElement>(null);
   const fileRefs = useRef(new Map<string, HTMLElement>());
   const seq = useRef(0);
+  /* the last response as text: a poll that brings the same diff keeps the old object, so nothing re-highlights */
+  const lastText = useRef("");
 
   useEffect(() => setPrefs(readPrefs()), []);
   const ready = prefs !== null;
@@ -114,25 +116,36 @@ export function DiffView({
     async (mode: "fresh" | "refresh" | "background" = "fresh") => {
       if (!ready) return;
       if (scope === "checkpoint" && !checkpointId) {
+        lastText.current = "";
         setData(null);
         setLoading(false);
         return;
       }
       const n = ++seq.current;
       if (mode !== "background") setLoading(true);
-      if (mode === "fresh") setData(null);
+      if (mode === "fresh") {
+        lastText.current = "";
+        setData(null);
+      }
       const q = new URLSearchParams({ session, scope });
       if (checkpointId) q.set("checkpoint", checkpointId);
       if (ws) q.set("ws", "1");
       try {
         const d = await api<GitDiff>(`/api/git/diff?${q}`);
         if (n !== seq.current) return;
-        setData(d);
+        const text = JSON.stringify(d);
+        if (text !== lastText.current) {
+          lastText.current = text;
+          setData(d);
+        }
         setError(null);
       } catch (err) {
         if (n !== seq.current) return;
         setError(err instanceof Error ? err.message : String(err));
-        if (mode !== "background") setData(null);
+        if (mode !== "background") {
+          lastText.current = "";
+          setData(null);
+        }
       } finally {
         if (n === seq.current) setLoading(false);
       }
@@ -171,6 +184,11 @@ export function DiffView({
   };
   const allOpen = files.length > 0 && files.every(isOpen);
   const toggleAll = () => setOpen(Object.fromEntries(files.map((f) => [f.path, !allOpen])));
+  const toggleFile = useCallback((f: PatchFile) => setOpen((o) => ({ ...o, [f.path]: !(o[f.path] ?? lineCount(f) <= BIG_FILE_LINES) })), []);
+  const fileRef = useCallback((path: string, el: HTMLElement | null) => {
+    if (el) fileRefs.current.set(path, el);
+    else fileRefs.current.delete(path);
+  }, []);
 
   return (
     <div ref={root} className="flex min-w-0 flex-col gap-3">
@@ -281,11 +299,8 @@ export function DiffView({
                 file={f}
                 open={isOpen(f)}
                 split={split}
-                onToggle={() => setOpen((o) => ({ ...o, [f.path]: !isOpen(f) }))}
-                refCb={(el) => {
-                  if (el) fileRefs.current.set(f.path, el);
-                  else fileRefs.current.delete(f.path);
-                }}
+                onToggle={toggleFile}
+                refCb={fileRef}
               />
             ))}
           </div>
@@ -306,7 +321,19 @@ function Counts({ f }: { f: PatchFile }) {
   );
 }
 
-function FileDiff({ file: f, open, split, onToggle, refCb }: { file: PatchFile; open: boolean; split: boolean; onToggle: () => void; refCb: (el: HTMLElement | null) => void }) {
+const FileDiff = memo(function FileDiff({
+  file: f,
+  open,
+  split,
+  onToggle,
+  refCb,
+}: {
+  file: PatchFile;
+  open: boolean;
+  split: boolean;
+  onToggle: (f: PatchFile) => void;
+  refCb: (path: string, el: HTMLElement | null) => void;
+}) {
   const lines = lineCount(f);
   const plain = isPlainText(f.path) || lines > HIGHLIGHT_MAX_LINES;
   const widest = useMemo(() => Math.max(1, ...f.hunks.map((h) => Math.max(h.oldStart, h.newStart) + h.lines.length)), [f.hunks]);
@@ -325,10 +352,10 @@ function FileDiff({ file: f, open, split, onToggle, refCb }: { file: PatchFile; 
               : null;
 
   return (
-    <section ref={refCb} aria-label={f.path} className="scroll-mt-2 rounded-card bg-surface shadow-card">
+    <section ref={(el) => refCb(f.path, el)} aria-label={f.path} className="scroll-mt-2 rounded-card bg-surface shadow-card">
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => onToggle(f)}
         aria-expanded={open}
         className={`sticky top-0 z-[1] flex h-9 w-full min-w-0 items-center gap-2 border-line bg-surface px-3 text-left font-mono text-[12px] ${open ? "rounded-t-card border-b" : "rounded-card"}`}
       >
@@ -372,7 +399,7 @@ function FileDiff({ file: f, open, split, onToggle, refCb }: { file: PatchFile; 
       )}
     </section>
   );
-}
+});
 
 const tint = (t: PatchLine["type"]) => (t === "add" ? "bg-green-tint" : t === "del" ? "bg-red-tint" : "");
 const numTone = (t: PatchLine["type"]) => (t === "add" ? "text-green" : t === "del" ? "text-red" : "text-ink-3");

@@ -8,6 +8,7 @@ import { lineDiff } from "@/lib/client/diff";
 import { DiffBlock } from "./DiffBlock";
 import { PathLabel } from "./PathLabel";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
+import { modalOpen } from "@/lib/client/shortcuts";
 
 type Edit = { before: string; after: string; ts: string; kind: "edit" | "write"; failed: boolean };
 export type FileChange = { path: string; edits: Edit[]; added: number; removed: number; last: string };
@@ -55,7 +56,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
 
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);

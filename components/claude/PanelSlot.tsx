@@ -6,7 +6,7 @@ import { Boundary } from "./Boundary";
 const WIDTH_KEY = "cui:panel-width";
 const MIN = 340;
 const DEFAULT = 460;
-/* the conversation keeps at least this much room next to the panel */
+/* the conversation keeps at least this much room next to the panel; keep in step with the max-w class below */
 const MAIN_MIN = 420;
 
 /**
@@ -46,7 +46,7 @@ export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode
   };
 
   return (
-    <div ref={ref} className="panel-slot contents lg:relative lg:flex lg:w-[var(--panel-w,460px)] lg:shrink-0">
+    <div ref={ref} className="panel-slot contents lg:relative lg:flex lg:w-[var(--panel-w,460px)] lg:max-w-[calc(100%-420px)] lg:shrink-0">
       <div
         role="separator"
         aria-orientation="vertical"
