@@ -1,15 +1,15 @@
 "use client";
 
 import { useSetting } from "@/lib/client/settings";
-import { comboFor, modalOpen } from "@/lib/client/shortcuts";
+import { comboFor, hasMod, modalOpen } from "@/lib/client/shortcuts";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Attachment, Brain, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
+import { Archive, ArrowUp, Attachment, Brain, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck, Trash } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { promptAsk } from "./Ask";
 import type { SessionCost } from "@/lib/client/usage";
-import { shortPath } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
 import { load, save } from "@/lib/client/storage";
 import { AGENT_LABEL, type AgentId, type PermissionMode, type ProfileInfo } from "@/lib/types";
 import { withAttachments } from "@/lib/attachments";
@@ -17,6 +17,7 @@ import { AttachmentChips, useAttachments } from "./Attachments";
 import { effortLabel, effortOptions } from "@/lib/agent-traits";
 import { insertMention, mentionAt } from "@/lib/client/mentions";
 import { useFileSearch } from "@/lib/client/useFileSearch";
+import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
 
 /* The composer pill: one calm surface with a "+" menu on the left, the text
  * in the middle, and one quiet agent/model/approvals picker plus send on the
@@ -50,11 +51,11 @@ export function modelLabel(model: string | null) {
 
 export type AgentOption = { id: AgentId; label: string; installed: boolean };
 
-type Menu = "slash" | "mention" | "pick" | "plus" | "effort" | null;
+type Menu = "slash" | "mention" | "pick" | "plus" | "stash" | "effort" | null;
 
 const KIND_LABEL: Record<SlashItem["kind"], string> = { app: "This app", builtin: "Claude Code", command: "Your commands", skill: "Skills" };
 
-const MENU_W = { pick: 272, plus: 232, effort: 280 };
+const MENU_W = { pick: 272, plus: 248, effort: 280 };
 
 function MenuShell({
   children,
@@ -227,6 +228,8 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileNote, setFileNote] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [stashes, setStashes] = useState<Stash[]>([]);
+  useEffect(() => setStashes(loadStash(root)), [root]);
   const addFiles = (list: FileList | File[]) => setFileNote(files.add(list));
   useEffect(() => {
     if (!fileNote) return;
@@ -326,7 +329,7 @@ export function Composer({
 
   const closeMenu = useCallback(
     (refocus: boolean) => {
-      const trigger = menu === "pick" ? pickRef.current : menu === "plus" ? plusRef.current : menu === "effort" ? effortRef.current : inputRef.current;
+      const trigger = menu === "pick" ? pickRef.current : menu === "plus" || menu === "stash" ? plusRef.current : menu === "effort" ? effortRef.current : inputRef.current;
       setMenu(null);
       setSlashHidden(true);
       if (refocus) trigger?.focus();
@@ -359,22 +362,23 @@ export function Composer({
 
   /* the picker takes focus on the checked item (the + menu on its first) so arrows work right away */
   useEffect(() => {
-    if (menu !== "pick" && menu !== "plus" && menu !== "effort") return;
+    if (menu !== "pick" && menu !== "plus" && menu !== "stash" && menu !== "effort") return;
     const root = menuRef.current;
     const el = (menu !== "plus" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
     el?.focus({ preventScroll: true });
   }, [menu]);
 
   const toggleMenu = (which: "pick" | "plus" | "effort") => {
-    if (menu === which) return closeMenu(false);
-    const root = rootRef.current?.getBoundingClientRect();
+    if (menu === which || (which === "plus" && menu === "stash")) return closeMenu(false);
+    if (which === "plus") setStashes(loadStash(root));
+    const box = rootRef.current?.getBoundingClientRect();
     const trigger = (which === "pick" ? pickRef.current : which === "effort" ? effortRef.current : plusRef.current)?.getBoundingClientRect();
-    if (root && trigger) {
-      const w = Math.min(MENU_W[which], root.width);
+    if (box && trigger) {
+      const w = Math.min(MENU_W[which], box.width);
       setMenuPos(
         which !== "plus"
-          ? { right: Math.max(0, Math.min(root.right - trigger.right - 4, root.width - w)) }
-          : { left: Math.max(0, Math.min(trigger.left - root.left - 4, root.width - w)) },
+          ? { right: Math.max(0, Math.min(box.right - trigger.right - 4, box.width - w)) }
+          : { left: Math.max(0, Math.min(trigger.left - box.left - 4, box.width - w)) },
       );
     }
     setMenu(which);
@@ -405,6 +409,38 @@ export function Composer({
     setMenu(null);
     setSlashHidden(true);
     inputRef.current?.focus();
+  };
+
+  const keptFiles = () => files.items.filter((a) => a.state === "done" && a.path).map((a) => ({ name: a.name, size: a.size, path: a.path! }));
+  const canStash = Boolean(draft.trim() || keptFiles().length);
+  /** puts the draft (and its uploaded files) aside and clears the box; false when nothing was stashed */
+  const stashDraft = (quiet = false) => {
+    if (files.uploading) return setFileNote("Wait for the upload to finish."), false;
+    const kept = keptFiles();
+    if (!draft.trim() && !kept.length) return !quiet && setFileNote("Nothing to stash."), false;
+    const list = pushStash(root, draft, kept);
+    if (!list) return setFileNote("Couldn't stash. Browser storage is full or turned off."), false;
+    setStashes(list);
+    setDraft("");
+    files.clear();
+    recall.current = null;
+    if (!quiet) setFileNote("Prompt stashed. Restore it from the + menu.");
+    return true;
+  };
+  /* a draft in the box is stashed first, so restoring never loses text */
+  const restoreStash = (s: Stash) => {
+    if ((draft.trim() || files.items.length) && !stashDraft(true)) return;
+    const swapped = Boolean(draft.trim() || files.items.length);
+    setStashes(dropStash(root, s.id));
+    setDraft(s.text);
+    files.restore(s.files);
+    setMenu(null);
+    if (swapped) setFileNote("Your draft was stashed.");
+    inputRef.current?.focus();
+  };
+  const deleteStash = (id: string) => {
+    setStashes(dropStash(root, id));
+    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>(ITEM_SELECTOR)?.focus({ preventScroll: true }));
   };
 
   const pickMention = (rel: string) => {
@@ -632,6 +668,53 @@ export function Composer({
               <span>Commands</span>
               <span className="ml-auto text-[12px] text-ink-3">Type /</span>
             </button>
+            <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canStash}
+              onClick={() => {
+                setMenu(null);
+                stashDraft();
+                inputRef.current?.focus();
+              }}
+              className={`${menuRow} disabled:text-ink-3`}
+            >
+              <Archive width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span>Stash prompt</span>
+              <span className="ml-auto text-[12px] text-ink-3 pointer-coarse:hidden">{comboFor("stash")}</span>
+            </button>
+            {stashes.length > 0 && (
+              <button type="button" role="menuitem" aria-haspopup="menu" onClick={() => setMenu("stash")} className={menuRow}>
+                <span aria-hidden className="size-4 shrink-0" />
+                <span>Stashed prompts</span>
+                <span className="ml-auto text-[12px] text-ink-3 tabular-nums">{stashes.length}</span>
+              </button>
+            )}
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "stash" && (
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={300}>
+          <div ref={menuRef} role="menu" id={`${uid}-stash`} aria-label="Stashed prompts" onKeyDown={moveFocus}>
+            <MenuLabel>Stashed prompts</MenuLabel>
+            {stashes.map((st) => {
+              const title = stashTitle(st);
+              return (
+                <div key={st.id} className="flex min-w-0 items-center gap-0.5">
+                  <button type="button" role="menuitem" onClick={() => restoreStash(st)} title="Put back in the box" className={`${menuRow} flex-1`}>
+                    <span className="min-w-0 flex-1 truncate">{title}</span>
+                    {st.files.length > 0 && <Attachment width={14} height={14} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-label={`${st.files.length} attached`} />}
+                    <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{timeAgo(st.at)}</span>
+                  </button>
+                  <button type="button" role="menuitem" aria-label={`Delete stashed prompt: ${title}`} title="Delete" onClick={() => deleteStash(st.id)} className={`${ghost} size-10 rounded-[8px] sm:size-8`}>
+                    <Trash width={15} height={15} strokeWidth={1.8} aria-hidden />
+                  </button>
+                </div>
+              );
+            })}
+            {stashes.length === 0 && <p className="px-2.5 py-2 text-[12.5px] text-ink-3">No stashed prompts.</p>}
           </div>
         </MenuShell>
       )}
@@ -838,7 +921,7 @@ export function Composer({
             aria-haspopup="menu"
             aria-expanded={openMenu === "plus"}
             aria-controls={openMenu === "plus" ? `${uid}-plus` : undefined}
-            aria-label="Add files, folder or command"
+            aria-label="Add files, folder or command, or stash the prompt"
             title="Add"
             onClick={() => toggleMenu("plus")}
             className={`${ghost} size-9 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
@@ -887,6 +970,12 @@ export function Composer({
           onKeyDown={(e) => {
             /* the keys belong to the input method while it composes (Enter picks a candidate) */
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            /* Mod+S puts the draft aside instead of saving the page */
+            if (hasMod(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+              e.preventDefault();
+              stashDraft();
+              return;
+            }
             /* Enter waits for the list instead of sending a half-typed path */
             if (mentionOpen && !found.files.length && found.loading && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
               e.preventDefault();
