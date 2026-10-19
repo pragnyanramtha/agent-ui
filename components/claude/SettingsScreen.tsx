@@ -25,7 +25,7 @@ function SectionHeader({ id }: { id: SectionId }) {
   return (
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
       <div className="min-w-0 flex-1">
-        <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{info.label}</h2>
+        <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
         <p className="mt-0.5 text-[13px] text-ink-3">{info.description}</p>
       </div>
       {own.length > 0 &&

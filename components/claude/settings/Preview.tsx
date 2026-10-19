@@ -37,7 +37,9 @@ export function Preview() {
           <Markdown text={REPLY} />
           <MessageActions text={REPLY} ts={timestamps ? TS : undefined} />
         </div>
-        <DiffBlock file="app/layout.tsx" before={'const d = stored ?? "dark";\n'} after={'const d = stored ?? systemTheme();\n'} />
+        <div className="hidden sm:block">
+          <DiffBlock file="app/layout.tsx" before={'const d = stored ?? "dark";\n'} after={'const d = stored ?? systemTheme();\n'} />
+        </div>
       </div>
     </div>
   );
