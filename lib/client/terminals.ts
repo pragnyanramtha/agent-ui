@@ -1,4 +1,4 @@
-import { OPEN_TERMINAL_EVENT } from "@/components/claude/CommandPalette";
+import { OPEN_TERMINAL_EVENT } from "./events";
 
 /** Shows a terminal the server keeps (from /api/terminals) in the web terminal. */
 export function openServerTerminal(t: { id: string; backing: "tmux" | "pty" | string }, label: string) {

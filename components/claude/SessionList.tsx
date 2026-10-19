@@ -11,7 +11,7 @@ import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
 import { snoozePresets, wakeFull, wakeLabel } from "@/lib/client/snooze";
-import { OPEN_PALETTE_EVENT } from "./CommandPalette";
+import { OPEN_PALETTE_EVENT } from "@/lib/client/events";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";

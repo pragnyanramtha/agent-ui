@@ -3,3 +3,15 @@
 
 /** Fired on window with `detail: { path?: string }` to open the Files tab, at that path. */
 export const OPEN_FILES_EVENT = "agentu:open-files";
+
+/** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
+export const OPEN_PALETTE_EVENT = "open-palette";
+
+/** Fired on window to fold or unfold the sidebar (the drawer on a phone). */
+export const TOGGLE_SIDEBAR_EVENT = "toggle-sidebar";
+
+/** Fired on window to open the keyboard shortcuts sheet. */
+export const OPEN_SHORTCUTS_EVENT = "open-shortcuts";
+
+/** Fired on window with `detail: TerminalTarget` to open the web terminal. */
+export const OPEN_TERMINAL_EVENT = "open-terminal";

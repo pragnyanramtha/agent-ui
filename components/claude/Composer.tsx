@@ -11,7 +11,7 @@ import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { confirmAsk, promptAsk } from "./Ask";
 import { AgentMark } from "./SessionList";
-import { useMediaQuery } from "./settings/controls";
+import { useMediaQuery } from "@/lib/client/media";
 import type { SessionCost } from "@/lib/client/usage";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { load, save } from "@/lib/client/storage";
