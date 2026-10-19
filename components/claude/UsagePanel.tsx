@@ -5,6 +5,7 @@ import { Xmark } from "iconoir-react";
 import type { SessionView } from "@/lib/client/useSession";
 import { terminalBusy } from "@/lib/status";
 import { modalOpen } from "@/lib/client/shortcuts";
+import { useOverflow, useReturnFocus } from "@/lib/client/a11y";
 import {
   contextOf,
   contextSeries,
@@ -261,6 +262,8 @@ function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
 /** Session usage sheet: context breakdown, cost meter, token totals, context growth, and per-turn timing. */
 export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const scrolls = useOverflow(body, "y");
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -271,8 +274,8 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
   const busy = view.run ? view.run.status === "running" || view.run.status === "starting" : terminalBusy(view.terminal?.status);
   const partial = view.cursor !== null;
 
+  useReturnFocus(ref);
   useEffect(() => {
-    ref.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -288,7 +291,9 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
     >
       <div className="safe-top flex shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
         <div className="flex h-14 min-w-0 flex-1 items-center gap-2">
-          <span className="text-[14px] font-semibold text-ink">Usage</span>
+          <h2 id="usage-h" className="text-[14px] font-semibold text-ink">
+            Usage
+          </h2>
           {totals.calls > 0 && (
             <span className="text-[12px] text-ink-3 tabular-nums">
               {fmtUsd(cost.usd)}
@@ -300,7 +305,13 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div
+        ref={body}
+        tabIndex={scrolls ? 0 : undefined}
+        role={scrolls ? "group" : undefined}
+        aria-labelledby={scrolls ? "usage-h" : undefined}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain focus-visible:[outline-offset:-2px]"
+      >
         {partial && <p className="px-3 pt-3 text-[11.5px] text-ink-3 sm:px-4">From the loaded part of the conversation. Load earlier messages to include older usage.</p>}
         {totals.calls === 0 && !latest ? (
           <p className="px-4 py-10 text-center text-[13px] text-ink-3">No token usage reported in this conversation yet.</p>
