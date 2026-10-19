@@ -10,7 +10,9 @@ import { parseLines, readLines } from "./transcript";
 
 /** `end`: the byte offset these entries were read up to, so a reconnecting viewer can resume there. */
 type Listener = (entries: Entry[], end: number) => void;
-type Sub = { fn: Listener; from: number; joined: boolean };
+/** bytes [from, to) a catch-up skipped: the viewer missed whatever was written there and should load history afresh */
+export type Gap = { from: number; to: number };
+type Sub = { fn: Listener; from: number; joined: boolean; onGap?: (gap: Gap) => void };
 
 /** most bytes read at once, for catching a viewer up or following the file */
 const STEP = 8 * 1024 * 1024;
@@ -62,7 +64,10 @@ class Tail {
           sub.joined = true;
           if (sub.from >= this.offset) continue;
           /* a viewer far behind (an old tab reconnecting) gets the recent part, not hundreds of MB at once */
-          const entries = parseLines((await readLines(this.file, Math.max(sub.from, this.offset - STEP), this.offset)).lines);
+          const start = Math.max(sub.from, this.offset - STEP);
+          const caught = await readLines(this.file, start, this.offset);
+          if (start > sub.from && this.subs.has(sub)) sub.onGap?.({ from: sub.from, to: caught.begin });
+          const entries = parseLines(caught.lines);
           if (entries.length && this.subs.has(sub)) sub.fn(entries, this.offset);
         }
         const stat = await fs.stat(this.file).catch(() => null);
@@ -89,8 +94,8 @@ class Tail {
   }
 
   /** Viewers join at the offset their history page ended at; the shared tail only ever moves forward. */
-  subscribe(fn: Listener, from: number) {
-    const sub: Sub = { fn, from, joined: false };
+  subscribe(fn: Listener, from: number, onGap?: (gap: Gap) => void) {
+    const sub: Sub = { fn, from, joined: false, onGap };
     this.subs.add(sub);
     void this.read();
     return () => {
@@ -113,7 +118,7 @@ const tails = () => {
   return (g.__claudeUiTails ??= new Map());
 };
 
-export function tailFile(file: string, from: number, fn: Listener) {
+export function tailFile(file: string, from: number, fn: Listener, onGap?: (gap: Gap) => void) {
   const key = path.resolve(file);
   /* an offset past the end (a stale or made-up resume point) would look like a truncated file and replay it all */
   let size = 0;
@@ -128,5 +133,5 @@ export function tailFile(file: string, from: number, fn: Listener) {
     tail = new Tail(key, from);
     tails().set(key, tail);
   }
-  return tail.subscribe(fn, from);
+  return tail.subscribe(fn, from, onGap);
 }

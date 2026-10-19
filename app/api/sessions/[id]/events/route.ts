@@ -100,7 +100,12 @@ async function stream(req: NextRequest, id: string, fromParam: string | null) {
       const unwatchBus = onSessionEvent(id, (e) => send(e));
 
       /* subscriptions deliver asynchronously, so registering them before the history event keeps the order */
-      const unsubTail = tailFile(file, history.end, (entries, end) => send({ type: "entries", entries }, end));
+      const unsubTail = tailFile(
+        file,
+        history.end,
+        (entries, end) => send({ type: "entries", entries }, end),
+        (gap) => send({ type: "gap", ...gap }),
+      );
 
       const firstTerminal = watchedRun ? null : initialTerminal;
       let lastTerminal = JSON.stringify(firstTerminal);
