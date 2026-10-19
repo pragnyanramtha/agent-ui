@@ -83,7 +83,7 @@ describe("client settings store", () => {
     ls().setItem("cui:term-docked", "sheet");
     ls().setItem("bui-theme", "light");
     const s = await load();
-    expect(s.getSetting("sendWithEnter")).toBe(true);
+    expect(s.getSetting("sendShortcut")).toBe("enter");
     expect(s.getSetting("terminalDocked")).toBe(false);
     expect(s.getSetting("theme")).toBe("light");
     s.setSetting("terminalDocked", true);
@@ -162,16 +162,16 @@ describe("client settings store", () => {
 
   it("resets one section, and everything", async () => {
     const s = await load();
-    s.setSettings({ palette: "nord", density: "compact", sendWithEnter: true });
+    s.setSettings({ palette: "nord", density: "compact", sendShortcut: "enter" });
     s.resetSection("appearance");
     expect(s.getSetting("palette")).toBe("default");
     expect(s.getSetting("density")).toBe("comfortable");
-    expect(s.getSetting("sendWithEnter")).toBe(true);
+    expect(s.getSetting("sendShortcut")).toBe("enter");
     expect(root.attrs.size).toBe(0);
     await s.flush();
     expect(server.readSynced().settings).toEqual({});
     s.resetAllSettings();
-    expect(s.getSetting("sendWithEnter")).toBe(false);
+    expect(s.getSetting("sendShortcut")).toBe("mod-enter");
     expect(ls().getItem("cui:send-enter")).toBeNull();
   });
 

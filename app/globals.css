@@ -1076,46 +1076,19 @@ label {
 
 /* ── composer pill and folder picker ───────────────────── */
 
-/* One calm surface: a soft fill, no visible border, a faint lift in light mode.
- * Single row (lead | text | trail) until the text wraps, then stacked. */
-.composer-grid {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    "header header header"
-    "lead primary trail";
-  align-items: center;
-  column-gap: 2px;
-}
-.composer-grid[data-stacked] {
-  grid-template-areas:
-    "header header header"
-    "primary primary primary"
-    "lead . trail";
-  row-gap: 4px;
-}
-.composer-grid[data-stacked] .composer-input {
-  padding-top: 6px;
-  padding-bottom: 2px;
-}
-
+/* A two-row card: the text, then a footer of controls. A soft lift in light mode, a hairline in dark. */
 .composer-pill {
-  border-radius: calc(24px * var(--radius-scale, 1));
+  border-radius: calc(20px * var(--radius-scale, 1));
   background: var(--surface);
   box-shadow:
-    0 0 0 1px var(--line-strong),
-    0 6px 20px -10px oklch(0 0 0 / 0.1);
-  transition:
-    box-shadow 200ms var(--ease-out-strong),
-    border-radius 200ms var(--ease-out-strong);
-}
-.composer-pill[data-stacked] {
-  border-radius: calc(18px * var(--radius-scale, 1));
+    0 0 0 1px oklch(0 0 0 / 0.08),
+    0 12px 28px -18px oklch(0 0 0 / 0.4);
+  transition: box-shadow 200ms var(--ease-out-strong);
 }
 .composer-pill:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--accent) 50%, var(--line-strong)),
-    0 8px 24px -10px oklch(0 0 0 / 0.14);
+    0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(0 0 0 / 0.08)),
+    0 12px 28px -18px oklch(0 0 0 / 0.4);
 }
 .composer-pill[data-invalid] {
   box-shadow:
@@ -1123,14 +1096,22 @@ label {
     0 6px 20px -6px oklch(0 0 0 / 0.08);
 }
 .dark .composer-pill {
-  background: var(--field);
-  box-shadow: 0 0 0 1px var(--line-strong), 0 8px 24px -10px oklch(0 0 0 / 0.5);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
 }
 .dark .composer-pill:focus-within {
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, var(--line-strong)), 0 8px 24px -10px oklch(0 0 0 / 0.5);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(1 0 0 / 0.08));
 }
 .dark .composer-pill[data-invalid] {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--red) 55%, transparent);
+}
+/* density moves the text and the footer, not the card's edge */
+.composer-input {
+  padding-top: calc(var(--composer-pad) + 4px);
+}
+.composer-footer {
+  padding-bottom: calc(var(--composer-pad) - 2px);
+  min-height: 44px;
 }
 
 .composer-menu {
@@ -1284,9 +1265,6 @@ label {
   --row-h-touch: 48px;
   --thread-gap: 1.875rem;
   --composer-pad: 14px;
-}
-[data-density] .composer-pill {
-  padding-block: var(--composer-pad);
 }
 
 [data-width="narrow"] {
