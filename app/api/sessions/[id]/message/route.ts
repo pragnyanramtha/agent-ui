@@ -3,6 +3,7 @@ import { parseMode, readJson, sessionContext, str } from "@/lib/server/http";
 import { InputRefused, inputTarget, typeIntoTerminal } from "@/lib/server/input";
 import { getRun, startRun } from "@/lib/server/runner";
 import { liveTerminals } from "@/lib/server/sessions";
+import { awaitLaunch, isLaunching } from "@/lib/server/launching";
 import { parseSessionKey } from "@/lib/server/agents";
 import { agentMessage } from "@/lib/server/agents/routes";
 import { once } from "@/lib/server/dedupe";
@@ -53,7 +54,10 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     return NextResponse.json({ id: existing.state.sessionId, via: "web" });
   }
 
-  const [ctx, terminal] = await Promise.all([sessionContext(id), liveTerminals(0).then((t) => t.get(id))]);
+  const findTerminal = () => liveTerminals(0).then((t) => t.get(id) ?? null);
+  const [ctx, found] = await Promise.all([sessionContext(id), findTerminal()]);
+  /* the session is being opened in a terminal: send there once it's up, never into a second claude */
+  const terminal = found ?? (isLaunching(id) ? await awaitLaunch(id, findTerminal) : null);
   if (!ctx && !terminal) return NextResponse.json({ error: "Session not found." }, { status: 404 });
 
   if (terminal) {

@@ -12,6 +12,8 @@ const g = globalThis as typeof globalThis & {
   __claudeUiTerminals?: { at: number; map: Map<string, TerminalInfo> };
 };
 const metaCache = (g.__claudeUiMeta ??= new Map());
+/** more than the list ever shows, so listing stays cached; fewer than a server's whole history */
+const META_CACHE_MAX = 2000;
 const pathIndex = (g.__claudeUiPaths ??= new Map());
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -20,11 +22,25 @@ export const isSessionId = (id: string) => UUID.test(id);
 /** Head + tail scan, cached on (mtime, size) so listing stays cheap on multi-GB project dirs. */
 export async function sessionMeta(file: string, mtime: number, size: number) {
   const hit = metaCache.get(file);
-  if (hit && hit.mtime === mtime && hit.size === size) return hit.meta;
+  /* re-inserted on every use, so the Map's order is least recently used first */
+  metaCache.delete(file);
+  if (hit && hit.mtime === mtime && hit.size === size) {
+    metaCache.set(file, hit);
+    return hit.meta;
+  }
   const { head, tail } = await readEdges(file, size);
   const meta = scanMeta(tail, scanMeta(head, emptyMeta()));
   metaCache.set(file, { mtime, size, meta });
+  for (const old of metaCache.keys()) {
+    if (metaCache.size <= META_CACHE_MAX) break;
+    metaCache.delete(old);
+  }
   return meta;
+}
+
+/** Forgets cached metadata of transcripts under `dir` that are gone (deleted sessions, removed projects). */
+function pruneMeta(dir: string, present: Set<string>) {
+  for (const file of metaCache.keys()) if (file.startsWith(dir + path.sep) && !present.has(file)) metaCache.delete(file);
 }
 
 /* ── live terminal sessions ───────────────────────────────────
@@ -112,6 +128,7 @@ export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "w
       }),
   );
   files.sort((a, b) => b.mtime - a.mtime);
+  pruneMeta(PROJECTS_DIR, new Set(files.map((f) => f.file)));
   const terminals = await liveTerminals();
   const rows = await Promise.all(
     files.slice(0, limit).map(async ({ file, id, mtime, size }) => {

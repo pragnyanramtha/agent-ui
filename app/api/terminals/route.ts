@@ -6,7 +6,8 @@ import { parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { adapterFor } from "@/lib/server/agents";
 import { readJson, sessionContext, str } from "@/lib/server/http";
 import { getProfile, pickProfile } from "@/lib/server/profiles";
-import { getRun } from "@/lib/server/runner";
+import { clearFailure, getRun } from "@/lib/server/runner";
+import { launchDone, markLaunching } from "@/lib/server/launching";
 import { killTerminal, launchAgent, listTerminals } from "@/lib/server/terminals";
 import { terminalForKey } from "@/lib/server/agents/bridge";
 
@@ -80,11 +81,21 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
     return NextResponse.json({ error: cwd ? `Folder not found: ${cwd}` : "Choose a folder." }, { status: 400 });
   }
   /* the idle web run hands the session over only once the launch can actually happen */
-  if (key && native && parseSessionKey(key)?.agent === "claude") getRun(native)?.close();
+  const claude = key && native && parseSessionKey(key)?.agent === "claude" ? native : null;
+  if (claude) {
+    /* a message may have started a turn while we were checking */
+    const run = getRun(claude);
+    if (run?.state.status === "running" || run?.state.pending.length) return NextResponse.json({ error: "Claude is busy. Try again when the turn ends.", code: "busy" }, { status: 409 });
+    /* from here until the terminal registers, messages wait for it instead of resuming a second claude */
+    markLaunching(claude);
+    run?.close();
+    clearFailure(claude);
+  }
   try {
     const t = await launchAgent({ profile, cwd, session: native, sessionKey: key, model: str(body.model) || null, cols: Number(body.cols) || undefined, rows: Number(body.rows) || undefined });
     return NextResponse.json({ ...t, label: profile.label });
   } catch (err) {
+    if (claude) launchDone(claude);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
 }

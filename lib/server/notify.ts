@@ -1,4 +1,4 @@
-import { terminalBusy } from "@/lib/status";
+import { runFailed, terminalBusy } from "@/lib/status";
 import { AGENT_LABEL, type SessionSummary } from "@/lib/types";
 import { pushAll, subscriptionCount, type PushMessage } from "./push";
 import { sessionRows } from "./rows";
@@ -13,7 +13,7 @@ export const SETTLE_MS = 4000;
 
 export function phaseOf(s: Pick<SessionSummary, "terminal" | "web">): Phase {
   if (s.web?.pending.length) return "needs";
-  if (s.web?.status === "error") return "failed";
+  if (runFailed(s.web)) return "failed";
   const busy = s.web ? s.web.status === "running" || s.web.status === "starting" : terminalBusy(s.terminal?.status);
   return busy ? "busy" : "idle";
 }
@@ -27,19 +27,26 @@ function detail(s: SessionSummary): string {
   return ask.title || ask.toolName;
 }
 
-/** One poll: the notifications this change of state calls for, and the state to remember. A session seen for the
- * first time only seeds its state. */
+/** a row that shows up idle counts as a turn that just finished only if its transcript changed this recently
+ * (rows also reappear when a slow agent's list times out once) */
+const FRESH_MS = 60_000;
+
+/** One poll: the notifications this change of state calls for, and the state to remember. The first poll only seeds
+ * the state; a session that appears later is new, so it can need you, fail or finish like any other. */
 export function step(seen: Map<string, Seen>, rows: SessionSummary[], now: number): PushMessage[] {
   const out: PushMessage[] = [];
   const live = new Set<string>();
+  const first = seen.size === 0;
   for (const s of rows) {
     live.add(s.id);
     const phase = phaseOf(s);
-    const prev = seen.get(s.id);
-    if (!prev) {
+    let prev = seen.get(s.id);
+    if (!prev && first) {
       seen.set(s.id, { phase, idleSince: phase === "idle" ? now : undefined, doneSent: true });
       continue;
     }
+    /* compared against a quiet idle start: "needs" and "failed" notify now, a fresh idle one says done once it settles */
+    prev ??= { phase: "idle", idleSince: phase === "idle" ? now : undefined, doneSent: phase === "idle" && now - s.mtime > FRESH_MS };
     const agent = AGENT_LABEL[s.agent] ?? "Agent";
     const title = s.title || s.project || "Session";
     const msg = (kind: PushMessage["kind"], head: string, body: string): PushMessage => ({
