@@ -13,8 +13,11 @@ import { comboFor, isCommand, isMac, terminalOwns, useBindings } from "@/lib/cli
 import type { CommandId } from "@/lib/keybindings";
 import { matchSession, queryWords, score } from "@/lib/session-match";
 import { PALETTES, settingDef, type EnumSetting } from "@/lib/settings-schema";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
-/** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
+/** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`; a CustomEvent
+ * with `{ query }` opens it with that search typed in. */
 export const OPEN_PALETTE_EVENT = "open-palette";
 
 /** Fired on window to fold or unfold the sidebar (the drawer on a phone). */
@@ -107,12 +110,12 @@ export function CommandPalette({
   const listId = `${uid}-list`;
   const optId = (i: number) => `${uid}-opt-${i}`;
 
-  const show = useCallback(() => {
+  const show = useCallback((start = "") => {
     setOpen((was) => {
       if (!was) {
         openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         navigated.current = false;
-        setQuery("");
+        setQuery(start);
         setActive(0);
         setPicker(null);
         setDark(document.documentElement.classList.contains("dark"));
@@ -144,11 +147,15 @@ export function CommandPalette({
       if (panelRef.current) setOpen(false);
       else show();
     };
+    const onOpen = (e: Event) => {
+      const q = (e as CustomEvent<{ query?: unknown } | null>).detail?.query;
+      show(typeof q === "string" ? q : "");
+    };
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener(OPEN_PALETTE_EVENT, show);
+    window.addEventListener(OPEN_PALETTE_EVENT, onOpen);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener(OPEN_PALETTE_EVENT, show);
+      window.removeEventListener(OPEN_PALETTE_EVENT, onOpen);
     };
   }, [show]);
 
@@ -630,9 +637,7 @@ export function CommandPalette({
             </p>
           )}
           {!items.length && !messages.searching && (
-            <p className="px-2.5 py-6 text-center text-sm text-ink-3" role="status">
-              Nothing matches <span className="font-medium text-ink-2">“{query.trim()}”</span>.
-            </p>
+            <EmptyState announce className="py-8" icon={<Search width={18} height={18} strokeWidth={1.8} />} {...noMatchCopy(query, picker || query.trim().length < 2 ? "Try another word." : "Try fewer or different words. Message text was searched too.")} />
           )}
         </div>
 

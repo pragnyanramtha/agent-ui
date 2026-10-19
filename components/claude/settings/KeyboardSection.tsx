@@ -24,6 +24,8 @@ import {
   type CommandId,
 } from "@/lib/keybindings";
 import { Card } from "./controls";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 const save = (b: Bindings) => setSetting("keybindings", serializeBindings(b));
 
@@ -203,7 +205,15 @@ export function KeyboardSection() {
           </Card>
         );
       })}
-      {!shown.length && <p className="px-1 py-6 text-center text-sm text-ink-3">No shortcuts match &ldquo;{query.trim()}&rdquo;.</p>}
+      {!shown.length && (
+        <EmptyState
+          announce
+          className="py-8"
+          icon={<Search width={18} height={18} strokeWidth={1.8} />}
+          {...noMatchCopy(query, "Search by action, like tab or sidebar, or by key, like K.")}
+          actions={[{ label: "Clear search", onClick: () => setQuery("") }]}
+        />
+      )}
       <p className="px-1 text-xs leading-relaxed text-ink-3">
         Click a shortcut, then press the new keys. Esc cancels, Backspace removes it.
         {comboFor("shortcuts", mac, { bindings }) && ` Press ${comboFor("shortcuts", mac, { bindings })} outside a text field to see them anywhere.`}

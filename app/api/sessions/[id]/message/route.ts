@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { parseMode, readJson, sessionContext, str } from "@/lib/server/http";
+import { folderGone, parseMode, readJson, sessionContext, str } from "@/lib/server/http";
+import { FOLDER_GONE, folderGoneMessage } from "@/lib/empty-states";
 import { InputRefused, inputTarget, typeIntoTerminal } from "@/lib/server/input";
 import { getRun, startRun } from "@/lib/server/runner";
 import { liveTerminals } from "@/lib/server/sessions";
@@ -94,6 +95,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     return NextResponse.json({ id: raced.state.sessionId, via: "web" });
   }
 
+  if (await folderGone(ctx.cwd)) return NextResponse.json({ error: folderGoneMessage(ctx.cwd), code: FOLDER_GONE }, { status: 409 });
   const mode = parseMode(body.permissionMode) ?? parseMode(ctx.meta.permissionMode) ?? "default";
   const run = startRun({ resume: id, cwd: ctx.cwd, model, effort, permissionMode: mode, profile });
   run.send(text);

@@ -8,6 +8,8 @@ import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
 import { SECTION_ICONS, SectionBody } from "./settings/sections";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 const LAST_KEY = "cui:settings-section";
 
@@ -59,9 +61,17 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
   );
 }
 
-function Results({ query, onOpen }: { query: string; onOpen: (id: SectionId) => void }) {
+function Results({ query, onOpen, onClear }: { query: string; onOpen: (id: SectionId) => void; onClear: () => void }) {
   const hits = searchSettings(query);
-  if (!hits.length) return <p className="px-1 py-10 text-center text-sm text-ink-3">No settings match &ldquo;{query.trim()}&rdquo;.</p>;
+  if (!hits.length)
+    return (
+      <EmptyState
+        announce
+        icon={<Search width={18} height={18} strokeWidth={1.8} />}
+        {...noMatchCopy(query, "Try another word, like theme, font or notifications.")}
+        actions={[{ label: "Clear search", onClick: onClear }]}
+      />
+    );
   return (
     <>
       {hits.map((h) => {
@@ -202,7 +212,7 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
         <div ref={contentRef} className={`safe-bottom min-w-0 md:block md:flex-1 md:overflow-y-auto md:overscroll-contain ${paged || searching ? "block" : "hidden"}`}>
           <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 pt-2 pb-16 sm:px-6 md:pt-6">
             {searching ? (
-              <Results query={query} onOpen={open} />
+              <Results query={query} onOpen={open} onClear={() => setQuery("")} />
             ) : (
               <>
                 <SectionHeader id={section} />

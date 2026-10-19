@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Menu } from "iconoir-react";
+import { MailOpen, Menu } from "iconoir-react";
 import { timeAgo } from "@/lib/client/api";
 import { useSetting } from "@/lib/client/settings";
 import { fullDateTime } from "@/lib/time-format";
@@ -9,6 +9,7 @@ import { answerAsk, failureText } from "@/lib/client/send";
 import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
 import { runFailed } from "@/lib/status";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 
@@ -57,8 +58,15 @@ export function InboxScreen({
       </header>
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-[820px] flex-col gap-7 px-3 pt-2 pb-16 sm:px-6">
-          {sessions === null && <p className="py-10 text-center text-sm text-ink-3">Loading…</p>}
-          {empty && <p className="py-16 text-center text-sm text-ink-3">Nothing needs you.</p>}
+          {sessions === null && <p className="py-10 text-center text-sm text-ink-3">Loading the inbox…</p>}
+          {empty && (
+            <EmptyState
+              className="py-16"
+              icon={<MailOpen width={18} height={18} strokeWidth={1.8} />}
+              title="Nothing needs you"
+              body="Approvals, failed turns and turns that finish while you're away show up here."
+            />
+          )}
 
           {needs.length > 0 && (
             <Group title="Needs you" count={needs.length}>

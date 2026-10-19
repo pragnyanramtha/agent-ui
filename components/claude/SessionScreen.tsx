@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Download, Folder, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
+import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
@@ -30,6 +30,9 @@ import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { useFolderGone } from "@/lib/client/useFolderGone";
+import { FOLDER_GONE, folderGoneCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -161,6 +164,7 @@ export function SessionScreen({
   const turns = useMemo(() => view.entries.filter((e) => e.kind === "user").length, [view.entries]);
   const [gitRev, setGitRev] = useState(0);
   const project = view.cwd.split("/").filter(Boolean).pop() ?? "";
+  const folder = useFolderGone(view.status === "missing" ? "" : view.cwd);
   const showTerminal = view.status !== "missing" && Boolean(terminal || !busy);
   const git = useGitInfo(id, `${busy ? "busy" : "idle"}:${turns}:${gitRev}`);
   const usage = useMemo(() => {
@@ -244,12 +248,13 @@ export function SessionScreen({
         }
       } catch (err) {
         updatePending(localId, { state: "failed", error: err instanceof ApiError && !transient(err) ? err.message : OFFLINE });
+        if (err instanceof ApiError && err.code === FOLDER_GONE) void folder.check();
         /* the terminal refused the keystrokes: show it, so the reason is visible */
         if (err instanceof ApiError && ["agent_focus", "has_text", "no_prompt"].includes(err.code ?? "")) setPeek(true);
       }
       return delivered;
     },
-    [id, localModel, localMode, localProfile, updatePending, onNavigate],
+    [id, localModel, localMode, localProfile, updatePending, onNavigate, folder.check],
   );
   /* sends that failed for want of a connection go out again once it's back */
   useEffect(() => {
@@ -699,14 +704,18 @@ export function SessionScreen({
         footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} /> : null}
         empty={
           view.status === "missing" ? (
-            <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <p className="text-sm text-ink-3">Couldn&apos;t load this session.</p>
-              <button type="button" onClick={() => window.location.reload()} className="h-9 rounded-full px-3.5 text-sm font-medium text-ink shadow-btn hover:bg-hover">
-                Reload
-              </button>
-            </div>
+            <EmptyState
+              tone="error"
+              icon={<ChatBubbleWarning width={18} height={18} strokeWidth={1.8} />}
+              title="Couldn't load this session"
+              body="Its history may have been deleted, or the server didn't answer."
+              actions={[
+                { label: "Reload", onClick: () => window.location.reload() },
+                { label: "New session", onClick: onNew },
+              ]}
+            />
           ) : (
-            <p className="py-16 text-center text-sm text-ink-3">No messages yet.</p>
+            <EmptyState className="py-16" icon={<ChatBubbleEmpty width={18} height={18} strokeWidth={1.8} />} title="No messages yet" body="Send a message below to start." />
           )
         }
       />
@@ -716,6 +725,21 @@ export function SessionScreen({
         {/* the same column as the thread (its width token and side padding), so the card lines up with the text */}
         <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-0 sm:pb-4">
           <div className="mx-auto max-w-(--thread-w) sm:px-8">
+            {folder.gone && (
+              <div className="mb-2 rounded-[12px] bg-surface shadow-hairline">
+                <EmptyState
+                  size="inline"
+                  tone="error"
+                  className="py-2.5"
+                  icon={<FolderWarning width={16} height={16} strokeWidth={1.8} />}
+                  {...folderGoneCopy(shortPath(view.cwd))}
+                  actions={[
+                    { label: "New session", onClick: onNew, primary: true },
+                    { label: folder.checking ? "Checking…" : "Check again", onClick: () => void folder.check(), disabled: folder.checking },
+                  ]}
+                />
+              </div>
+            )}
             {failed && !busy && (
               <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-sm text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">

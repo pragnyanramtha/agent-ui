@@ -14,7 +14,7 @@ const saved = path.join(dir, "saved.log");
 const events: { key: string; e: ServerEvent }[] = [];
 const notices: string[] = [];
 /** per-test knobs for the fake agent */
-const fake = { turnMs: 400, saveMs: 0, noSave: false, failOn: null as string | null, sends: [] as { text: string; model?: string; mode?: string }[] };
+const fake = { turnMs: 400, saveMs: 0, noSave: false, failOn: null as string | null, cwd: dir, sends: [] as { text: string; model?: string; mode?: string }[] };
 
 vi.mock("@/lib/server/profiles", () => {
   const profile = { id: "default", label: "Fake", agent: "cursor", env: {}, args: [], models: [], defaultModel: undefined };
@@ -40,6 +40,7 @@ vi.mock("@/lib/server/agents/index", async () => {
   const key = (n: string) => `cursor:${n}`;
   const adapter = {
     label: "Fake",
+    get: async (n: string) => ({ id: n, cwd: fake.cwd }),
     runState: (n: string) => run.turnState(key(n)),
     stop: async (n: string) => run.stopTurn(key(n)),
     send: async (n: string, text: string, o: { model?: string; mode?: string }) => {
@@ -102,7 +103,7 @@ beforeEach(() => {
   fs.rmSync(saved, { force: true });
   events.length = 0;
   notices.length = 0;
-  Object.assign(fake, { turnMs: 400, saveMs: 0, noSave: false, failOn: null, sends: [] });
+  Object.assign(fake, { turnMs: 400, saveMs: 0, noSave: false, failOn: null, cwd: dir, sends: [] });
 });
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
@@ -213,6 +214,17 @@ describe("non-Claude message queue", () => {
     expect(res.status).toBe(500);
     expect((await res.json()).error).toMatch(/refused boom now/);
     fake.failOn = null;
+    expect(await send("after")).toMatchObject({ via: "web" });
+    await idle();
+  });
+
+  it("a session whose folder is gone says so instead of starting the agent", async () => {
+    fake.cwd = path.join(dir, "deleted-project");
+    const res = await agentMessage("cursor", session, { text: "hello", clientId: "gone-1" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: `This session's folder is gone: ${fake.cwd}. Put it back, or start a new session in another folder.`, code: "folder_missing" });
+    expect(fake.sends).toEqual([]);
+    fake.cwd = dir;
     expect(await send("after")).toMatchObject({ via: "web" });
     await idle();
   });

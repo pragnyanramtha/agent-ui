@@ -2,11 +2,13 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
+import { Alarm, Archive, Calendar, ChatBubbleEmpty, Check, Clock, CloudXmark, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
-import { deleteSession, patchSession, type SessionChange } from "@/lib/client/useSessions";
+import { deleteSession, patchSession, reloadSessions, type SessionChange } from "@/lib/client/useSessions";
+import { noMatchCopy, sessionsErrorCopy, sidebarEmpty, sidebarEmptyCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
@@ -927,6 +929,11 @@ export const SessionList = memo(function SessionList({
   const renameDraft = useRef<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const retry = () => {
+    setRetrying(true);
+    void reloadSessions().finally(() => setRetrying(false));
+  };
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   const [archiving, setArchiving] = useState<SessionSummary | null>(null);
   /** One sidebar toast at a time; a new one replaces the last. Undo puts focus back on the row if it was in the toast. */
@@ -1208,7 +1215,22 @@ export const SessionList = memo(function SessionList({
     />
   );
   const navBtn = "relative flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-lg px-1.5 text-sm text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
-  const empty = !shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : !awake.length ? "Everything is snoozed." : null;
+  const emptyKind = sessions === null ? null : sidebarEmpty({ shown: shown.length, awake: awake.length, filtered: filter !== "all" });
+  const empty = emptyKind && (
+    <EmptyState
+      size="inline"
+      icon={emptyKind === "snoozed" ? <Alarm width={16} height={16} strokeWidth={1.8} /> : <ChatBubbleEmpty width={16} height={16} strokeWidth={1.8} />}
+      {...sidebarEmptyCopy(emptyKind, filter !== "all" ? AGENT_LABEL[filter] : "")}
+      actions={[
+        emptyKind === "agent"
+          ? { label: "Show all", onClick: () => setAgentFilter("all") }
+          : emptyKind === "snoozed"
+            ? { label: "Show snoozed", onClick: () => setShowSnoozed(true) }
+            : { label: "New session", onClick: onNew },
+      ]}
+    />
+  );
+  const loadError = error ? sessionsErrorCopy(error, typeof navigator === "undefined" || navigator.onLine) : null;
 
   return (
     <nav aria-label="Sessions" className="relative flex h-full min-h-0 w-full flex-col">
@@ -1321,10 +1343,15 @@ export const SessionList = memo(function SessionList({
         }}
         className="scroll-quiet scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-8"
       >
-        {error && (
-          <p role="alert" className="mx-0.5 mb-2 rounded-control bg-red-tint px-2.5 py-2 text-sm text-red-ink">
-            Couldn&apos;t load sessions: {error}
-          </p>
+        {loadError && (
+          <EmptyState
+            size="inline"
+            tone="error"
+            className="mb-2"
+            icon={<CloudXmark width={16} height={16} strokeWidth={1.8} />}
+            {...loadError}
+            actions={[{ label: retrying ? "Trying again…" : "Try again", onClick: retry, disabled: retrying }]}
+          />
         )}
         {filter !== "all" && !matches && (
           <div className="mb-1 flex h-8 items-center gap-1.5 px-2.5 text-sm text-ink-3">
@@ -1352,14 +1379,16 @@ export const SessionList = memo(function SessionList({
             {matches.length ? (
               <div className="flex flex-col gap-px">{matches.map((s) => row(s, "match"))}</div>
             ) : (
-              <div className="flex flex-col items-start gap-1 px-2.5 py-1">
-                <p className="text-sm text-ink-3">
-                  Nothing matches <span className="text-ink-2">“{query.trim()}”</span>.
-                </p>
-                <button type="button" onClick={() => setQuery("")} className="tap relative rounded-chip text-sm font-medium text-accent-ink hover:underline">
-                  Clear filter
-                </button>
-              </div>
+              <EmptyState
+                size="inline"
+                announce
+                icon={<Search width={16} height={16} strokeWidth={1.8} />}
+                {...noMatchCopy(query, "The filter checks titles, folders and agents. Search also looks inside messages.")}
+                actions={[
+                  { label: "Search messages", onClick: () => window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT, { detail: { query: query.trim() } })) },
+                  { label: "Clear filter", onClick: () => setQuery("") },
+                ]}
+              />
             )}
           </section>
         ) : (
@@ -1399,7 +1428,7 @@ export const SessionList = memo(function SessionList({
                       {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more ${projects.length - shownProjects.length === 1 ? "project" : "projects"}`}
                     </button>
                   )}
-                  {empty && <p className="px-2.5 py-1.5 text-sm text-ink-3">{empty}</p>}
+                  {empty}
                 </Section>
               ) : (
                 <Section label="Recent" open={!shut.has("recents")} onToggle={() => toggleSection("recents")} action={viewMenu}>
@@ -1415,7 +1444,7 @@ export const SessionList = memo(function SessionList({
                       Show more
                     </button>
                   )}
-                  {empty && <p className="px-2.5 py-1.5 text-sm text-ink-3">{empty}</p>}
+                  {empty}
                 </Section>
               )}
 

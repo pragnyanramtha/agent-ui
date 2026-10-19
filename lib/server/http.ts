@@ -16,6 +16,17 @@ export async function readJson(req: Request): Promise<Record<string, unknown>> {
 
 export const str = (value: unknown) => (typeof value === "string" ? value : undefined);
 
+/** True when `dir` is set but nothing is there any more (moved or deleted). Permission errors and the like aren't "gone". */
+export async function folderGone(dir: string | null | undefined): Promise<boolean> {
+  if (!dir || !path.isAbsolute(dir)) return false;
+  try {
+    return !(await fs.stat(dir)).isDirectory();
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR";
+  }
+}
+
 /** Everything a route needs to know about a session on disk. */
 export async function sessionContext(id: string) {
   const file = await findSessionFile(id);

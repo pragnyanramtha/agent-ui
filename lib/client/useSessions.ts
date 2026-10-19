@@ -17,6 +17,8 @@ const overrides = new Map<string, Partial<SessionSummary>>();
 const gone = new Set<string>();
 const hooks = new Set<{ bump: () => void; refresh: (fresh?: boolean) => Promise<void> }>();
 const bumpAll = () => hooks.forEach((h) => h.bump());
+/** Loads every mounted session list again now (the Try again after a failed load). */
+export const reloadSessions = () => Promise.all([...hooks].map((h) => h.refresh(true))).then(() => undefined);
 
 const pollListeners = new Set<(sessions: SessionSummary[]) => void>();
 /** Called with the server's list after every successful poll, changed or not (the list on screen only re-renders on a change). */
