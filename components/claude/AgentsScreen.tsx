@@ -187,9 +187,11 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
       <H aside={data && !data.tmux ? <span className="text-xs text-ink-3">Install tmux so these survive restarts</span> : null}>
         <span id="terms-h">Running</span>
       </H>
-      {data?.error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
+      {data?.error && data.terminals.length > 0 && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
       {data === null ? (
         <p className="px-1 text-sm text-ink-3">Loading terminals…</p>
+      ) : data.error && !data.terminals.length ? (
+        <EmptyState size="inline" tone="error" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Can't list terminals" body={data.error} actions={[{ label: "Try again", onClick: () => void load() }]} />
       ) : data.terminals.length === 0 ? (
         <EmptyState size="inline" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
       ) : (
