@@ -91,6 +91,8 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 - The cookie HMAC covers the expiry, a session epoch (`auth.json` next to `config.json`, chmod 600) and the password, so
   changing the password or "Sign out everywhere" (`POST /api/auth/logout` with `{"everywhere": true}`, which writes a new
   epoch) ends every session; the terminal backend reads the same file and closes sockets whose session ended.
+- App responses carry X-Frame-Options DENY, nosniff, Referrer-Policy no-referrer, COOP same-origin and, over HTTPS,
+  HSTS (`next.config.ts`). The login redirect is built from the vetted Host, never from `x-forwarded-host`.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes

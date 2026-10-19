@@ -16,10 +16,19 @@ export async function middleware(req: NextRequest) {
   if (await signedIn(req)) return NextResponse.next();
 
   if (api) return NextResponse.json({ error: "Sign in first" }, { status: 401 });
-  /* build from the Host the browser used: behind a tunnel or proxy, req.nextUrl says 127.0.0.1:3311 */
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? req.nextUrl.host;
-  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
-  return NextResponse.redirect(new URL("/login", `${proto}://${host}`));
+  return NextResponse.redirect(loginUrl(req));
+}
+
+/* Next can't send a relative Location from middleware (it parses it as a URL, and turns 127.0.0.1 into localhost),
+ * so the redirect is built from the Host the browser used, which hostOk vetted; never from x-forwarded-host, which any
+ * client can send. Behind the tunnel Host is the public name and x-forwarded-proto says https. */
+function loginUrl(req: NextRequest) {
+  const proto = req.headers.get("x-forwarded-proto") === "https" ? "https" : "http";
+  try {
+    return new URL("/login", `${proto}://${req.headers.get("host") ?? req.nextUrl.host}`);
+  } catch {
+    return new URL("/login", req.url);
+  }
 }
 
 export const config = {
