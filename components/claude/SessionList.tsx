@@ -1025,14 +1025,14 @@ export const SessionList = memo(function SessionList({
       if (!s) return;
       if (!s.archived) return requestArchive(s);
       void change(s, { archived: false });
-      say("Unarchived.", () => void change(s, { archived: true }));
+      say("Session unarchived", { undo: { id: s.id, run: () => void change(s, { archived: true }) } });
     },
     onRight: (id) => {
       const s = byId.get(id);
       if (!s) return;
       const was = Boolean(s.pinned);
       void change(s, { pinned: !was });
-      say(was ? "Unpinned." : "Pinned.", () => void change(s, { pinned: was }));
+      say(was ? "Session unpinned" : "Session pinned", { undo: { id: s.id, run: () => void change(s, { pinned: was }) } });
     },
   });
   const requestDelete = (s: SessionSummary) => {
