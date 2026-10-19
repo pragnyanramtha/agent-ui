@@ -7,6 +7,7 @@ import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
+import { appendToDraft, fillTextarea, INSERT_INTO_COMPOSER_EVENT, type InsertIntoComposer } from "@/lib/client/composer-insert";
 import { carryOver } from "@/lib/client/storage";
 import { serverId, useSession } from "@/lib/client/useSession";
 import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
@@ -117,6 +118,17 @@ export function SessionScreen({
   const usageOpen = panel === "usage";
   const gitOpen = panel === "git";
   const [composerRef, composerH] = useMeasure<HTMLDivElement>();
+  useEffect(() => {
+    const take = (e: Event) => {
+      const text = (e as CustomEvent<InsertIntoComposer>).detail?.text;
+      const box = composerRef.current?.querySelector("textarea");
+      if (!text || !box) return;
+      e.preventDefault();
+      fillTextarea(box, appendToDraft(box.value, text));
+    };
+    window.addEventListener(INSERT_INTO_COMPOSER_EVENT, take);
+    return () => window.removeEventListener(INSERT_INTO_COMPOSER_EVENT, take);
+  }, [composerRef]);
   const menuRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
