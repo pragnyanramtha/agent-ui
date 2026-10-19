@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GitBranch, NavArrowDown, Xmark } from "iconoir-react";
+import { GitBranch, NavArrowDown, Sparks, Xmark } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LABEL, type GitAction, type GitState, type GitStep } from "@/lib/client/git-actions";
 import { confirmAsk } from "./Ask";
@@ -209,6 +209,14 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const running = useRef(false);
   const [step, setStep] = useState<GitStep | null>(null);
 
+  const generate = async () => {
+    const r = await act("suggest-message");
+    if (typeof r?.message !== "string") return;
+    const text = r.message;
+    setMessage((cur) => (cur.trim() ? cur : text));
+    if (r.source === "summary") setNote({ text: "No agent answered, so this sums up the changed files." });
+  };
+
   /** runs an action's steps in order, stopping at the first that fails */
   const run = async (a: GitAction) => {
     setMenu(false);
@@ -383,15 +391,32 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                 </ul>
               )}
               {dirty > 0 && (
-                <div className="mb-2 flex gap-2">
-                  <input
+                <div className="relative mb-2">
+                  <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && message.trim() && void run(COMMIT)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+                      e.preventDefault();
+                      if (message.trim()) void run(COMMIT);
+                    }}
+                    rows={Math.min(8, message.split("\n").length)}
                     placeholder="Commit message"
                     aria-label="Commit message"
-                    className="h-9 min-w-0 flex-1 rounded-full bg-field px-3.5 text-[16px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8 sm:text-[13px]"
+                    className={`block w-full resize-none bg-field px-3.5 py-[7px] text-[16px] leading-[22px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:py-1.5 sm:text-[13px] sm:leading-5 ${message.includes("\n") ? "rounded-[14px]" : "rounded-[18px]"} ${message ? "" : "pr-28"}`}
                   />
+                  {!message && (
+                    <button
+                      type="button"
+                      onClick={() => void generate()}
+                      disabled={working !== null}
+                      title="Write a message from the changes"
+                      className="tap absolute top-1/2 right-1 inline-flex h-7 -translate-y-1/2 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:opacity-50 sm:h-6"
+                    >
+                      <Sparks width={13} height={13} strokeWidth={2} aria-hidden />
+                      {working === "suggest-message" ? "Generating…" : "Generate"}
+                    </button>
+                  )}
                 </div>
               )}
               {gitState && <ActionBar state={gitState} step={step} working={working !== null} hasMessage={Boolean(message.trim())} menu={menu} setMenu={setMenu} run={run} />}

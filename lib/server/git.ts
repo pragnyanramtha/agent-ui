@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
+import { getProfile, type ResolvedProfile } from "./profiles";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
  * throwaway index so HEAD, the branch and the staging area are never touched), rewinding to one, the branch's
@@ -577,6 +578,158 @@ export async function pullRequest(cwd: string, title?: string) {
   } finally {
     for (const k of prCache.keys()) if (k.startsWith(`${root}\0`)) prCache.delete(k);
   }
+}
+
+/* ── generated commit messages ──────────────────────── */
+
+const MESSAGE_DIFF_CAP = 60 * 1024;
+const MESSAGE_TIMEOUT_MS = 60_000;
+const SUBJECT_MAX = 72;
+
+export type MessageAgent = "claude" | "codex" | "gemini";
+export type CommitSuggestion = { message: string; source: MessageAgent | "summary"; staged: boolean };
+
+/** A commit message for what would be committed: the staged changes, or everything when nothing is staged.
+ * Asks a small model through the first installed agent CLI that answers, else summarizes the file list. */
+export async function suggestCommitMessage(cwd: string, opts: { timeoutMs?: number; agents?: MessageAgent[] } = {}): Promise<CommitSuggestion> {
+  const root = await needRoot(cwd);
+  const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
+  const base = head || (await emptyTree(root));
+  const flags = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M"];
+  let range = ["--cached", base];
+  let stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
+  const staged = stats.length > 0;
+  if (!staged) {
+    range = [base, await snapshotTree(root)];
+    stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
+  }
+  if (!stats.length) throw new GitError("No changes to describe.");
+  const [patch, log] = await Promise.all([
+    gitCapped(root, [...flags, "-U3", ...range], MESSAGE_DIFF_CAP),
+    head ? git(root, ["log", "-n", "10", "--no-merges", "--format=%s"]).catch(() => "") : Promise.resolve(""),
+  ]);
+  const prompt = commitPrompt({ patch: patch.out, cut: patch.cut, stats, subjects: log.split("\n").filter(Boolean) });
+  const deadline = Date.now() + (opts.timeoutMs ?? MESSAGE_TIMEOUT_MS);
+  for (const agent of opts.agents ?? (["claude", "codex", "gemini"] as const)) {
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    const profile = getProfile(agent);
+    if (!profile?.binPath) continue;
+    const message = cleanCommitMessage((await askOnce(agent, profile, prompt, left)) ?? "");
+    if (message) return { message, source: agent, staged };
+  }
+  return { message: summaryMessage(stats), source: "summary", staged };
+}
+
+export function commitPrompt(o: { patch: string; cut: boolean; stats: { path: string; status: PatchStatus; additions: number; deletions: number }[]; subjects: string[] }) {
+  const files = o.stats.map((s) => `${s.status} ${s.path} (+${s.additions} -${s.deletions})`).join("\n");
+  return [
+    "Write a git commit message for the changes below.",
+    `Reply with the message only: a subject line of at most ${SUBJECT_MAX} characters in the imperative mood, then optionally a blank line and a short body saying why. No quotes, no code fences, no preamble.`,
+    o.subjects.length ? `Match the style of this repository's recent commit subjects:\n${o.subjects.map((s) => `- ${s}`).join("\n")}` : "",
+    `Files changed:\n${files}`,
+    `Diff${o.cut ? " (cut off)" : ""}:\n${o.patch}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** a model id from the profile that looks cheap, if it lists any */
+const cheapModel = (p: ResolvedProfile) => p.models?.find((m) => /haiku|mini|flash|lite|nano|small|low/i.test(m));
+
+function messageArgs(agent: MessageAgent, p: ResolvedProfile, out: string): string[] {
+  const model = cheapModel(p);
+  if (agent === "claude") return [...p.args, "-p", "--output-format", "text", "--model", model ?? (p.models?.length ? (p.defaultModel ?? p.models[0]) : "haiku"), "--max-turns", "1", "--no-session-persistence"];
+  if (agent === "codex")
+    return [...p.args, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", 'model_reasoning_effort="low"', ...(model ? ["--model", model] : []), "--output-last-message", out, "-"];
+  return [...p.args, "-p", "", "--output-format", "text", "--skip-trust", ...(model ? ["-m", model] : [])];
+}
+
+/** one print-mode run with the prompt on stdin; its answer, or null when it fails or runs out of time */
+async function askOnce(agent: MessageAgent, p: ResolvedProfile, prompt: string, timeoutMs: number): Promise<string | null> {
+  /* away from the repo, so the agent doesn't wander its files or file the run under the user's project */
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-u-commit-msg-"));
+  const out = path.join(dir, "last-message.txt");
+  try {
+    const stdout = await new Promise<string | null>((resolve) => {
+      /* its own process group, so a timeout also stops whatever the CLI started */
+      const child = spawn(p.binPath!, messageArgs(agent, p, out), { cwd: dir, env: { ...process.env, ...p.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "ignore"], detached: true });
+      let text = "";
+      const timer = setTimeout(() => {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+        resolve(null);
+      }, timeoutMs);
+      child.stdout.on("data", (b: Buffer) => void (text.length < 64 * 1024 && (text += b.toString())));
+      child.on("error", () => (clearTimeout(timer), resolve(null)));
+      child.on("close", (code) => (clearTimeout(timer), resolve(code === 0 ? text : null)));
+      child.stdin.on("error", () => undefined);
+      child.stdin.end(prompt);
+    });
+    if (stdout === null) return null;
+    if (agent === "codex") return (await fs.readFile(out, "utf8").catch(() => "")) || stdout;
+    return stdout;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** A model's reply as a commit message: a subject of at most 72 characters and an optional body; "" when nothing usable. */
+export function cleanCommitMessage(raw: string): string {
+  let text = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r\n?/g, "\n");
+  const fenced = /```[^\n]*\n([\s\S]*?)(?:```|$)/.exec(text);
+  if (fenced) text = fenced[1];
+  const lines = text.split("\n").map((l) => l.trimEnd());
+  while (lines.length && (!lines[0].trim() || /^(sure|okay|ok|here(?:'s| is| are)\b|commit message\b).*:\s*$/i.test(lines[0].trim()))) lines.shift();
+  if (!lines.length) return "";
+  const subject = shortenSubject(
+    lines[0]
+      .trim()
+      .replace(/^#+\s*/, "")
+      .replace(/^(commit message|subject|title)\s*:\s*/i, "")
+      .replace(/^(\*\*|__)|(\*\*|__)$/g, "")
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/\.$/, "")
+      .trim(),
+  );
+  if (!subject) return "";
+  const body = lines
+    .slice(1)
+    .filter((l) => !/^\s*(co-authored-by:|generated (with|by)\b|🤖)/i.test(l))
+    .join("\n")
+    .replace(/^\s*(body\s*:\s*)?/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .replace(/["'`]+$/, "")
+    .trim()
+    .slice(0, 2000);
+  return body ? `${subject}\n\n${body}` : subject;
+}
+
+function shortenSubject(s: string): string {
+  if (s.length <= SUBJECT_MAX) return s;
+  const cut = s.slice(0, SUBJECT_MAX + 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > 30 ? cut.slice(0, space) : s.slice(0, SUBJECT_MAX)).replace(/[\s,;:.-]+$/, "");
+}
+
+/** "Update GitPanel.tsx and git.ts": what a commit touches, when no model can say more */
+export function summaryMessage(stats: { path: string; status: PatchStatus }[]): string {
+  if (!stats.length) return "Update files";
+  const verb = stats.every((s) => s.status === "added") ? "Add" : stats.every((s) => s.status === "deleted") ? "Remove" : stats.every((s) => s.status === "renamed") ? "Rename" : "Update";
+  const names = [...new Set(stats.map((s) => path.posix.basename(s.path)))];
+  const list = (shown: string[], more: number) =>
+    more > 0 ? `${shown.join(", ")} and ${more} more ${more === 1 ? "file" : "files"}` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+  for (const n of names.length <= 3 ? [names.length, 2, 1] : [2, 1]) {
+    if (n > names.length) continue;
+    const line = `${verb} ${list(names.slice(0, n), names.length - n)}`;
+    if (line.length <= SUBJECT_MAX) return line;
+  }
+  return `${verb} ${names.length} ${names.length === 1 ? "file" : "files"}`;
 }
 
 /* ── worktrees ──────────────────────────────────────── */

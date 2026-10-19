@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readJson, str } from "@/lib/server/http";
 import { sessionCwd, turnRunning } from "@/lib/server/checkpoints";
-import { autoFetch, checkpoint, commitAll, GitError, listCheckpoints, pull, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
+import { autoFetch, checkpoint, commitAll, GitError, listCheckpoints, pull, pullRequest, push, rewind, sinceCheckpoint, status, suggestCommitMessage } from "@/lib/server/git";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** { session, action: "checkpoint" | "since" | "rewind" | "commit" | "push" | "pull" | "pr", id?, message?, title? } */
+/** { session, action: "checkpoint" | "since" | "rewind" | "commit" | "push" | "pull" | "pr" | "suggest-message", id?, message?, title? } */
 export async function POST(req: NextRequest) {
   const body = await readJson(req);
   const session = str(body.session) ?? "";
@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ branch: await push(cwd) });
       case "pull":
         return NextResponse.json({ branch: await pull(cwd) });
+      case "suggest-message":
+        return NextResponse.json(await suggestCommitMessage(cwd));
       case "pr":
         return NextResponse.json({ url: await pullRequest(cwd, str(body.title)) });
       default:
