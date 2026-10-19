@@ -7,6 +7,7 @@ import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LA
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
 import { modalOpen } from "@/lib/client/shortcuts";
+import { useReturnFocus } from "@/lib/client/a11y";
 import { useSetting } from "@/lib/client/settings";
 import { fullDateTime } from "@/lib/time-format";
 
@@ -167,9 +168,9 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     [session],
   );
 
+  useReturnFocus(ref);
   useEffect(() => {
     void load();
-    ref.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
