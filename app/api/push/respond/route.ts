@@ -4,6 +4,7 @@ import { getRun } from "@/lib/server/runner";
 import { parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { answerTurn, turnState } from "@/lib/server/agents/cli-run";
 import { RESPOND_HEADER, spendRespondToken } from "@/lib/server/push-token";
+import type { PendingAsk } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,6 @@ function answer(session: string, request: string, allow: boolean): boolean {
     return ask?.kind === "permission" && answerTurn(k, request, { allow, always: false });
   }
   const run = getRun(session);
-  const ask = run?.state.pending.find((p) => p.requestId === request);
+  const ask = run?.state.pending.find((p: PendingAsk) => p.requestId === request);
   return Boolean(run && ask?.kind === "permission" && run.respond(request, { allow, always: false }));
 }
