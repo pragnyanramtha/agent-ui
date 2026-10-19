@@ -173,7 +173,8 @@ describe("search", () => {
   it("matches labels, descriptions, keywords and section items", () => {
     expect(searchSettings("dark mode")).toEqual([{ section: "appearance", settings: ["theme"], items: [] }]);
     expect(searchSettings("zoom")[0].settings).toEqual(["uiScale"]);
-    expect(searchSettings("logout")).toEqual([{ section: "general", settings: [], items: ["sign-out"] }]);
+    expect(searchSettings("logout")).toEqual([{ section: "general", settings: [], items: ["sign-out", "sign-out-everywhere"] }]);
+    expect(searchSettings("revoke")).toEqual([{ section: "general", settings: [], items: ["sign-out-everywhere"] }]);
     expect(searchSettings("export").map((h) => h.section)).toContain("data");
     expect(searchSettings("   ")).toEqual([]);
     expect(searchSettings("zzzz")).toEqual([]);
