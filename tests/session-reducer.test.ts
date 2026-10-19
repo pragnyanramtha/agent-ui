@@ -69,9 +69,32 @@ describe("pending bubbles", () => {
     expect(s.pending.map((p) => p.localId)).toEqual(["p2"]);
   });
 
-  it("an older identical message (earlier in history) doesn't clear a new bubble", () => {
-    const s = ev(withPending(pending("p1", "continue")), { type: "entries", entries: [user("u0", "continue", now - 10 * 60_000)] });
+  it("an older identical message in a full history load doesn't clear a new bubble", () => {
+    const s = ev(withPending(pending("p1", "continue")), history([user("u0", "continue", now - 10 * 60_000)]), true);
     expect(s.pending).toHaveLength(1);
+  });
+
+  it("a send retried through an outage clears when its entry arrives, however late the reply came", () => {
+    let s = ev(initial(), history([]), true);
+    /* the server took it at `now`; the reply was lost and the retry's replay came back 75s later */
+    s = reducer(s, { type: "pending", pending: pending("p1", "deploy it", { state: "sending" }) });
+    s = reducer(s, { type: "updatePending", localId: "p1", patch: { state: "sent", via: "web", sentAt: now + 75_000 } });
+    expect(s.pending[0].at).toBe(now);
+    /* the stream catches up with the user record written at the first attempt */
+    s = ev(s, { type: "entries", entries: [user("u1", "deploy it", now + 500)] });
+    expect(s.entries.map((e) => e.id)).toEqual(["u1"]);
+    expect(s.pending).toEqual([]);
+  });
+
+  it("an entry on the live stream clears the bubble even if the clocks disagree by more than a minute", () => {
+    const s = ev(withPending(pending("p1", "go")), { type: "entries", entries: [user("u1", "go", now - 5 * 60_000)] });
+    expect(s.pending).toEqual([]);
+  });
+
+  it("restoring a saved bubble ignores an identical message from before it was made", () => {
+    const s0 = ev(initial(), history([user("u0", "continue", now - 10 * 60_000)]), true);
+    const s = reducer(s0, { type: "restorePending", pending: [pending("p1", "continue")] });
+    expect(s.pending.map((p) => p.localId)).toEqual(["p1"]);
   });
 
   it("loading older pages never clears a bubble", () => {

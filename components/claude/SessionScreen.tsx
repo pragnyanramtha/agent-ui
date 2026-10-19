@@ -200,18 +200,18 @@ export function SessionScreen({
   const deliver = useCallback(
     async (localId: string, text: string, fresh = false, sentAs?: string) => {
       const clientId = fresh ? `${localId}-${Date.now().toString(36)}` : (sentAs ?? localId);
-      updatePending(localId, { state: "sending", error: undefined, resend: undefined, at: Date.now(), sentAs: clientId });
+      updatePending(localId, { state: "sending", error: undefined, resend: undefined, sentAs: clientId });
       try {
         const res = await postReliably<{ id: string; via?: "terminal" | "web" | "queued"; cleared?: string | null }>(
           `/api/sessions/${id}/message`,
           { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined },
           clientId,
         );
-        updatePending(localId, { state: "sent", via: res.via, at: Date.now() });
+        updatePending(localId, { state: "sent", via: res.via, sentAt: Date.now() });
         /* a greyed suggestion or half-typed text was in the terminal's prompt; say what was cleared */
         if (res.cleared && !/^Try "/.test(res.cleared)) setError(`Cleared unsent text: "${res.cleared.slice(0, 80)}"`);
         if (res.id !== id) {
-          carryOver(id, res.id, pendingRef.current.map((p) => (p.localId === localId ? { ...p, state: "sent", via: res.via, at: Date.now(), sentAs: clientId, error: undefined, resend: undefined } : p)));
+          carryOver(id, res.id, pendingRef.current.map((p) => (p.localId === localId ? { ...p, state: "sent", via: res.via, sentAt: Date.now(), sentAs: clientId, error: undefined, resend: undefined } : p)));
           onNavigate(res.id);
         }
       } catch (err) {

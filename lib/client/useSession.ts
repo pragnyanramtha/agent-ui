@@ -10,7 +10,10 @@ type Stream = { msgId: string; index: number; kind: StreamDelta["kind"]; text: s
 export type Pending = {
   localId: string;
   text: string;
+  /** when the first attempt went out; retries keep it, so a transcript entry from that attempt still matches */
   at: number;
+  /** when the server confirmed it */
+  sentAt?: number;
   state: "sending" | "sent" | "failed";
   via?: "terminal" | "web" | "queued";
   error?: string;
@@ -24,7 +27,7 @@ export const serverId = (p: Pending) => p.sentAs ?? p.localId;
 
 /* the terminal path flattens newlines, and Claude Code trims; compare on collapsed whitespace */
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().replace(/^!\s+/, "!");
-/** a user entry can only be the bubble's message if it landed after the bubble was made (clock skew allowed) */
+/** restoring a saved bubble: an older entry with the same text is an earlier message, not this one (clock skew allowed) */
 const landedAfter = (e: Entry, p: Pending) => !e.ts || Date.parse(e.ts) >= p.at - 60_000;
 const pendingKey = (id: string) => `pending:${id}`;
 
@@ -138,7 +141,7 @@ export const initial = (): SessionView => ({
 
 /* Folds a batch into the view: tool results attach by id, everything else is
  * de-duplicated by entry id (reconnects and overlapping reads both resend). */
-function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"): SessionView {
+function merge(state: SessionView, batch: Entry[], where: "append" | "prepend", live = true): SessionView {
   const ids = new Set(state.ids);
   let results = state.results;
   let streams = state.streams;
@@ -175,7 +178,8 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"):
       }
     }
     if (e.kind === "user" && pending.length && where === "append") {
-      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && landedAfter(e, p));
+      /* an entry arriving live is new, whatever its timestamp says; a full history load holds old ones too */
+      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && (live || landedAfter(e, p)));
       if (i !== -1) pending = pending.filter((_, j) => j !== i);
     }
   }
@@ -198,7 +202,7 @@ export function reducer(state: SessionView, action: Action): SessionView {
       if (e.type === "history") {
         /* the first load (by GET) replaces everything; later history events (stream reconnects) only add */
         const first = action.initial === true;
-        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append");
+        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append", !first);
         return {
           ...merged,
           /* the server replays a running turn's live text after every history event */
