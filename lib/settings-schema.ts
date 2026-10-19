@@ -1211,6 +1211,28 @@ export const SETTINGS = {
       { value: "stop", label: "Stop" },
     ],
   }),
+  favoriteModels: text({
+    section: "agents",
+    group: "Models",
+    label: "Favorite models",
+    description: "Listed first in the model picker. Star them there, or type model ids here, separated by commas.",
+    keywords: ["star", "pin", "model picker", "favourite", "models"],
+    scope: "synced",
+    default: "",
+    maxLength: 4000,
+    placeholder: "gpt-5.5, opus",
+  }),
+  hiddenModels: text({
+    section: "agents",
+    group: "Models",
+    label: "Hidden models",
+    description: "Left out of the model picker unless you filter for them or show hidden ones.",
+    keywords: ["hide", "model picker", "declutter", "models"],
+    scope: "synced",
+    default: "",
+    maxLength: 4000,
+    placeholder: "haiku",
+  }),
 } as const satisfies Record<string, SettingDef>;
 
 type ValueOf<D> = D extends BooleanSetting ? boolean : D extends NumberSetting ? number : D extends EnumSetting<infer T> ? T : string;
