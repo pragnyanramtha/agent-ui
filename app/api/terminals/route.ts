@@ -6,7 +6,7 @@ import { parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { adapterFor } from "@/lib/server/agents";
 import { readJson, sessionContext, str } from "@/lib/server/http";
 import { getProfile, pickProfile } from "@/lib/server/profiles";
-import { getRun } from "@/lib/server/runner";
+import { clearFailure, getRun } from "@/lib/server/runner";
 import { killTerminal, launchAgent, listTerminals } from "@/lib/server/terminals";
 import { terminalForKey } from "@/lib/server/agents/bridge";
 
@@ -80,7 +80,10 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
     return NextResponse.json({ error: cwd ? `Folder not found: ${cwd}` : "Choose a folder." }, { status: 400 });
   }
   /* the idle web run hands the session over only once the launch can actually happen */
-  if (key && native && parseSessionKey(key)?.agent === "claude") getRun(native)?.close();
+  if (key && native && parseSessionKey(key)?.agent === "claude") {
+    getRun(native)?.close();
+    clearFailure(native);
+  }
   try {
     const t = await launchAgent({ profile, cwd, session: native, sessionKey: key, model: str(body.model) || null, cols: Number(body.cols) || undefined, rows: Number(body.rows) || undefined });
     return NextResponse.json({ ...t, label: profile.label });

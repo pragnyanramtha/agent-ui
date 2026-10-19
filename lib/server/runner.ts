@@ -151,6 +151,7 @@ export class Run {
   send(text: string) {
     if (this.ended) return;
     this.lastText = text;
+    clearFailure(this.state.sessionId);
     this.inbox.push({
       type: "user",
       message: { role: "user", content: text },
@@ -216,6 +217,8 @@ export class Run {
       /* already gone */
     }
     this.update(patch);
+    /* the run is gone but the session's list row, the inbox and push still have to say the last turn failed */
+    if (this.state.error && this.state.sessionId) recordFailure(this.state.sessionId, { ...this.state, status: "error", pending: [], suggestion: null });
     this.markReady(this.initialized ? this.state.sessionId : "");
   }
 
@@ -391,11 +394,30 @@ export const getRun = (id: string) => {
 
 export const activeRuns = () => [...registry().values()].filter((r) => r.live);
 
+/* The final state of runs that ended on a failure, kept until the session's next message or terminal launch. */
+const FAILURES_MAX = 200;
+const failures = () => ((g as { __agentuRunFailures?: Map<string, RunState> }).__agentuRunFailures ??= new Map());
+
+function recordFailure(id: string, state: RunState) {
+  failures().delete(id);
+  failures().set(id, state);
+  for (const old of failures().keys()) {
+    if (failures().size <= FAILURES_MAX) break;
+    failures().delete(old);
+  }
+}
+
+export const clearFailure = (id: string) => void failures().delete(id);
+
+/** How the last run of a session ended, when it ended on a failure and nothing was sent since (status "error"). */
+export const lastFailure = (id: string): RunState | null => failures().get(id) ?? null;
+
 export function startRun(opts: ConstructorParameters<typeof Run>[0]) {
   const run = new Run(opts);
   /* forks are aliased under the source id until init re-keys them, so viewers of the source get the redirect */
   if (opts.resume) {
     getRun(opts.resume)?.close();
+    clearFailure(opts.resume);
     register(opts.resume, run);
   }
   return run;

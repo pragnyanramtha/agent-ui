@@ -1,4 +1,4 @@
-import { terminalBusy } from "@/lib/status";
+import { runFailed, terminalBusy } from "@/lib/status";
 import { AGENT_LABEL, type SessionSummary } from "@/lib/types";
 import { pushAll, subscriptionCount, type PushMessage } from "./push";
 import { sessionRows } from "./rows";
@@ -13,7 +13,7 @@ export const SETTLE_MS = 4000;
 
 export function phaseOf(s: Pick<SessionSummary, "terminal" | "web">): Phase {
   if (s.web?.pending.length) return "needs";
-  if (s.web?.status === "error") return "failed";
+  if (runFailed(s.web)) return "failed";
   const busy = s.web ? s.web.status === "running" || s.web.status === "starting" : terminalBusy(s.terminal?.status);
   return busy ? "busy" : "idle";
 }

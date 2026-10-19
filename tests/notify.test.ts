@@ -33,6 +33,7 @@ describe("phaseOf", () => {
     expect(phaseOf(row(run("running")))).toBe("busy");
     expect(phaseOf(row(run("idle", [ask])))).toBe("needs");
     expect(phaseOf(row(run("error", [], "boom")))).toBe("failed");
+    expect(phaseOf(row(run("idle", [], "boom")))).toBe("failed");
     expect(phaseOf(row(run("idle")))).toBe("idle");
     expect(phaseOf(row(null, { terminal: { pid: 1, status: "busy", multiplexer: null, name: null } }))).toBe("busy");
     expect(phaseOf(row(null, { terminal: { pid: 1, status: "idle", multiplexer: null, name: null } }))).toBe("idle");
