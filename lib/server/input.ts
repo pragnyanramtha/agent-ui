@@ -83,6 +83,9 @@ export function readPrompt(ansiScreen: string): PromptState {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** waits before each read of the prompt after Ctrl+U */
+const CLEAR_CHECKS_MS = [200, 300, 500];
+
 /* tmux refuses a send-keys over about 16 KB ("command too long"), so long text goes in pieces of at most 8 KB */
 const CHUNK = 2000;
 
@@ -152,8 +155,12 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
   for (let i = 0; i < 4 && !before.ok && before.code === "has_text"; i++) {
     const shown = before.text;
     await clearLine(target);
-    await sleep(200);
-    before = readPrompt(await paneScreen(target, true));
+    /* a busy Claude can take a moment to redraw, so unchanged text is read again before it counts as unchanged */
+    for (const ms of CLEAR_CHECKS_MS) {
+      await sleep(ms);
+      before = readPrompt(await paneScreen(target, true));
+      if (before.ok || before.code !== "has_text" || before.text !== shown) break;
+    }
     /* Ctrl+U removes typed text but not Claude's suggestion: unchanged text is the suggestion, and typing replaces it */
     if (!before.ok && before.code === "has_text" && before.text === shown) {
       ghost = true;

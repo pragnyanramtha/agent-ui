@@ -9,7 +9,7 @@ import { sessionContext } from "./http";
 import { setSessionProfile, withProfile, type ResolvedProfile } from "./profiles";
 import { startRun } from "./runner";
 import { metaTitle, parseLines, readLines } from "./transcript";
-import { handoffPrompt, turns, type Source } from "./handoff-shape";
+import { handoffPrompt, leftOut, recentTurns, type Source } from "./handoff-shape";
 
 export type { Source };
 
@@ -73,14 +73,16 @@ export async function writeClaudeTranscript(src: Source): Promise<string> {
     lines.push(JSON.stringify({ parentUuid: parent, ...base, ...rec, uuid }));
     parent = uuid;
   };
+  const recent = recentTurns(src, 4000);
+  const note = recent.skipped ? ` ${leftOut(recent.skipped)}` : "";
   push({
     type: "user",
-    message: { role: "user", content: `<imported-session>This session was moved here from ${AGENT_LABEL[src.agent]} (${src.key}). The earlier turns below were produced there; tool runs are summarised as text.</imported-session>` },
+    message: { role: "user", content: `<imported-session>This session was moved here from ${AGENT_LABEL[src.agent]} (${src.key}). The earlier turns below were produced there; tool runs are summarised as text.${note}</imported-session>` },
     timestamp: src.entries[0]?.ts ?? new Date().toISOString(),
     origin: { kind: "system" },
   });
   push({ type: "assistant", message: { id: `msg_import_${randomUUID().replace(/-/g, "")}`, type: "message", role: "assistant", model: "<synthetic>", content: [{ type: "text", text: "Understood." }], stop_reason: "end_turn", stop_sequence: null, usage: { input_tokens: 0, output_tokens: 0 } }, timestamp: src.entries[0]?.ts ?? new Date().toISOString() });
-  for (const t of turns(src, 4000)) {
+  for (const t of recent.turns) {
     push({ type: "user", message: { role: "user", content: t.user.trim() || "(continued)" }, timestamp: t.ts, origin: { kind: "human" } });
     push({
       type: "assistant",

@@ -139,4 +139,7 @@ export type ServerEvent =
   | { type: "queue"; items: { id: string; text: string }[] }
   /** messages whose turn was stopped before the agent saved them (it never read them) */
   | { type: "unsent"; items: { id: string; text: string; error: string }[] }
+  /** the stream resumed too far behind and skipped transcript bytes [from, to): entries written there never came,
+   * so a client should load the history afresh */
+  | { type: "gap"; from: number; to: number }
   | { type: "ping" };

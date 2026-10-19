@@ -1,4 +1,4 @@
-import { getRun } from "./runner";
+import { getRun, lastFailure } from "./runner";
 import { listSessions } from "./sessions";
 import { agentSummaries } from "./agents/bridge";
 import { allSessionMeta, type SessionMeta } from "./profiles";
@@ -17,7 +17,10 @@ export async function sessionRows(): Promise<SessionSummary[]> {
   return [
     ...sessions.map((s) => {
       const run = getRun(s.id);
-      return run ? { ...s, terminal: null, web: run.state } : { ...s, web: null };
+      if (run) return { ...s, terminal: null, web: run.state };
+      /* a run that ended on a failure still reports it, until the session is used again (here or in a terminal) */
+      const failed = s.terminal ? null : lastFailure(s.id);
+      return { ...s, web: failed };
     }),
     ...others,
   ]
