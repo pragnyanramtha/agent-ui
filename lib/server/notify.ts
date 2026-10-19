@@ -1,4 +1,4 @@
-import { step, type Seen } from "@/lib/notify-events";
+import { forgetSeen, step, type Seen } from "@/lib/notify-events";
 import { pushWanted } from "@/lib/notify-prefs";
 import { DEFAULTS } from "@/lib/settings-schema";
 import { pushAll, subscriptionCount, type PushMessage } from "./push";
@@ -31,7 +31,7 @@ export function startNotify() {
     running = true;
     try {
       if (!subscriptionCount()) {
-        seen.clear();
+        forgetSeen(seen);
         return;
       }
       const rows = await sessionRows();
