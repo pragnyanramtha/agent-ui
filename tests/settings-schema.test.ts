@@ -10,6 +10,8 @@ import {
   diffSettings,
   domState,
   encodeStored,
+  isShown,
+  migrateLegacy,
   parseSettingsFile,
   parseValue,
   pickValid,
@@ -44,7 +46,18 @@ describe("settings registry", () => {
   });
 
   it("lists a setting in its own section and the ones it also shows in", () => {
-    expect(settingsIn("composer").map((d) => d.key)).toEqual(["sendWithEnter"]);
+    expect(settingsIn("composer").map((d) => d.key)).toEqual([
+      "sendShortcut",
+      "busySend",
+      "longPaste",
+      "longPasteLines",
+      "spellCheck",
+      "phoneAutocorrect",
+      "composerMaxLines",
+      "rememberDrafts",
+      "effortClaude",
+      "effortCodex",
+    ]);
     expect(settingsIn("conversation").map((d) => d.key)).toEqual([
       "conversationWidth",
       "showTimestamps",
@@ -78,8 +91,10 @@ describe("parseValue", () => {
   it("only takes listed choices and real booleans", () => {
     expect(parseValue(settingDef("palette"), "nord")).toEqual({ ok: true, value: "nord" });
     expect(parseValue(settingDef("palette"), "dracula").ok).toBe(false);
-    expect(parseValue(settingDef("sendWithEnter"), "true").ok).toBe(false);
-    expect(parseValue(settingDef("sendWithEnter"), false)).toEqual({ ok: true, value: false });
+    expect(parseValue(settingDef("spellCheck"), "true").ok).toBe(false);
+    expect(parseValue(settingDef("spellCheck"), false)).toEqual({ ok: true, value: false });
+    expect(parseValue(settingDef("sendShortcut"), "enter-always")).toEqual({ ok: true, value: "enter-always" });
+    expect(parseValue(settingDef("sendShortcut"), true).ok).toBe(false);
   });
 
   it("normalizes colors and cuts strings to length", () => {
@@ -118,10 +133,13 @@ describe("validatePatch", () => {
 
 describe("stored values from earlier versions", () => {
   it("reads the old send-with-Enter, terminal panel and theme formats", () => {
-    expect(storageKey("sendWithEnter")).toBe("cui:send-enter");
-    expect(decodeStored("sendWithEnter", "1")).toBe(true);
-    expect(decodeStored("sendWithEnter", "0")).toBe(false);
-    expect(decodeStored("sendWithEnter", null)).toBe(false);
+    /* the "Send with Enter" switch became the "Send with" choice under the same key */
+    expect(storageKey("sendShortcut")).toBe("cui:send-enter");
+    expect(decodeStored("sendShortcut", "1")).toBe("enter");
+    expect(decodeStored("sendShortcut", "0")).toBe("mod-enter");
+    expect(decodeStored("sendShortcut", null)).toBe("mod-enter");
+    expect(decodeStored("sendShortcut", "always")).toBe("enter-always");
+    expect(decodeStored("sendShortcut", "junk")).toBe("mod-enter");
 
     expect(storageKey("terminalDocked")).toBe("cui:term-docked");
     expect(decodeStored("terminalDocked", "sheet")).toBe(false);
@@ -161,7 +179,10 @@ describe("stored values from earlier versions", () => {
   });
 
   it("writes those keys back in their old format", () => {
-    expect(encodeStored("sendWithEnter", true)).toBe("1");
+    expect(encodeStored("sendShortcut", "enter")).toBe("1");
+    expect(encodeStored("sendShortcut", "mod-enter")).toBe("0");
+    /* an older build reads anything but "1" as off, which is Ctrl/Cmd+Enter: the closest it has */
+    expect(encodeStored("sendShortcut", "enter-always")).toBe("always");
     expect(encodeStored("terminalDocked", false)).toBe("sheet");
     expect(encodeStored("terminalDocked", true)).toBe("dock");
     expect(encodeStored("theme", "light")).toBe("light");
@@ -184,7 +205,7 @@ describe("stored values from earlier versions", () => {
 
 describe("export and import", () => {
   it("round-trips every setting", () => {
-    const values = { ...DEFAULTS, palette: "nord", accent: "custom", accentHue: 140, uiScale: 120, sendWithEnter: true, theme: "light" } as const;
+    const values = { ...DEFAULTS, palette: "nord", accent: "custom", accentHue: 140, uiScale: 120, sendShortcut: "enter-always", effortCodex: "high", composerMaxLines: 12, theme: "light" } as const;
     const parsed = parseSettingsFile(serializeSettings(values, new Date(0)));
     expect(parsed).toEqual({ ok: true, values, skipped: [] });
   });
@@ -196,11 +217,33 @@ describe("export and import", () => {
     expect(parseSettingsFile('{"hello":"world"}').ok).toBe(false);
   });
 
+  it("reads the old Send with Enter switch in files exported before it became a choice", () => {
+    const file = (settings: object) => JSON.stringify({ kind: "agent-u/settings", version: 1, settings });
+    expect(parseSettingsFile(file({ sendWithEnter: true, palette: "nord" }))).toEqual({ ok: true, values: { sendShortcut: "enter", palette: "nord" }, skipped: [] });
+    expect(parseSettingsFile(file({ sendWithEnter: false, palette: "nord" }))).toEqual({ ok: true, values: { sendShortcut: "mod-enter", palette: "nord" }, skipped: [] });
+    /* a file that has both keeps the new one */
+    expect(migrateLegacy({ sendWithEnter: true, sendShortcut: "enter-always" })).toEqual({ sendShortcut: "enter-always" });
+    expect(migrateLegacy({ sendWithEnter: "yes" })).toEqual({});
+    expect(migrateLegacy({ palette: "nord" })).toEqual({ palette: "nord" });
+  });
+
   it("describes changes in words", () => {
-    expect(diffSettings(DEFAULTS, { palette: "nord", sendWithEnter: false, uiScale: 110 })).toEqual([
+    expect(diffSettings(DEFAULTS, { palette: "nord", sendShortcut: "mod-enter", uiScale: 110 })).toEqual([
       { key: "palette", label: "Palette", from: "Default", to: "Nord" },
       { key: "uiScale", label: "Interface size", from: "100%", to: "110%" },
     ]);
+  });
+});
+
+describe("showIf", () => {
+  it("takes one value or a list of them", () => {
+    const limit = settingDef("longPasteLines");
+    expect(isShown(limit, { ...DEFAULTS, longPaste: "text" })).toBe(false);
+    expect(isShown(limit, { ...DEFAULTS, longPaste: "confirm" })).toBe(true);
+    expect(isShown(limit, { ...DEFAULTS, longPaste: "attach" })).toBe(true);
+    expect(isShown(settingDef("accentHue"), { ...DEFAULTS, accent: "custom" })).toBe(true);
+    expect(isShown(settingDef("accentHue"), DEFAULTS)).toBe(false);
+    expect(isShown(settingDef("palette"), DEFAULTS)).toBe(true);
   });
 });
 

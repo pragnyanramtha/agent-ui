@@ -9,7 +9,8 @@ import { signOut } from "@/lib/client/push";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
 import { applyTheme } from "@/lib/client/settings";
-import { comboFor } from "@/lib/client/shortcuts";
+import { comboFor, isCommand, isMac, terminalOwns, useBindings } from "@/lib/client/shortcuts";
+import type { CommandId } from "@/lib/keybindings";
 import { matchSession, queryWords, score } from "@/lib/session-match";
 
 /** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
@@ -31,8 +32,8 @@ type Item = {
   group: "Sessions" | "Messages" | "Actions";
   label: string;
   hint?: ReactNode;
-  /** shortcut id from lib/client/shortcuts.ts, shown on the right */
-  combo?: string;
+  /** command from lib/keybindings.ts whose current shortcut shows on the right */
+  combo?: CommandId;
   icon: ReactNode;
   run: () => void;
 };
@@ -62,6 +63,7 @@ export function CommandPalette({
   const [active, setActive] = useState(0);
   const [dark, setDark] = useState(true);
   const messages = useMessageSearch(query, open);
+  const bindings = useBindings();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -85,12 +87,11 @@ export function CommandPalette({
     });
   }, []);
 
-  /* Ctrl+K / Cmd+K toggles from anywhere (capture, so text fields can't swallow it); the event opens it */
+  /* Mod+K toggles from anywhere (capture, so text fields can't swallow it); the event opens it */
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return;
       /* Ctrl+K in a shell kills to end of line */
-      if (e.ctrlKey && !e.metaKey && e.target instanceof Element && e.target.closest(".xterm")) return;
+      if (!isCommand(e, "palette") || terminalOwns(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (panelRef.current) setOpen(false);
@@ -179,7 +180,7 @@ export function CommandPalette({
         id: "a:new",
         group: "Actions",
         label: "New session",
-        combo: "new",
+        combo: "newSession",
         keywords: "new session start create chat",
         icon: <EditPencil width={15} height={15} strokeWidth={1.8} />,
         run: () => {
@@ -469,7 +470,7 @@ export function CommandPalette({
                     ) : (
                       it.combo && (
                         <span className="hidden shrink-0 font-sans text-[11.5px] tabular-nums text-ink-3 pointer-fine:inline" aria-hidden>
-                          {comboFor(it.combo)}
+                          {comboFor(it.combo, isMac(), { bindings })}
                         </span>
                       )
                     )}

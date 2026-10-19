@@ -10,6 +10,11 @@
  * Adding one: add an entry to SETTINGS below. The Settings screen lists it in its section with a control picked
  * from its type; search, reset, export and import pick it up too. */
 
+import { effortOptions } from "./agent-traits";
+import type { AgentId } from "./types";
+import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
+import { TERMINAL_SCHEMES } from "./client/terminal-theme";
+
 export type Scope = "device" | "synced";
 
 export type SectionId = "general" | "appearance" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
@@ -41,7 +46,15 @@ export const SECTIONS: readonly SectionInfo[] = [
       { id: "test", label: "Send test notification", description: "Try every alert that's on.", keywords: ["alerts", "try", "check"] },
     ],
   },
-  { id: "keyboard", label: "Keyboard", description: "Shortcuts on devices with a keyboard.", items: [{ id: "shortcuts", label: "Keyboard shortcuts", keywords: ["keys", "hotkeys", "bindings"] }] },
+  {
+    id: "keyboard",
+    label: "Keyboard",
+    description: "Shortcuts on devices with a keyboard.",
+    items: [
+      { id: "shortcuts", label: "Keyboard shortcuts", keywords: ["keys", "hotkeys", "bindings", "rebind", "keybindings"] },
+      ...COMMANDS.map((c: Command) => ({ id: `cmd:${c.id}`, label: c.label, keywords: ["shortcut", "keys", c.group, ...(c.keywords ?? [])] })),
+    ],
+  },
   { id: "agents", label: "Agents", description: "Agent CLIs, accounts and running terminals.", items: [{ id: "profiles", label: "Profiles and terminals", description: "Accounts, proxies, models and running agents.", keywords: ["claude", "codex", "models", "accounts", "proxy"] }] },
   { id: "git", label: "Git", description: "Diffs, commits, the remote and worktrees." },
   {
@@ -84,21 +97,33 @@ type Common<T> = {
    * Older keys keep their own format so earlier choices survive. */
   storage?: { key: string; parse(raw: string): T | undefined; format(value: T): string; plain?: boolean };
   dom?: Dom;
-  /** listed only while another setting has this value */
+  /** listed only while another setting has this value (or one of these values) */
   showIf?: readonly [key: string, value: unknown];
+  /** not a row of its own: its section edits it with its own controls (still reset, exported and imported) */
+  hidden?: boolean;
 };
 
 export type BooleanSetting = Common<boolean> & { type: "boolean" };
 export type EnumOption<T extends string = string> = { value: T; label: string; hint?: string };
 export type EnumSetting<T extends string = string> = Common<T> & { type: "enum"; options: readonly EnumOption<T>[]; control?: "segmented" | "select" | "swatches" | "palette" };
 export type NumberSetting = Common<number> & { type: "number"; min: number; max: number; step: number; unit?: string; control?: "slider" | "segmented" | "hue" };
-export type StringSetting = Common<string> & { type: "string"; maxLength: number; placeholder?: string; pattern?: RegExp };
+export type StringSetting = Common<string> & {
+  type: "string";
+  maxLength: number;
+  placeholder?: string;
+  pattern?: RegExp;
+  /** the canonical form of a value, or null when it isn't valid */
+  normalize?: (value: string) => string | null;
+  /** how the value reads in an import summary */
+  summary?: (value: string) => string;
+};
 export type ColorSetting = Common<string> & { type: "color" };
 export type SettingDef = BooleanSetting | EnumSetting | NumberSetting | StringSetting | ColorSetting;
 
 const boolean = (d: Omit<BooleanSetting, "type">): BooleanSetting => ({ type: "boolean", ...d });
 const choice = <const T extends string>(d: Omit<EnumSetting<T>, "type">): EnumSetting<T> => ({ type: "enum", ...d });
 const number = (d: Omit<NumberSetting, "type">): NumberSetting => ({ type: "number", ...d });
+const text = (d: Omit<StringSetting, "type">): StringSetting => ({ type: "string", ...d });
 
 /* ── palettes ─────────────────────────────────────────────── */
 
@@ -384,14 +409,133 @@ export const SETTINGS = {
   }),
 
   /* composer */
-  sendWithEnter: boolean({
+  sendShortcut: choice({
     section: "composer",
-    label: "Send with Enter",
-    description: "On: Shift+Enter adds a new line. Off: Enter adds a new line and Ctrl+Enter sends.",
-    keywords: ["submit", "newline", "return key"],
+    group: "Sending",
+    label: "Send with",
+    description: "Ctrl/Cmd+Enter always sends. On phones, Enter adds a new line unless you pick Enter everywhere.",
+    keywords: ["submit", "newline", "new line", "return key", "enter", "ctrl enter", "cmd enter", "keyboard"],
     scope: "device",
-    default: false,
-    storage: { key: "cui:send-enter", ...bit },
+    default: "mod-enter",
+    control: "select",
+    options: [
+      { value: "enter", label: "Enter (Shift+Enter for a new line)" },
+      { value: "mod-enter", label: "Ctrl/Cmd+Enter (Enter for a new line)" },
+      { value: "enter-always", label: "Enter everywhere, phones too" },
+    ],
+    /* the old "Send with Enter" switch stored 1/0 under this key; those choices read as Enter and Ctrl/Cmd+Enter */
+    storage: {
+      key: "cui:send-enter",
+      parse: (raw) => (raw === "1" ? "enter" : raw === "0" ? "mod-enter" : raw === "always" ? "enter-always" : undefined),
+      format: (v) => (v === "enter" ? "1" : v === "mod-enter" ? "0" : "always"),
+    },
+  }),
+  busySend: choice({
+    section: "composer",
+    group: "Sending",
+    label: "Messages sent while the agent works",
+    description: "Stop and send ends the current turn first, then sends.",
+    keywords: ["queue", "interrupt", "steer", "busy", "running", "follow up"],
+    scope: "synced",
+    default: "queue",
+    options: [
+      { value: "queue", label: "Queue" },
+      { value: "interrupt", label: "Stop and send" },
+    ],
+  }),
+  longPaste: choice({
+    section: "composer",
+    group: "Sending",
+    label: "Long pastes",
+    description: "Pasted text over the line limit can ask before it's sent, or go in as a text file.",
+    keywords: ["paste", "clipboard", "attachment", "file", "confirm", "large"],
+    scope: "device",
+    default: "text",
+    control: "select",
+    options: [
+      { value: "text", label: "Paste as text" },
+      { value: "confirm", label: "Ask before sending" },
+      { value: "attach", label: "Attach as a file" },
+    ],
+  }),
+  longPasteLines: number({
+    section: "composer",
+    group: "Sending",
+    label: "Long paste limit",
+    keywords: ["paste", "lines", "threshold"],
+    scope: "device",
+    default: 200,
+    min: 20,
+    max: 1000,
+    step: 10,
+    unit: " lines",
+    control: "slider",
+    showIf: ["longPaste", ["confirm", "attach"]],
+  }),
+
+  spellCheck: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Spell check",
+    description: "Underline misspelled words in the message box.",
+    keywords: ["spelling", "spellcheck", "typos"],
+    scope: "device",
+    default: true,
+  }),
+  phoneAutocorrect: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Autocorrect on phones",
+    description: "Off suits code: no autocorrect and no automatic capitals.",
+    keywords: ["autocapitalize", "capitals", "keyboard", "mobile", "code"],
+    scope: "device",
+    default: true,
+  }),
+  composerMaxLines: number({
+    section: "composer",
+    group: "Typing",
+    label: "Message box height",
+    description: "How many lines it grows to before it scrolls.",
+    keywords: ["max height", "lines", "rows", "textarea", "size"],
+    scope: "device",
+    default: 8,
+    min: 3,
+    max: 24,
+    step: 1,
+    unit: " lines",
+    control: "slider",
+  }),
+  rememberDrafts: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Remember drafts",
+    description: "Keep unsent text for each session on this device, across reloads.",
+    keywords: ["draft", "unsent", "save", "restore"],
+    scope: "device",
+    default: true,
+  }),
+
+  effortClaude: choice({
+    section: "composer",
+    group: "Reasoning effort",
+    label: "Claude",
+    description: "Used when a session has no effort of its own. A profile's default wins.",
+    keywords: ["effort", "thinking", "reasoning", "default"],
+    scope: "synced",
+    default: "default",
+    options: [{ value: "default", label: "Default" }, ...effortOptions("claude").map((o) => ({ value: o.key, label: o.name }))],
+    control: "select",
+  }),
+  effortCodex: choice({
+    section: "composer",
+    group: "Reasoning effort",
+    label: "Codex",
+    description: "Used when a session has no effort of its own. A profile's default wins.",
+    keywords: ["effort", "reasoning", "default"],
+    scope: "synced",
+    default: "default",
+    options: [{ value: "default", label: "Default" }, ...effortOptions("codex").map((o) => ({ value: o.key, label: o.name }))],
+    control: "select",
   }),
 
   /* terminal */
@@ -403,6 +547,164 @@ export const SETTINGS = {
     scope: "device",
     default: true,
     storage: { key: "cui:term-docked", parse: (raw) => raw !== "sheet", format: (v) => (v ? "dock" : "sheet") },
+  }),
+  terminalFont: choice({
+    section: "terminal",
+    group: "Text",
+    label: "Font",
+    description: "Code font follows Appearance.",
+    keywords: ["typeface", "font family", "monospace"],
+    scope: "synced",
+    default: "code",
+    control: "select",
+    options: [
+      { value: "code", label: "Code font" },
+      { value: "jetbrains", label: "JetBrains Mono" },
+      { value: "geist-mono", label: "Geist Mono" },
+      { value: "fira-code", label: "Fira Code" },
+      { value: "system", label: "System monospace" },
+    ],
+  }),
+  terminalFontSize: number({
+    section: "terminal",
+    group: "Text",
+    label: "Font size",
+    description: "A− and A+ in the terminal change it too.",
+    keywords: ["text size", "zoom", "bigger", "smaller"],
+    scope: "device",
+    default: 13,
+    min: 8,
+    max: 24,
+    step: 1,
+    unit: "px",
+    control: "slider",
+    /* the terminal's A-/A+ buttons stored a bare number here */
+    storage: { key: "cui:term-font", parse: (raw) => (/^\d+(\.\d+)?$/.test(raw) ? Number(raw) : undefined), format: (v) => String(v) },
+  }),
+  terminalLineHeight: number({
+    section: "terminal",
+    group: "Text",
+    label: "Line height",
+    keywords: ["spacing", "leading", "rows"],
+    scope: "device",
+    default: 1.12,
+    min: 1,
+    max: 1.6,
+    step: 0.02,
+    control: "slider",
+  }),
+  terminalCursor: choice({
+    section: "terminal",
+    group: "Cursor",
+    label: "Cursor style",
+    keywords: ["caret", "block", "bar", "underline", "beam"],
+    scope: "synced",
+    default: "block",
+    options: [
+      { value: "block", label: "Block" },
+      { value: "bar", label: "Bar" },
+      { value: "underline", label: "Underline" },
+    ],
+  }),
+  terminalCursorBlink: boolean({
+    section: "terminal",
+    group: "Cursor",
+    label: "Blinking cursor",
+    keywords: ["caret", "blink", "flash"],
+    scope: "synced",
+    default: true,
+  }),
+  terminalTheme: choice({
+    section: "terminal",
+    group: "Colors",
+    label: "Color scheme",
+    description: "App colors follow your palette and light or dark theme.",
+    keywords: ["theme", "colors", "palette", "ansi", ...TERMINAL_SCHEMES.map((t) => t.label.toLowerCase())],
+    scope: "synced",
+    default: "app",
+    control: "select",
+    options: [{ value: "app", label: "App colors" }, ...TERMINAL_SCHEMES.map((t) => ({ value: t.id, label: t.label }))],
+  }),
+  terminalCopyOnSelect: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Copy on select",
+    description: "Selected text goes to the clipboard right away.",
+    keywords: ["clipboard", "selection", "mouse"],
+    scope: "device",
+    default: false,
+  }),
+  terminalRightClickPaste: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Right-click pastes",
+    description: "Copies the selection if there is one. Long-press still opens the menu.",
+    keywords: ["clipboard", "context menu", "mouse", "paste"],
+    scope: "device",
+    default: false,
+  }),
+  terminalOptionMeta: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Option as Meta on a Mac",
+    description: "Option works as Alt, for word jumps in the shell. Off types characters like é.",
+    keywords: ["alt", "meta", "macos", "option key"],
+    scope: "device",
+    default: true,
+  }),
+  terminalBell: choice({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Bell",
+    description: "When a program rings the terminal bell.",
+    keywords: ["beep", "alert", "sound", "flash"],
+    scope: "synced",
+    default: "none",
+    options: [
+      { value: "none", label: "None" },
+      { value: "visual", label: "Flash" },
+      { value: "sound", label: "Sound" },
+    ],
+  }),
+  terminalScrollback: number({
+    section: "terminal",
+    group: "Performance",
+    label: "Scrollback",
+    description: "Lines kept above the screen in each terminal.",
+    keywords: ["history", "buffer", "lines", "memory"],
+    scope: "device",
+    default: 10000,
+    min: 1000,
+    max: 100000,
+    step: 1000,
+    control: "slider",
+  }),
+  terminalWebgl: boolean({
+    section: "terminal",
+    group: "Performance",
+    label: "GPU rendering",
+    description: "Turn off if terminal text looks garbled or blank on this device.",
+    keywords: ["webgl", "renderer", "graphics", "gpu", "blurry"],
+    scope: "device",
+    default: true,
+  }),
+
+  /* keyboard */
+  keybindings: text({
+    section: "keyboard",
+    label: "Keyboard shortcuts",
+    description: "Shortcuts you changed on this device.",
+    keywords: ["keys", "hotkeys", "bindings"],
+    scope: "device",
+    default: "{}",
+    maxLength: 8000,
+    hidden: true,
+    normalize: normalizeBindingsText,
+    summary: (v) => {
+      const n = Object.keys(parseBindings(v)).length;
+      return n ? `${n} changed` : "Defaults";
+    },
+    storage: { key: "cui:keys", parse: (raw) => raw, format: (v) => v },
   }),
 
   /* conversation */
@@ -767,6 +1069,27 @@ export function settingsIn(section: SectionId): SettingWithKey[] {
 
 export const sectionInfo = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
 
+/** False while the setting's `showIf` doesn't hold. */
+export function isShown(def: SettingDef, values: Settings): boolean {
+  if (!def.showIf) return true;
+  const [key, want] = def.showIf;
+  const v = values[key as SettingKey];
+  return Array.isArray(want) ? want.includes(v) : v === want;
+}
+
+/** The setting that holds an agent's default reasoning effort, for agents that have levels. */
+export const EFFORT_SETTING: Partial<Record<AgentId, "effortClaude" | "effortCodex">> = { claude: "effortClaude", codex: "effortCodex" };
+
+/** Settings files from older versions: renamed or replaced keys, read as their new form. Current keys win. */
+export function migrateLegacy(obj: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...obj };
+  if ("sendWithEnter" in out) {
+    if (typeof out.sendWithEnter === "boolean" && !("sendShortcut" in out)) out.sendShortcut = out.sendWithEnter ? "enter" : "mod-enter";
+    delete out.sendWithEnter;
+  }
+  return out;
+}
+
 export type SearchHit = { section: SectionId; settings: SettingKey[]; items: string[] };
 
 /** Settings and section rows whose label, description or keywords contain every word of the query.
@@ -781,7 +1104,7 @@ export function searchSettings(query: string): SearchHit[] {
   return SECTIONS.flatMap((s) => {
     const settings = SETTING_KEYS.filter((k) => {
       const d = SETTINGS[k] as SettingDef;
-      return d.section === s.id && hit(d.label, d.description, d.keywords, d.group, s.label);
+      return d.section === s.id && !d.hidden && hit(d.label, d.description, d.keywords, d.group, s.label);
     });
     const items = (s.items ?? []).filter((i) => hit(i.label, i.description, i.keywords, s.label)).map((i) => i.id);
     return settings.length || items.length ? [{ section: s.id, settings, items }] : [];
@@ -816,6 +1139,10 @@ export function parseValue(def: SettingDef, value: unknown): Parsed<unknown> {
       return { ok: true, value: roundTo(Math.min(def.max, Math.max(def.min, value)), def.step, def.min) };
     case "string": {
       if (typeof value !== "string") return { ok: false, error: "must be text" };
+      if (def.normalize) {
+        const n = def.normalize(value);
+        return n !== null && n.length <= def.maxLength ? { ok: true, value: n } : { ok: false, error: "isn't in the expected format" };
+      }
       const v = value.slice(0, def.maxLength);
       return def.pattern && !def.pattern.test(v) ? { ok: false, error: "isn't in the expected format" } : { ok: true, value: v };
     }
@@ -907,6 +1234,7 @@ export function formatValue(def: SettingDef, value: unknown): string {
   if (def.type === "boolean") return value ? "On" : "Off";
   if (def.type === "enum") return def.options.find((o) => o.value === value)?.label ?? String(value);
   if (def.type === "number") return `${value}${def.unit ?? ""}`;
+  if (def.type === "string" && def.summary) return def.summary(String(value));
   return String(value);
 }
 
@@ -931,7 +1259,7 @@ export function parseSettingsFile(text: string): ImportParse {
   const root = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
   if (!root) return { ok: false, error: "That file has no settings in it." };
   const body = root.kind === EXPORT_KIND || ("settings" in root && typeof root.settings === "object") ? root.settings : root;
-  const { values, skipped } = pickValid(body);
+  const { values, skipped } = pickValid(body && typeof body === "object" && !Array.isArray(body) ? migrateLegacy(body as Record<string, unknown>) : body);
   if (!Object.keys(values).length) return { ok: false, error: "That file has no agent-u settings in it." };
   return { ok: true, values, skipped };
 }
