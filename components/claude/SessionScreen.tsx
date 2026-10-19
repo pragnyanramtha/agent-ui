@@ -37,6 +37,8 @@ import { TaskPill } from "./TaskPill";
 import { latestTasks, showTasks } from "@/lib/client/tasks";
 import { summarizeTool } from "@/lib/client/tools";
 import type { PendingAsk } from "@/lib/types";
+import { useSessionPalette } from "./useSessionCommands";
+import { chipModel } from "@/lib/model-chip";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -424,6 +426,34 @@ export function SessionScreen({
     effortRef.current = e || fallbackEffort;
     if (live) void control("effort", effortRef.current);
   };
+
+  useSessionPalette({
+    id,
+    agent,
+    agentName,
+    openPanel: setPanel,
+    togglePanel,
+    changes: changes.length,
+    hasFolder: Boolean(view.cwd),
+    exportable: view.entries.length > 0,
+    onHandoff: view.status === "open" ? () => setHandoffOpen(true) : null,
+    onStop: busy && (run || terminal) ? () => (live ? void control("interrupt") : void pressKey("Escape")) : null,
+    models: profileModels(profileInfo, agent === "claude" ? MODELS : agentModels),
+    model,
+    defaultModel: chipModel(null, profileInfo, usage?.model).model,
+    onModel: (m) => {
+      setLocalModel(m || null);
+      if (live) void control("model", m);
+    },
+    mode,
+    onMode: (m) => {
+      setLocalMode(m);
+      if (live) void control("mode", m);
+    },
+    effort: localEffort,
+    defaultEffort: fallbackEffort || null,
+    onEffort: pickEffort,
+  });
 
   const closeMenu = () => {
     setMenuOpen(false);

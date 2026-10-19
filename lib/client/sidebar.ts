@@ -99,6 +99,41 @@ export function absoluteTime(ms: number, now: number, locale?: string, fmt: Time
   return d.toLocaleDateString(locale, { year: "2-digit", month: "numeric", day: "numeric" });
 }
 
+/* ── moving between sessions ──────────────────────────────── */
+
+type Listed = Sortable & Pick<SessionSummary, "cwd" | "project" | "agent" | "pinned" | "archived">;
+
+/** Sessions in the order the sidebar lists them: Pinned, then by project or the flat list (grouped as it is),
+ * without archived or snoozed ones. Folded projects and "Show more" don't matter here. */
+export function sidebarOrder<T extends Listed>(rows: readonly T[], o: { view: "project" | "flat"; sort: SidebarSort; group?: RecentsGroup; asleep?: (s: T) => boolean; now?: number }): T[] {
+  const awake = rows.filter((s) => !s.archived && !o.asleep?.(s));
+  const pinned = sortSessions(
+    awake.filter((s) => s.pinned),
+    o.sort,
+  );
+  const rest = awake.filter((s) => !s.pinned);
+  const tail = o.view === "project" ? groupByProject(rest, o.sort).flatMap((g) => g.rows) : groupRows(sortSessions(rest, o.sort), o.group ?? "none", o.now ?? Date.now()).flatMap(([, list]) => list);
+  return [...pinned, ...tail];
+}
+
+/** The id `step` places from `current` in `ids`, wrapping at the ends; the first (or last) when `current` isn't listed. */
+export function stepIn(ids: readonly string[], current: string | null, step: 1 | -1): string | null {
+  if (!ids.length) return null;
+  const i = current ? ids.indexOf(current) : -1;
+  if (i < 0) return step > 0 ? ids[0] : ids[ids.length - 1];
+  return ids[(i + step + ids.length) % ids.length];
+}
+
+export type Attention = "now" | "later" | null;
+
+/** The next session after `current` that waits on you, wrapping around: approvals and questions ("now") before
+ * failed or finished-unseen turns ("later"). Null when nothing else needs you. */
+export function nextNeedingYou(ids: readonly string[], current: string | null, attention: (id: string) => Attention): string | null {
+  const at = current ? ids.indexOf(current) : -1;
+  const ring = [...ids.slice(at + 1), ...ids.slice(0, Math.max(0, at))];
+  return ring.find((id) => attention(id) === "now") ?? ring.find((id) => attention(id) === "later") ?? null;
+}
+
 /* ── roving focus ─────────────────────────────────────────── */
 
 /** Where a key moves focus in a list of `count` items from `index` (-1: nothing focused yet). Null: not a move key.
