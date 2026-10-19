@@ -27,10 +27,11 @@ jobs:
       matrix:
         node: [22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
+          package-manager-cache: false
       - name: Enable pnpm (version from packageManager)
         # the corepack bundled with older Node releases can't verify newer pnpm signatures
         run: |
@@ -40,7 +41,7 @@ jobs:
       - name: Locate pnpm store
         id: pnpm-store
         run: echo "dir=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-node${{ matrix.node }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -54,10 +55,11 @@ jobs:
     name: Offline end-to-end (Gemini CLI, canned responses)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          package-manager-cache: false
       - name: Enable pnpm (version from packageManager)
         run: |
           npm install -g corepack@latest
@@ -66,7 +68,7 @@ jobs:
       - name: Locate pnpm store
         id: pnpm-store
         run: echo "dir=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ steps.pnpm-store.outputs.dir }}
           key: pnpm-${{ runner.os }}-node22-${{ hashFiles('pnpm-lock.yaml') }}
