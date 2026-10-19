@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readJson, str } from "@/lib/server/http";
 import { sessionCwd, turnRunning } from "@/lib/server/checkpoints";
-import { checkpoint, commitAll, GitError, listCheckpoints, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
+import { checkpoint, checkpointSkip, commitAll, GitError, listCheckpoints, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const st = await status(cwd);
     if (!st) return NextResponse.json({ repo: null, cwd });
-    return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session) });
+    return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session), checkpointSkip: checkpointSkip(st.root, session) });
   } catch (err) {
     return fail(err);
   }
