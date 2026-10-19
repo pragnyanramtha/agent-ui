@@ -4,8 +4,8 @@ import type { Block } from "./turns";
 export const WINDOW_INITIAL = 40;
 /** Older blocks added each time the reader nears the top. */
 export const WINDOW_STEP = 60;
-/** Blocks added per frame while find fills in the whole thread. */
-export const WINDOW_FILL_STEP = 200;
+/** Blocks added per frame while find fills in the whole thread: about 50 ms of work each on a laptop. */
+export const WINDOW_FILL_STEP = 100;
 
 /**
  * Index of the first block to render. The window is remembered by the key of its first block, so history

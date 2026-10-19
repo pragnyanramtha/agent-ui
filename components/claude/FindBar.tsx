@@ -35,20 +35,20 @@ function findRanges(root: Element, q: string): Range[] {
  * Find in the loaded messages of a session (Ctrl/Cmd+F). Matches are painted with the CSS
  * Custom Highlight API, so React's DOM is never touched. Collapsed tool output isn't searched;
  * folded turns and collapsed code blocks are, and the one holding the current match opens. Opening find
- * renders the whole thread (a long one renders its newest part first).
+ * renders the whole thread (a long one renders its newest part first) and searches once it is all there.
  */
 export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [count, setCount] = useState(0);
+  /* a long thread is still rendering its older messages; searching waits for them instead of redoing it per slice */
+  const [filling, setFilling] = useState(false);
   const [index, setIndex] = useState(0);
   const ranges = useRef<Range[]>([]);
   const indexRef = useRef(index);
   indexRef.current = index;
   const qRef = useRef(q);
   qRef.current = q;
-  /* the reader hasn't moved off the first match yet, so it may still change while the thread fills in */
-  const pristine = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const supported = typeof window !== "undefined" && Boolean(highlights());
@@ -63,7 +63,11 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       const at = document.activeElement;
       if (!input.current) opener.current = at instanceof HTMLElement && at !== document.body ? at : null;
       setOpen(true);
-      scope.current.querySelector('[role="log"]')?.dispatchEvent(new Event(SHOW_ALL_EVENT));
+      const log = scope.current.querySelector('[role="log"]');
+      if (log) {
+        setFilling(true);
+        log.dispatchEvent(new Event(SHOW_ALL_EVENT));
+      }
       requestAnimationFrame(() => input.current?.select());
     };
     window.addEventListener("keydown", onKey);
@@ -132,14 +136,12 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
     if (!open) return;
     const log = scope.current?.querySelector('[role="log"]');
     if (!log) return;
+    if (filling) return show([], 0);
     const run = (fresh: boolean) => {
       const list = q.trim() ? findRanges(log, q.trim()) : [];
       const i = !fresh && indexRef.current < list.length ? indexRef.current : 0;
       show(list, i);
-      if (fresh) {
-        pristine.current = true;
-        reveal(list[0]);
-      }
+      if (fresh) reveal(list[0]);
     };
     run(true);
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -148,19 +150,25 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       t = setTimeout(() => run(false), 250);
     });
     mo.observe(log, { childList: true, subtree: true, characterData: true });
-    /* earlier messages rendered above: the first match may be one of them */
-    const filled = () => {
-      if (!pristine.current) return;
-      clearTimeout(t);
-      run(true);
-    };
-    log.addEventListener(SHOWN_ALL_EVENT, filled);
     return () => {
       mo.disconnect();
       clearTimeout(t);
-      log.removeEventListener(SHOWN_ALL_EVENT, filled);
     };
-  }, [open, q, scope, show, reveal]);
+  }, [open, q, filling, scope, show, reveal]);
+
+  useEffect(() => {
+    const log = scope.current?.querySelector('[role="log"]');
+    if (!open || !log) return;
+    const done = () => setFilling(false);
+    if (log.hasAttribute("data-all")) done();
+    log.addEventListener(SHOWN_ALL_EVENT, done);
+    /* never left waiting if the thread goes away mid-fill */
+    const t = setTimeout(done, 20_000);
+    return () => {
+      log.removeEventListener(SHOWN_ALL_EVENT, done);
+      clearTimeout(t);
+    };
+  }, [open, scope]);
 
   useEffect(() => {
     if (!open) return;
@@ -192,7 +200,6 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
     const n = ranges.current.length;
     if (!n) return;
     const next = (index + d + n) % n;
-    pristine.current = false;
     setIndex(next);
     reveal(ranges.current[next]);
   };
@@ -224,7 +231,7 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
         className="w-44 bg-transparent text-[16px] text-ink sm:text-sm outline-none placeholder:text-ink-3 sm:w-56"
       />
       <span className="min-w-12 text-right text-xs text-ink-3 tabular-nums" aria-live="polite">
-        {q.trim() ? (count ? `${index + 1}/${count >= MAX ? `${MAX}+` : count}` : "0/0") : ""}
+        {q.trim() ? (filling ? "Searching…" : count ? `${index + 1}/${count >= MAX ? `${MAX}+` : count}` : "0/0") : ""}
       </span>
       <button type="button" onClick={() => step(-1)} aria-label="Previous match" disabled={!count} className="icon-btn size-7 disabled:opacity-40">
         <NavArrowUp width={15} height={15} strokeWidth={1.8} />

@@ -28,7 +28,7 @@ import { estimateHeight, growWindow, windowStart, WINDOW_FILL_STEP, WINDOW_INITI
 export const RELEASE_PIN_EVENT = "cui:release-pin";
 /** Dispatched on the thread's scroll box to render every loaded message, so find can search them all. */
 export const SHOW_ALL_EVENT = "cui:show-all";
-/** Dispatched back on the scroll box once every loaded message is rendered. */
+/** Dispatched back on the scroll box once every loaded message is rendered; from then on it carries `data-all`. */
 export const SHOWN_ALL_EVENT = "cui:shown-all";
 
 const GAP_MS = 30 * 60_000;
@@ -464,9 +464,13 @@ export function Thread({
   if (keys.length && keys[start] !== first) setFirst(keys[start]);
   const windowRef = useRef({ keys, start });
   windowRef.current = { keys, start };
-  const grow = useCallback((step: number) => {
+  /* Scrolling grows the window in a transition, so it never holds up input. Find's fill is urgent: typing in
+   * the find box would otherwise restart every slice before it lands. */
+  const grow = useCallback((step: number, urgent = false) => {
     const { keys, start } = windowRef.current;
-    if (start > 0) startTransition(() => setFirst(growWindow(keys, start, step)));
+    if (start <= 0) return;
+    if (urgent) setFirst(growWindow(keys, start, step));
+    else startTransition(() => setFirst(growWindow(keys, start, step)));
   }, []);
   const [filling, setFilling] = useState(false);
 
@@ -595,7 +599,7 @@ export function Thread({
       scrollRef.current?.dispatchEvent(new Event(SHOWN_ALL_EVENT));
       return;
     }
-    const raf = requestAnimationFrame(() => grow(WINDOW_FILL_STEP));
+    const raf = requestAnimationFrame(() => grow(WINDOW_FILL_STEP, true));
     return () => cancelAnimationFrame(raf);
   }, [filling, start, grow]);
 
@@ -641,7 +645,7 @@ export function Thread({
 
   return (
     <div className="thread-prose relative min-h-0 flex-1">
-      <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain" role="log" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
+      <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain" role="log" aria-live="polite" aria-relevant="additions" aria-busy={busy} data-all={start === 0 || undefined}>
         <div ref={contentRef} className="mx-auto flex w-full max-w-(--thread-w) flex-col gap-(--thread-gap) px-4 pt-5 sm:px-8 sm:pt-8" style={{ paddingBottom: bottomPad + 24 }}>
           {(start > 0 || view.cursor !== null) && (
             <div className="relative flex justify-center">
