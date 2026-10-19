@@ -175,6 +175,8 @@ export const turnState = (key: string) => runs.get(key)?.state ?? null;
 export function failTurn(run: Run, error: string) {
   run.failure = error;
   if (run.state.status === "running") return;
+  /* a newer turn owns the key (and the listeners this one handed over): a late error from this one isn't its news */
+  if (runs.has(run.key) && runs.get(run.key) !== run) return;
   run.state = { ...run.state, status: "error", error };
   /* a clean finish may already have been forgotten */
   if (!runs.has(run.key)) runs.set(run.key, run);
@@ -221,6 +223,7 @@ export function rekeyTurn(from: string, to: string) {
 export function killGroup(child: ChildProcess) {
   const pid = child.pid;
   if (!pid) return;
+  const members = membersOf(-pid, processTable());
   const signal = (sig: NodeJS.Signals) => {
     try {
       process.kill(-pid, sig);
@@ -233,12 +236,18 @@ export function killGroup(child: ChildProcess) {
     }
   };
   signal("SIGTERM");
-  setTimeout(() => signal("SIGKILL"), 5000).unref();
+  setTimeout(() => {
+    /* once Node has reaped the child its number can be reused: only a group that still holds one of ours is ours */
+    const reaped = child.exitCode !== null || child.signalCode !== null;
+    if (!reaped || !members.length || alive(-pid, members, processTable())) signal("SIGKILL");
+  }, 5000).unref();
 }
 
-/** ppid and process group of every process (empty without /proc) */
-function processTable(): Map<number, { ppid: number; pgid: number }> {
-  const out = new Map<number, { ppid: number; pgid: number }>();
+type Proc = { ppid: number; pgid: number; start: string };
+
+/** ppid, process group and start time of every process (empty without /proc) */
+function processTable(): Map<number, Proc> {
+  const out = new Map<number, Proc>();
   let names: string[];
   try {
     names = fs.readdirSync("/proc");
@@ -249,9 +258,9 @@ function processTable(): Map<number, { ppid: number; pgid: number }> {
     if (!/^\d+$/.test(n)) continue;
     try {
       const stat = fs.readFileSync(`/proc/${n}/stat`, "utf8");
-      /* the command name (field 2) can hold spaces and parentheses; state, ppid and pgrp follow it */
+      /* the command name (field 2) can hold spaces and parentheses; state, ppid, pgrp and (field 22) starttime follow it */
       const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-      out.set(Number(n), { ppid: Number(f[1]), pgid: Number(f[2]) });
+      out.set(Number(n), { ppid: Number(f[1]), pgid: Number(f[2]), start: f[19] });
     } catch {
       /* gone */
     }
@@ -260,8 +269,7 @@ function processTable(): Map<number, { ppid: number; pgid: number }> {
 }
 
 /** What to signal so `pid` and everything it started end: the process groups inside its tree (negative), else single pids. */
-function treeTargets(pid: number): number[] {
-  const table = processTable();
+function treeTargets(pid: number, table: Map<number, Proc>): number[] {
   const kids = new Map<number, number[]>();
   for (const [p, { ppid }] of table) kids.set(ppid, [...(kids.get(ppid) ?? []), p]);
   const tree = new Set([pid]);
@@ -289,23 +297,37 @@ function treeTargets(pid: number): number[] {
 export function killTree(child: ChildProcess) {
   const pid = child.pid;
   if (!pid) return;
-  const targets = new Set(treeTargets(pid));
-  const signal = (sig: NodeJS.Signals) => {
-    for (const t of targets) {
-      try {
-        process.kill(t, sig);
-      } catch {
-        /* gone */
-      }
-    }
-  };
-  signal("SIGTERM");
+  const before = processTable();
+  const targets = new Map(treeTargets(pid, before).map((t) => [t, membersOf(t, before)]));
+  for (const t of targets.keys()) kill(t, "SIGTERM");
   killGroup(child);
   setTimeout(() => {
+    const now = processTable();
     /* only while the pid is still ours: once Node has reaped it, it may belong to someone else */
-    if (child.exitCode === null && child.signalCode === null) for (const t of treeTargets(pid)) targets.add(t);
-    signal("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) for (const t of treeTargets(pid, now)) if (!targets.has(t)) targets.set(t, membersOf(t, now));
+    for (const [t, members] of targets) if (alive(t, members, now)) kill(t, "SIGKILL");
   }, 5000).unref();
+}
+
+/** the processes a target (a pid, or a negative process group) stands for, with start times to tell a reused number apart */
+function membersOf(target: number, table: Map<number, Proc>) {
+  const out: { pid: number; start: string }[] = [];
+  for (const [p, info] of table) if (target > 0 ? p === target : info.pgid === -target) out.push({ pid: p, start: info.start });
+  return out;
+}
+
+const alive = (target: number, members: { pid: number; start: string }[], table: Map<number, Proc>) =>
+  members.some((m) => {
+    const now = table.get(m.pid);
+    return now?.start === m.start && (target > 0 || now.pgid === -target);
+  });
+
+function kill(target: number, sig: NodeJS.Signals) {
+  try {
+    process.kill(target, sig);
+  } catch {
+    /* gone */
+  }
 }
 
 export function stopTurn(key: string) {
