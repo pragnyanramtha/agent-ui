@@ -15,6 +15,8 @@ import { AGENT_LABEL, type AgentId, type PermissionMode, type ProfileInfo } from
 import { withAttachments } from "@/lib/attachments";
 import { AttachmentChips, useAttachments } from "./Attachments";
 import { effortLabel, effortOptions } from "@/lib/agent-traits";
+import { insertMention, mentionAt } from "@/lib/client/mentions";
+import { useFileSearch } from "@/lib/client/useFileSearch";
 
 /* The composer pill: one calm surface with a "+" menu on the left, the text
  * in the middle, and one quiet agent/model/approvals picker plus send on the
@@ -48,7 +50,7 @@ export function modelLabel(model: string | null) {
 
 export type AgentOption = { id: AgentId; label: string; installed: boolean };
 
-type Menu = "slash" | "pick" | "plus" | "effort" | null;
+type Menu = "slash" | "mention" | "pick" | "plus" | "effort" | null;
 
 const KIND_LABEL: Record<SlashItem["kind"], string> = { app: "This app", builtin: "Claude Code", command: "Your commands", skill: "Skills" };
 
@@ -144,6 +146,7 @@ export function Composer({
   effort = "",
   onEffortChange,
   defaultEffort = null,
+  root,
 }: {
   draftKey: string;
   placeholder: string;
@@ -193,8 +196,13 @@ export function Composer({
   onEffortChange?: (effort: string) => void;
   /** the profile's default level, named on the Default row */
   defaultEffort?: string | null;
+  /** the session's folder: @ lists its files */
+  root?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const [caret, setCaret] = useState(0);
+  /* where the caret goes once a picked path is in the box */
+  const caretAfter = useRef<number | null>(null);
   const [sendWithEnter] = useSetting("sendWithEnter");
   /* index into `history` while stepping through it with the arrows; null when not recalling */
   const recall = useRef<number | null>(null);
@@ -285,9 +293,19 @@ export function Composer({
   /* "Commands" in the + menu opens the list without touching the text; picking one prefixes it */
   const forcedSlash = menu === "slash";
   const commands = slashQuery !== undefined ? rankCommands(allCommands, slashQuery) : forcedSlash ? rankCommands(allCommands, "") : [];
-  const openMenu: Menu = menu ?? (slashQuery !== undefined && !slashHidden ? "slash" : null);
+  const mention = root && slashQuery === undefined ? mentionAt(draft, caret) : null;
+  const found = useFileSearch(root, mention?.query);
+  const openMenu: Menu = menu ?? (slashHidden ? null : slashQuery !== undefined ? "slash" : mention ? "mention" : null);
 
-  useEffect(() => setActive(0), [slashQuery, forcedSlash]);
+  useEffect(() => setActive(0), [slashQuery, forcedSlash, mention?.query]);
+
+  useLayoutEffect(() => {
+    const at = caretAfter.current;
+    if (at === null) return;
+    caretAfter.current = null;
+    inputRef.current?.setSelectionRange(at, at);
+    setCaret(at);
+  }, [draft]);
 
   /* menus open toward the side of the screen with more room */
   useLayoutEffect(() => {
@@ -389,10 +407,19 @@ export function Composer({
     inputRef.current?.focus();
   };
 
+  const pickMention = (rel: string) => {
+    if (!mention) return;
+    const next = insertMention(draft, mention.start, mention.end, rel);
+    caretAfter.current = next.caret;
+    setDraft(next.text);
+    inputRef.current?.focus();
+  };
+
   const currentMode = MODES.find((m) => m.key === mode) ?? MODES[0];
   const efforts = onEffortChange ? effortOptions(agent) : [];
   const effortName = effortLabel(agent, effort || defaultEffort);
   const slashOpen = openMenu === "slash";
+  const mentionOpen = openMenu === "mention";
   /* with `agents` (even while it loads) the agent is choosable; the Claude section is always there */
   const pickable = agents && onAgentChange;
   const agentLabel = agents?.find((a) => a.id === agent)?.label ?? AGENT_LABEL[agent];
@@ -508,6 +535,46 @@ export function Composer({
           </div>
           {commands.length === 0 && (
             <p className="px-2.5 py-2 text-[12.5px] text-ink-3">{allCommands.length ? `No command matches “${slashQuery}”.` : "Loading commands…"}</p>
+          )}
+        </MenuShell>
+      )}
+
+      {mentionOpen && (
+        <MenuShell placement={placement} maxHeight={Math.min(menuMax, 416)}>
+          <div role="listbox" id={`${uid}-files`} aria-label="Files">
+            {found.files.map((f, i) => {
+              const cut = f.lastIndexOf("/");
+              return (
+                <button
+                  key={f}
+                  id={`${uid}-file-${i}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  tabIndex={-1}
+                  ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => pickMention(f)}
+                  className={`flex h-10 w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left transition-colors duration-75 sm:h-8 ${i === active ? "bg-hover" : ""}`}
+                >
+                  <span className="shrink-0 truncate font-mono text-[13px] text-ink sm:text-[12.5px]" translate="no">
+                    {f.slice(cut + 1)}
+                  </span>
+                  {cut > 0 && (
+                    /* rtl keeps the end of a long folder path in view; bdi keeps its characters in order */
+                    <span className="min-w-0 truncate text-[12px] text-ink-3" translate="no" dir="rtl">
+                      <bdi>{f.slice(0, cut)}</bdi>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {found.files.length === 0 && (
+            <p className="px-2.5 py-2 text-[12.5px] text-ink-3">
+              {found.loading ? "Searching files…" : found.error ? "Couldn't list files here." : mention?.query ? `No files match “${mention.query}”.` : "No files here."}
+            </p>
           )}
         </MenuShell>
       )}
@@ -805,9 +872,11 @@ export function Composer({
           readOnly={Boolean(busy)}
           onChange={(e) => {
             setDraft(e.target.value);
+            setCaret(e.target.selectionStart);
             setSlashHidden(false);
             if (menu) setMenu(null);
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onPaste={(e) => {
             const pasted = [...e.clipboardData.files];
             if (!pasted.length) return;
@@ -818,6 +887,24 @@ export function Composer({
           onKeyDown={(e) => {
             /* the keys belong to the input method while it composes (Enter picks a candidate) */
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            /* Enter waits for the list instead of sending a half-typed path */
+            if (mentionOpen && !found.files.length && found.loading && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              return;
+            }
+            if (mentionOpen && found.files.length) {
+              const n = found.files.length;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+                e.preventDefault();
+                pickMention(found.files[Math.min(active, n - 1)]);
+                return;
+              }
+            }
             if (slashOpen && commands.length) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -875,8 +962,8 @@ export function Composer({
           placeholder={busy ? busyLabel : placeholder}
           aria-label="Message"
           aria-busy={Boolean(busy) || undefined}
-          aria-controls={slashOpen ? `${uid}-slash` : undefined}
-          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : undefined}
+          aria-controls={slashOpen ? `${uid}-slash` : mentionOpen ? `${uid}-files` : undefined}
+          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : mentionOpen && found.files.length ? `${uid}-file-${Math.min(active, found.files.length - 1)}` : undefined}
           aria-autocomplete="list"
           enterKeyHint="enter"
           className={`composer-input w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-ink outline-none [grid-area:primary] [overflow-wrap:anywhere] sm:text-[15px] sm:pointer-coarse:text-[16px] ${

@@ -693,6 +693,7 @@ export function SessionScreen({
                 setLocalProfile(p);
                 setLocalModel(null);
               }}
+              root={view.cwd || undefined}
               effort={localEffort}
               defaultEffort={profileInfo?.defaultEffort ?? null}
               onEffortChange={pickEffort}

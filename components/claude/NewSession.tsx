@@ -217,6 +217,7 @@ export function NewSession({
               profiles={profiles ?? undefined}
               profile={profile}
               onProfileChange={pickProfile}
+              root={cwd.trim() || undefined}
               effort={effort}
               defaultEffort={profileInfo?.defaultEffort ?? null}
               onEffortChange={setEffort}
