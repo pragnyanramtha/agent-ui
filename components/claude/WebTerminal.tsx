@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
-import { comboFor } from "@/lib/client/shortcuts";
+import { comboFor, isMac } from "@/lib/client/shortcuts";
+import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
 import { oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
+import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -42,6 +44,25 @@ const DOCK_KEY = "cui:term-dock-height";
 const DOCK_MIN = 140;
 const DOCK_DEFAULT = 320;
 const NERD = '"Symbols Nerd Font Mono"';
+
+const LONG_PRESS_MS = 500;
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    /* plain http: no async clipboard */
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+}
 
 const ctrlOf = (ch: string) => {
   const c = ch.toUpperCase().charCodeAt(0);
@@ -388,9 +409,99 @@ export function WebTerminal({
     localStorage.setItem(SIZE_KEY, String(next));
     (t as unknown as { __fit?: () => void }).__fit?.();
   };
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flash = (text: string) => {
+    clearTimeout(noticeTimer.current);
+    setNotice(text);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3200);
+  };
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
   const paste = async () => {
-    const text = await navigator.clipboard?.readText().catch(() => "");
+    let text: string | null = null;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      text = null;
+    }
+    if (text === null) return flash(`The browser blocked paste. Use ${isMac() ? "⌘V" : "Ctrl+Shift+V"} instead.`);
     if (text) termRef.current?.paste(text);
+    termRef.current?.focus();
+  };
+
+  const [menu, setMenu] = useState<{ x: number; y: number; selection: boolean } | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const open = (x: number, y: number) => setMenu({ x, y, selection: Boolean(termRef.current?.hasSelection()) });
+    let pressAt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let start: { x: number; y: number } | null = null;
+    /* Shift+right-click keeps the browser's own menu */
+    const onContext = (e: MouseEvent) => {
+      if (e.shiftKey || !termRef.current) return;
+      e.preventDefault();
+      if (Date.now() - pressAt < 1000) return;
+      open(e.clientX, e.clientY);
+    };
+    /* iOS has no contextmenu on long-press */
+    const onTouchStart = (e: TouchEvent) => {
+      clearTimeout(timer);
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      start = { x: t.clientX, y: t.clientY };
+      timer = setTimeout(() => {
+        if (!start || !termRef.current) return;
+        pressAt = Date.now();
+        open(start.x, start.y + 8);
+      }, LONG_PRESS_MS);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (start && t && Math.hypot(t.clientX - start.x, t.clientY - start.y) > 10) clearTimeout(timer);
+    };
+    const onTouchEnd = () => {
+      clearTimeout(timer);
+      start = null;
+    };
+    host.addEventListener("contextmenu", onContext);
+    host.addEventListener("touchstart", onTouchStart, { passive: true });
+    host.addEventListener("touchmove", onTouchMove, { passive: true });
+    host.addEventListener("touchend", onTouchEnd);
+    host.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      clearTimeout(timer);
+      host.removeEventListener("contextmenu", onContext);
+      host.removeEventListener("touchstart", onTouchStart);
+      host.removeEventListener("touchmove", onTouchMove);
+      host.removeEventListener("touchend", onTouchEnd);
+      host.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    termRef.current?.focus();
+  }, []);
+  const act = async (action: TerminalAction) => {
+    setMenu(null);
+    const t = termRef.current;
+    if (!t) return;
+    const selection = t.getSelection();
+    if (action === "chat") {
+      if (!selection.trim()) return;
+      if (sendToComposer(fenceBlock(selection))) {
+        t.clearSelection();
+        flash("Added to the chat.");
+      } else flash("Open a session to send this to chat.");
+      return;
+    }
+    if (action === "copy") {
+      if (selection) flash((await copyText(selection)) ? "Copied." : "Couldn't copy. Use your copy shortcut instead.");
+    } else if (action === "paste") return void paste();
+    else if (action === "select-all") t.selectAll();
+    else if (action === "clear") t.clear();
+    else if (action === "bottom") t.scrollToBottom();
+    t.focus();
   };
 
   /* a plain shell (or one that ended before saying what it was) restarts fresh; attaches retry the same target */
@@ -468,8 +579,14 @@ export function WebTerminal({
         </div>
         {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
         <div className="relative min-h-0 flex-1">
-          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5" />
+          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" />
           {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          {notice && (
+            <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-[12px] text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              {notice}
+            </p>
+          )}
+          {menu && <TerminalMenu at={menu} hasSelection={menu.selection} onAction={(a) => void act(a)} onClose={closeMenu} />}
         </div>
         <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
           <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-[12.5px] text-ink-2 active:bg-hover-2">
