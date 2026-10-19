@@ -121,6 +121,15 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
         );
         return;
       }
+      /* boxes that scroll on their own inside the thread (a code block, tool output) bring the match into their view first */
+      for (let n = at?.parentElement ?? null; n && n !== log; n = n.parentElement) {
+        if (n.scrollHeight <= n.clientHeight + 1 && n.scrollWidth <= n.clientWidth + 1) continue;
+        const style = getComputedStyle(n);
+        const inner = n.getBoundingClientRect();
+        const b = r.getBoundingClientRect();
+        if (/auto|scroll/.test(style.overflowY) && (b.top < inner.top || b.bottom > inner.bottom)) n.scrollTop += b.top - inner.top - inner.height / 3;
+        if (/auto|scroll/.test(style.overflowX) && (b.left < inner.left || b.right > inner.right)) n.scrollLeft += b.left - inner.left - inner.width / 3;
+      }
       const box = r.getBoundingClientRect();
       const view = log.getBoundingClientRect();
       if (box.top >= view.top + 60 && box.bottom <= view.bottom - 160) return;
