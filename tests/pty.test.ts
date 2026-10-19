@@ -58,7 +58,8 @@ beforeAll(async () => {
 });
 afterAll(() => {
   server?.kill("SIGTERM");
-  if (hasTmux) spawnSync("tmux", ["kill-server"], { env: { ...process.env, TMUX_TMPDIR: home }, stdio: "ignore" });
+  /* without TMUX in the env, kill-server can only reach the test's own socket under TMUX_TMPDIR, never the caller's tmux */
+  if (hasTmux) spawnSync("tmux", ["kill-server"], { env: { ...process.env, TMUX: undefined, TMUX_TMPDIR: home }, stdio: "ignore" });
   fs.rmSync(home, { recursive: true, force: true });
 });
 
