@@ -7,6 +7,7 @@ import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LA
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
 import { isTyping, modalOpen } from "@/lib/client/shortcuts";
+import { useReturnFocus } from "@/lib/client/a11y";
 import { useSetting } from "@/lib/client/settings";
 import { fullDateTime } from "@/lib/time-format";
 
@@ -30,7 +31,7 @@ type Data = { repo: Status | null; cwd: string; checkpoints?: Checkpoint[]; chec
 
 const sizeLabel = (bytes: number) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`);
 
-const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
+const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 const primary = `${btn} bg-ink text-surface`;
 const STATUS_POLL_MS = 20_000;
 const NO_ANSWER = { auto: "No agent answered", claude: "Claude didn't answer", codex: "Codex didn't answer", gemini: "Gemini didn't answer", off: "No agent answered" } as const;
@@ -93,7 +94,7 @@ function ActionBar({
           </button>
         )}
       </div>
-      {main.disabled && <p className="mt-1.5 text-[12px] leading-snug text-ink-3">{main.disabled}</p>}
+      {main.disabled && <p className="mt-1.5 text-xs leading-snug text-ink-3">{main.disabled}</p>}
       {menu && (
         <div
           role="menu"
@@ -167,9 +168,9 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     [session],
   );
 
+  useReturnFocus(ref);
   useEffect(() => {
     void load();
-    ref.current?.focus({ preventScroll: true });
     /* Escape in the composer or another field outside the panel is that field's */
     const onKey = (e: KeyboardEvent) =>
       e.key === "Escape" && !e.defaultPrevented && !modalOpen() && !(isTyping(e.target) && !ref.current?.contains(e.target as Node)) && closeRef.current();
@@ -314,15 +315,15 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     >
       <div className="safe-top flex shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
         <div className="flex h-14 min-w-0 flex-1 items-center gap-2">
-          <span className="text-[14px] font-semibold text-ink">Git</span>
+          <span className="text-base font-semibold text-ink">Git</span>
           {repo?.branch && (
-            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-inset px-2 py-0.5 font-mono text-[12px] text-ink-2 shadow-hairline" translate="no">
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-inset px-2 py-0.5 font-mono text-xs text-ink-2 shadow-hairline" translate="no">
               <GitBranch width={12} height={12} strokeWidth={2} className="shrink-0" aria-hidden />
               <span className="truncate">{repo.branch}</span>
             </span>
           )}
           {repo?.upstream && (repo.ahead > 0 || repo.behind > 0) && (
-            <span className="shrink-0 font-mono text-[12px] text-ink-3 tabular-nums" aria-label={aheadBehind(repo)} title={aheadBehind(repo)}>
+            <span className="shrink-0 font-mono text-xs text-ink-3 tabular-nums" aria-label={aheadBehind(repo)} title={aheadBehind(repo)}>
               {repo.ahead > 0 && <span>↑{repo.ahead}</span>}
               {repo.ahead > 0 && repo.behind > 0 && " "}
               {repo.behind > 0 && <span>↓{repo.behind}</span>}
@@ -347,7 +348,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
               role="tab"
               aria-selected={view === v}
               onClick={() => setView(v)}
-              className={`h-8 rounded-full px-3 text-[13px] font-medium transition-colors duration-150 ${view === v ? "bg-inset text-ink shadow-hairline" : "text-ink-3 hover:text-ink"}`}
+              className={`h-8 rounded-full px-3 text-sm font-medium transition-colors duration-150 ${view === v ? "bg-inset text-ink shadow-hairline" : "text-ink-3 hover:text-ink"}`}
             >
               {label}
               {v === "diff" && dirty > 0 && <span className="ml-1.5 text-[11.5px] text-ink-3 tabular-nums">{dirty}</span>}
@@ -368,8 +369,8 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
             )}
           </p>
         )}
-        {!data && !error && <p className="py-8 text-center text-[13px] text-ink-3">Loading…</p>}
-        {data && !repo && <p className="py-8 text-center text-[13px] text-ink-3">Not a git repository: {data.cwd}</p>}
+        {!data && !error && <p className="py-8 text-center text-sm text-ink-3">Loading…</p>}
+        {data && !repo && <p className="py-8 text-center text-sm text-ink-3">Not a git repository: {data.cwd}</p>}
 
         {repo && view === "diff" && <DiffView key={target.n} session={session} busy={busy} checkpoints={cps} scope={target.scope} checkpoint={target.checkpoint} refreshKey={rev} />}
 
@@ -396,7 +397,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                 )}
               </p>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <button type="button" onClick={() => setShowFiles((v) => !v)} aria-expanded={showFiles} disabled={!dirty} className="flex items-center gap-1.5 text-[13px] text-ink disabled:text-ink-3">
+                <button type="button" onClick={() => setShowFiles((v) => !v)} aria-expanded={showFiles} disabled={!dirty} className="flex items-center gap-1.5 text-sm text-ink disabled:text-ink-3">
                   {dirty ? <NavArrowDown width={12} height={12} strokeWidth={2.4} className={`text-ink-3 transition-transform duration-200 ${showFiles ? "" : "-rotate-90"}`} /> : null}
                   {dirty ? `${dirty} changed ${dirty === 1 ? "file" : "files"}` : "No uncommitted changes"}
                 </button>
@@ -407,7 +408,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                 )}
               </div>
               {showFiles && (
-                <ul className="mb-3 max-h-56 overflow-y-auto rounded-[10px] bg-inset px-2.5 py-1.5 font-mono text-[12px] shadow-hairline">
+                <ul className="mb-3 max-h-56 overflow-y-auto rounded-[10px] bg-inset px-2.5 py-1.5 font-mono text-xs shadow-hairline">
                   {repo.files.slice(0, 300).map((f) => (
                     <li key={f.path} className="flex min-w-0 gap-2 py-0.5">
                       <span className="w-16 shrink-0 text-ink-3">{stateOf(f.state)}</span>
@@ -431,7 +432,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                     rows={Math.min(8, message.split("\n").length)}
                     placeholder="Commit message"
                     aria-label="Commit message"
-                    className={`block w-full resize-none bg-field px-3.5 py-[7px] text-[16px] leading-[22px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:py-1.5 sm:text-[13px] sm:leading-5 ${message.includes("\n") ? "rounded-[14px]" : "rounded-[18px]"} ${message || !canGenerate ? "" : "pr-28"}`}
+                    className={`block w-full resize-none bg-field px-3.5 py-[7px] text-[16px] leading-[22px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:py-1.5 sm:text-sm sm:leading-5 ${message.includes("\n") ? "rounded-[14px]" : "rounded-[18px]"} ${message || !canGenerate ? "" : "pr-28"}`}
                   />
                   {!message && canGenerate && (
                     <button
@@ -452,14 +453,14 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
 
             <section aria-label="Checkpoints">
               <div className="mb-1 flex items-center justify-between gap-2">
-                <h3 className="text-[13px] font-semibold text-ink">Checkpoints</h3>
+                <h3 className="text-sm font-semibold text-ink">Checkpoints</h3>
                 <button type="button" onClick={() => void act("checkpoint", {})} disabled={working !== null} className="text-[12.5px] font-medium text-ink-2 hover:text-ink disabled:opacity-40">
                   {working === "checkpoint" ? "Saving…" : "Save one now"}
                 </button>
               </div>
-              <p className="mb-2 text-[12px] leading-snug text-ink-3">The files as they were before each message you sent from here. Rewinding changes files only, never the conversation or your commits.</p>
+              <p className="mb-2 text-xs leading-snug text-ink-3">The files as they were before each message you sent from here. Rewinding changes files only, never the conversation or your commits.</p>
               {data?.checkpointSkip && (
-                <p className="mb-2 rounded-[10px] bg-inset px-3 py-2 text-[12px] leading-snug text-ink-2 shadow-hairline" title={fullDateTime(data.checkpointSkip.at, timeFmt)}>
+                <p className="mb-2 rounded-[10px] bg-inset px-3 py-2 text-xs leading-snug text-ink-2 shadow-hairline" title={fullDateTime(data.checkpointSkip.at, timeFmt)}>
                   The last checkpoint was skipped: {data.checkpointSkip.reason}. Add them to .gitignore to keep saving checkpoints.
                 </p>
               )}
@@ -473,16 +474,16 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                         <span className="w-10 shrink-0 text-[11.5px] text-ink-3 tabular-nums" title={fullDateTime(cp.at, timeFmt)}>
                           {timeAgo(cp.at)}
                         </span>
-                        <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={cp.label}>
+                        <span className="min-w-0 flex-1 truncate text-sm text-ink" title={cp.label}>
                           {cp.label}
                         </span>
-                        <button type="button" onClick={() => void showSince(cp.id)} aria-expanded={since?.id === cp.id} className="shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink">
+                        <button type="button" onClick={() => void showSince(cp.id)} aria-expanded={since?.id === cp.id} className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium text-ink-2 hover:bg-hover hover:text-ink">
                           Changes since
                         </button>
-                        <button type="button" onClick={() => openDiff("checkpoint", cp.id)} className="shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink">
+                        <button type="button" onClick={() => openDiff("checkpoint", cp.id)} className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium text-ink-2 hover:bg-hover hover:text-ink">
                           Diff
                         </button>
-                        <button type="button" onClick={() => void rewindTo(cp)} disabled={busy || working !== null} title={busy ? "Stop the running turn first" : undefined} className="shrink-0 rounded-full px-2 py-0.5 text-[12px] font-medium text-red-ink hover:bg-red-tint disabled:opacity-40">
+                        <button type="button" onClick={() => void rewindTo(cp)} disabled={busy || working !== null} title={busy ? "Stop the running turn first" : undefined} className="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium text-red-ink hover:bg-red-tint disabled:opacity-40">
                           Rewind
                         </button>
                       </div>
@@ -492,7 +493,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                         </p>
                       )}
                       {since?.id === cp.id && (
-                        <div className="mt-1 ml-12 font-mono text-[12px]">
+                        <div className="mt-1 ml-12 font-mono text-xs">
                           {since.files === null ? (
                             <p className="text-ink-3">Comparing…</p>
                           ) : since.files.length === 0 ? (
@@ -504,7 +505,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                                   <span className="min-w-0 flex-1 truncate text-ink-2" title={f.path}>
                                     {f.path}
                                   </span>
-                                  <span className="diff-tone shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span></>}</span>
+                                  <span className="diff-tone shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-(--add-ink)">+{f.added}</span> <span className="text-(--del-ink)">-{f.removed}</span></>}</span>
                                 </li>
                               ))}
                             </ul>

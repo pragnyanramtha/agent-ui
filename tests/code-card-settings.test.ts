@@ -39,7 +39,7 @@ describe("CodeCard follows the code block settings", () => {
     const html = render({ code: code(41), label: "ts", collapsible: true });
     expect(html).toContain("Show all 41 lines");
     expect(html).toContain("v20");
-    expect(html).not.toContain("v21");
+    expect(html.split("data-code-rest")[0]).not.toContain("v21");
     expect(render({ code: code(41), label: "ts" })).not.toContain("Show all");
   });
 

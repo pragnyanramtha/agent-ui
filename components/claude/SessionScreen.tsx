@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
-import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
+import { OPEN_TERMINAL_EVENT } from "@/lib/client/events";
 import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
 import { appendToDraft, fillTextarea, INSERT_INTO_COMPOSER_EVENT, type InsertIntoComposer } from "@/lib/client/composer-insert";

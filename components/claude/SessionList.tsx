@@ -14,7 +14,7 @@ import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
 import { snoozePresets, wakeLabel } from "@/lib/client/snooze";
 import { toast, type ToastInput } from "@/lib/client/toast";
-import { OPEN_PALETTE_EVENT } from "./CommandPalette";
+import { OPEN_PALETTE_EVENT } from "@/lib/client/events";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";

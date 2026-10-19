@@ -27,7 +27,7 @@ function token(block: string, name: string): Rgb {
 }
 
 describe("ChangesPanel +N/-N counts", () => {
-  const panel = read("components/claude/ChangesPanel.tsx");
+  const panel = read("components/claude/ChangesView.tsx");
   const addLight = parse(/\[--add-ink:(oklch\([^\]]+\))\]/.exec(panel)?.[1] ?? "").rgb;
   const addDarkRef = /dark:\[--add-ink:var\(--([\w-]+)\)\]/.exec(panel)?.[1] ?? "";
 

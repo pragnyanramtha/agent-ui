@@ -12,7 +12,7 @@ import { ContextRing, type ContextUsage } from "./ContextRing";
 import { confirmAsk, promptAsk } from "./Ask";
 import { AgentIcon } from "./AgentIcon";
 import { chipModel } from "@/lib/model-chip";
-import { useMediaQuery } from "./settings/controls";
+import { useMediaQuery } from "@/lib/client/media";
 import type { SessionCost } from "@/lib/client/usage";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { load, save } from "@/lib/client/storage";
@@ -126,7 +126,7 @@ const ghost = "tap relative flex shrink-0 items-center justify-center rounded-fu
 
 /* footer chips: 32px with a mouse, 44px on touch */
 const chip =
-  "tap relative flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[13px] transition-[background-color,color] duration-150 pointer-coarse:h-11 pointer-coarse:px-2.5";
+  "tap relative flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm transition-[background-color,color] duration-150 pointer-coarse:h-11 pointer-coarse:px-2.5";
 const chipOff = "text-ink-2 hover:bg-hover hover:text-ink";
 const chipOn = "bg-hover text-ink";
 

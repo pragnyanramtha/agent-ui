@@ -61,12 +61,12 @@ export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: {
         type="button"
         aria-expanded={open}
         onClick={() => toggle(!open)}
-        className={`-mx-1.5 inline-flex h-10 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-[13px] text-ink-3 transition-colors duration-100 hover:text-ink-2 pointer-fine:h-7 ${FOCUS_INSET}`}
+        className={`-mx-1.5 inline-flex h-10 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-sm text-ink-3 transition-colors duration-100 hover:text-ink-2 pointer-fine:h-7 ${FOCUS_INSET}`}
       >
         <span className="truncate">
           {title}
           {detail && <span className="text-ink-3/70"> · {detail}</span>}
-          {failed > 0 && <span className="text-red"> · {failed} failed</span>}
+          {failed > 0 && <span className="text-red-ink"> · {failed} failed</span>}
         </span>
         <NavArrowRight width={14} height={14} strokeWidth={1.6} className="shrink-0 transition-transform duration-200" style={{ transform: open ? "rotate(90deg)" : undefined }} aria-hidden />
       </button>
@@ -113,12 +113,12 @@ export const TurnChanges = memo(function TurnChanges({
     }
   };
   return (
-    <div className="flex min-h-10 min-w-0 items-center gap-3 rounded-card bg-surface py-1 pr-1 pl-3 text-[13px] shadow-hairline">
+    <div className="flex min-h-10 min-w-0 items-center gap-3 rounded-card bg-surface py-1 pr-1 pl-3 text-sm shadow-hairline">
       <span className="min-w-0 truncate text-ink-2">
         {files.length} {files.length === 1 ? "file" : "files"} changed
       </span>
       <span className="diff-tone shrink-0 tabular-nums">
-        <span className="text-green">+{added}</span> <span className="text-red">−{removed}</span>
+        <span className="text-(--add-ink)">+{added}</span> <span className="text-(--del-ink)">−{removed}</span>
       </span>
       <span className="ml-auto flex min-w-0 items-center gap-0.5">
         {state.note && (
