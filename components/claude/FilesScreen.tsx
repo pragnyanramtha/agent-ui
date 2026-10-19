@@ -12,7 +12,7 @@ import { Markdown } from "./Markdown";
 /* Files on the server: browse, preview artifacts (images, media, markdown, HTML, code), edit text,
  * and move files both ways. Works the same on a phone: the preview takes the screen there. */
 
-export const OPEN_FILES_EVENT = "agentu:open-files";
+export { OPEN_FILES_EVENT } from "@/lib/client/events";
 
 type Item = { name: string; path: string; type: "dir" | "file" | "broken"; link: boolean; size: number; mtime: number };
 type Listing = { kind: "dir"; path: string; parent: string | null; home: string; entries: Item[]; truncated: boolean; hiddenCount: number };
@@ -441,7 +441,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           <Markdown text={text.text} />
         </div>
       );
-    return <CodeCard code={text.text} label={name} collapsible={false} />;
+    return <CodeCard code={text.text} label={name} />;
   })();
 
   const canEdit = ["html", "markdown", "text"].includes(kind) && text !== null && !("error" in text) && !text.partial;

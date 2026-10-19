@@ -363,9 +363,7 @@ export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMet
   /* re-added last so the newest edits survive the trim below */
   delete map[key];
   if (Object.keys(next).length) map[key] = next;
-  const keys = Object.keys(map);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
-  writeJson(STATE_PATH, { ...s, sessionMeta: map });
+  writeJson(STATE_PATH, { ...s, sessionMeta: trimMeta(map) });
   return next;
 }
 
@@ -375,9 +373,14 @@ export function markSessionDeleted(key: string) {
   const map = allSessionMeta();
   delete map[key];
   map[key] = { deleted: true };
-  const keys = Object.keys(map);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
-  writeJson(STATE_PATH, { ...s, sessionMeta: map });
+  writeJson(STATE_PATH, { ...s, sessionMeta: trimMeta(map) });
+}
+
+/** The newest 5000 edits, oldest dropped first; deletions are never dropped, or the session would come back. */
+export function trimMeta(map: Record<string, SessionMeta>, max = 5000) {
+  const keys = Object.keys(map).filter((k) => !map[k].deleted);
+  for (const k of keys.slice(0, Math.max(0, keys.length - max))) delete map[k];
+  return map;
 }
 
 /* ── the profile a request runs under ────────────────────── */

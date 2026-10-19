@@ -1,7 +1,31 @@
 export type DiffLine = { tone: "add" | "del" | "ctx"; text: string; old: number | null; cur: number | null };
 
-/** Line diff via LCS. Large inputs fall back to "all removed, then all added". */
+/* The same edit is diffed for the Changes counts, the Changes panel and the thread; keyed by the strings
+ * themselves (their hashes are cached), dropped wholesale once it holds this many. */
+const DIFF_CACHE_MAX = 500;
+const diffCache = new Map<number, Map<string, Map<string, DiffLine[]>>>();
+let diffCached = 0;
+
+/** Line diff via LCS. Large inputs fall back to "all removed, then all added". Results are shared: don't mutate them. */
 export function lineDiff(before: string, after: string, max = 400): DiffLine[] {
+  let byBefore = diffCache.get(max);
+  const hit = byBefore?.get(before)?.get(after);
+  if (hit) return hit;
+  const out = computeLineDiff(before, after, max);
+  if (diffCached >= DIFF_CACHE_MAX) {
+    diffCache.clear();
+    diffCached = 0;
+    byBefore = undefined;
+  }
+  if (!byBefore) diffCache.set(max, (byBefore = new Map()));
+  let byAfter = byBefore.get(before);
+  if (!byAfter) byBefore.set(before, (byAfter = new Map()));
+  byAfter.set(after, out);
+  diffCached++;
+  return out;
+}
+
+function computeLineDiff(before: string, after: string, max: number): DiffLine[] {
   const a = before === "" ? [] : before.split("\n");
   const b = after === "" ? [] : after.split("\n");
   if (a.length > max || b.length > max) {

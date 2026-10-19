@@ -58,8 +58,9 @@ async function needRoot(cwd: string) {
 const MAX_CHECKPOINTS = 60;
 export const refBase = (session: string) => `refs/agent-u/cp/${crypto.createHash("sha1").update(session).digest("hex").slice(0, 16)}`;
 
-/** untracked files left out of a checkpoint because they're too large (at most SKIPPED_PATHS of them named) */
-export type Skipped = { count: number; bytes: number; paths: string[] };
+/** untracked files left out of a checkpoint because they're too large (at most SKIPPED_PATHS of them named; when
+ * there were more, `limit` is the file size over which a file was left out) */
+export type Skipped = { count: number; bytes: number; paths: string[]; limit?: number };
 export type Checkpoint = { id: string; commit: string; tree: string; at: number; label: string; skipped?: Skipped };
 
 const MB = 1024 * 1024;
@@ -121,7 +122,7 @@ function untrackedFiles(root: string, env: Record<string, string>, limit = Infin
 }
 
 /** `unreadable`: paths git couldn't add (an unreadable file, a nested repo without commits), which the tree leaves out */
-type Snapshot = { tree: string; excluded: string[]; excludedBytes: number; unreadable: string[] };
+type Snapshot = { tree: string; excluded: string[]; excludedBytes: number; unreadable: string[]; limit: number };
 
 /** The working tree as git would commit it right now (ignored files left out), through a copy of the index.
  * Untracked files over CHECKPOINT_MAX_FILE_MB stay out too. With `strict` (a checkpoint, kept by a ref), too many
@@ -167,7 +168,7 @@ async function snapshotTree(root: string, opts: { strict?: boolean } = {}): Prom
     );
     const unreadable = failed ? skippedPaths(failed.stderr) : [];
     if (failed && !(failed.code === 1 && unreadable.length && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
-    return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes, unreadable };
+    return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes, unreadable, limit: max.file };
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
     await fs.rm(specs, { force: true }).catch(() => undefined);
@@ -175,14 +176,18 @@ async function snapshotTree(root: string, opts: { strict?: boolean } = {}): Prom
 }
 
 const skippedOf = (snap: Snapshot): Skipped | undefined =>
-  snap.excluded.length ? { count: snap.excluded.length, bytes: snap.excludedBytes, paths: snap.excluded.slice(0, SKIPPED_PATHS) } : undefined;
+  snap.excluded.length
+    ? { count: snap.excluded.length, bytes: snap.excludedBytes, paths: snap.excluded.slice(0, SKIPPED_PATHS), ...(snap.excluded.length > SKIPPED_PATHS ? { limit: snap.limit } : {}) }
+    : undefined;
 
 function parseSkipped(body: string): Skipped | undefined {
   const line = body.split("\n").find((l) => l.startsWith(SKIPPED_TRAILER));
   if (!line) return undefined;
   try {
     const s = JSON.parse(line.slice(SKIPPED_TRAILER.length)) as Skipped;
-    return typeof s.count === "number" && Array.isArray(s.paths) ? { count: s.count, bytes: Number(s.bytes) || 0, paths: s.paths.map(String) } : undefined;
+    if (typeof s.count !== "number" || !Array.isArray(s.paths)) return undefined;
+    const limit = Number(s.limit);
+    return { count: s.count, bytes: Number(s.bytes) || 0, paths: s.paths.map(String), ...(limit > 0 ? { limit } : {}) };
   } catch {
     return undefined;
   }
@@ -532,8 +537,14 @@ export async function rewind(cwd: string, session: string, id: string) {
   /* nor is one the checkpoint itself left out (too large, or unreadable): it existed then, the checkpoint just has no copy of it */
   const large = new Set(cp.skipped?.paths ?? []);
   const unreadable = await skippedIn(root, cp.commit);
-  const leftOut = (p: string) => large.has(p) || unreadable.some((s) => p === s || p.startsWith(`${s}/`));
   const newer = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", cp.tree, before.tree])).split("\0").filter(Boolean);
+  /* more were left out than the checkpoint names: any file over the size limit it used may be one of them */
+  const unnamed = new Set<string>();
+  if (cp.skipped && cp.skipped.count > cp.skipped.paths.length) {
+    const over = Math.min(cp.skipped.limit ?? limits().file, limits().file);
+    for (const p of newer) if ((await fs.lstat(path.join(root, p)).then((st) => st.size, () => 0)) > over) unnamed.add(p);
+  }
+  const leftOut = (p: string) => large.has(p) || unnamed.has(p) || unreadable.some((s) => p === s || p.startsWith(`${s}/`));
   const added = newer.filter((p) => !leftOut(p));
   const keep = new Set([...kept, ...newer.filter(leftOut)]);
   const changes = numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, before.tree])).filter((f) => !keep.has(f.path));

@@ -166,6 +166,23 @@ describe("rewinding around files left out", () => {
     clean();
   });
 
+  it("keeps large files the checkpoint left out without naming them", async () => {
+    process.env.CHECKPOINT_MAX_FILE_MB = "0.001";
+    for (let i = 0; i < 105; i++) write(`many-big/${String(i).padStart(3, "0")}.bin`, crypto.randomBytes(2048));
+    const cp = await g.checkpoint(repo, "r5", "lots left out");
+    expect(cp!.skipped).toMatchObject({ count: 105, limit: 0.001 * MB });
+    expect(cp!.skipped!.paths).toHaveLength(100);
+    expect((await g.listCheckpoints(repo, "r5"))[0].skipped?.limit).toBe(0.001 * MB);
+    /* with a higher limit the state before the rewind has them all, unnamed ones included */
+    process.env.CHECKPOINT_MAX_FILE_MB = "1";
+    write("made.txt", "made since\n");
+    const res = await g.rewind(repo, "r5", cp!.id);
+    expect(res).toMatchObject({ removed: 1, kept: 105 });
+    expect(exists("made.txt")).toBe(false);
+    for (let i = 0; i < 105; i++) expect(exists(`many-big/${String(i).padStart(3, "0")}.bin`)).toBe(true);
+    clean();
+  });
+
   it.skipIf(process.getuid?.() === 0)("keeps both a large and an unreadable file the checkpoint left out", async () => {
     write("large.bin", big());
     write("locked.txt", "secret\n");

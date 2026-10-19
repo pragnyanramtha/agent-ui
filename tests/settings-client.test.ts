@@ -41,12 +41,16 @@ function fakeRoot() {
 }
 
 let root: ReturnType<typeof fakeRoot>;
-let net: "up" | "down" | "refuse" = "up";
+let net: "up" | "down" | "refuse" | "refuse-palette" = "up";
 const g = globalThis as Record<string, unknown>;
 
 async function fakeFetch(url: string, init?: RequestInit) {
   if (net === "down") throw new TypeError("Failed to fetch");
   if (net === "refuse" && init?.method === "PUT") return Response.json({ error: "no" }, { status: 400 });
+  if (net === "refuse-palette" && init?.method === "PUT" && "palette" in JSON.parse(String(init.body))) {
+    net = "up";
+    return Response.json({ error: "no", rejected: ["palette"] }, { status: 400 });
+  }
   return init?.method === "PUT" ? route.PUT(new NextRequest(`http://x${url}`, init as ConstructorParameters<typeof NextRequest>[1])) : route.GET();
 }
 
@@ -183,6 +187,31 @@ describe("client settings store", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(ls().getItem("cui:synced-pending")).toBeNull();
     expect(s.getSetting("palette")).toBe("github");
+  });
+
+  it("drops only the keys the server refuses and sends the rest", async () => {
+    server.updateSynced({ palette: "github" });
+    const s = await load();
+    net = "refuse-palette";
+    s.setSettings({ palette: "nord", corners: "round" });
+    await s.flush();
+    await s.flush();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(server.readSynced().settings).toMatchObject({ palette: "github", corners: "round" });
+    expect(s.getSetting("palette")).toBe("github");
+    expect(ls().getItem("cui:synced-pending")).toBeNull();
+  });
+
+  it("keeps changes another tab queued when this tab saves", async () => {
+    const s = await load();
+    net = "down";
+    s.setSetting("corners", "round");
+    ls().setItem("cui:synced-pending", JSON.stringify({ ...JSON.parse(ls().getItem("cui:synced-pending") ?? "{}"), palette: "nord" }));
+    s.setSetting("accent", "violet");
+    expect(JSON.parse(ls().getItem("cui:synced-pending") ?? "{}")).toMatchObject({ corners: "round", palette: "nord", accent: "violet" });
+    net = "up";
+    await s.flush();
+    expect(JSON.parse(ls().getItem("cui:synced-pending") ?? "{}")).toEqual({ palette: "nord" });
   });
 
   it("resets one section, and everything", async () => {

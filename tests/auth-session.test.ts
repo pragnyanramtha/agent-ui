@@ -71,6 +71,20 @@ describe("POST /api/auth/logout", () => {
     expect(await verifySession(other)).toBe(false);
   });
 
+  it("forgets this browser's push subscription, and every one when signing out everywhere", async () => {
+    const push = await import("@/lib/server/push");
+    const sub = (endpoint: string) => ({ endpoint, keys: { p256dh: "k", auth: "a" }, origin: "http://127.0.0.1:3311", ua: "test", at: Date.now() });
+    push.subscribe(sub("https://push.example/phone"));
+    push.subscribe(sub("https://push.example/laptop"));
+    push.subscribe(sub("https://push.example/tablet"));
+    await logout({ endpoint: "https://push.example/phone" });
+    expect(push.subscriptionCount()).toBe(2);
+    await logout({});
+    expect(push.subscriptionCount()).toBe(2);
+    await logout({ everywhere: true });
+    expect(push.subscriptionCount()).toBe(0);
+  });
+
   it("can't be called signed out (the middleware asks for a session first)", async () => {
     const { middleware } = await import("@/middleware");
     const req = (cookie?: string) =>

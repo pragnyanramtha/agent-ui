@@ -139,6 +139,13 @@ describe("snooze", () => {
   });
 });
 
+describe("trimming old edits", () => {
+  it("drops the oldest edits but never a deletion", () => {
+    const map: Record<string, import("@/lib/server/profiles").SessionMeta> = { a: { deleted: true }, b: { pinned: true }, c: { archived: true }, d: { title: "x" } };
+    expect(Object.keys(profiles.trimMeta(map, 2))).toEqual(["a", "c", "d"]);
+  });
+});
+
 describe("withMeta", () => {
   const row: SessionSummary = { id: UUID, agent: "claude", title: "From the transcript", cwd: "/w", project: "w", mtime: 0, size: 0, terminal: null, web: null };
 

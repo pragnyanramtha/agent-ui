@@ -2,7 +2,8 @@
 
 import { useRef, useState } from "react";
 import { Download, Upload } from "iconoir-react";
-import { exportSettings, importSettings, resetAllSettings, setSettings, type ImportResult } from "@/lib/client/settings";
+import { exportSettings, getSettings, importSettings, resetAllSettings, setSettings, type ImportResult, type Settings } from "@/lib/client/settings";
+import { toast } from "@/lib/client/toast";
 import { Card, Row, SmallButton } from "./controls";
 
 function download(name: string, text: string) {
@@ -23,13 +24,28 @@ export function DataSection() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [undone, setUndone] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [resetDone, setResetDone] = useState(false);
+
+  const undoImport = (previous: Partial<Settings>) => {
+    setSettings(previous);
+    setUndone(true);
+    toast({ key: "import", title: "Import undone" });
+  };
 
   const onFile = async (f: File | undefined) => {
     if (!f) return;
     setUndone(false);
-    if (f.size > MAX_BYTES) return setResult({ ok: false, error: "That file is too big to be a settings file." });
-    setResult(importSettings(await f.text()));
+    const res: ImportResult = f.size > MAX_BYTES ? { ok: false, error: "That file is too big to be a settings file." } : importSettings(await f.text());
+    /* the list of changes stays on screen; everything else is a toast */
+    setResult(res.ok && res.changes.length ? res : null);
+    if (!res.ok) toast({ key: "import", tone: "error", title: "Couldn't import settings", body: res.error });
+    else if (!res.changes.length) toast({ key: "import", title: "Nothing changed", body: "These settings were already in use." });
+    else
+      toast({
+        key: "import",
+        tone: "success",
+        title: res.changes.length === 1 ? "1 setting imported" : `${res.changes.length} settings imported`,
+        action: { label: "Undo", run: () => undoImport(res.previous) },
+      });
   };
 
   return (
@@ -73,14 +89,7 @@ export function DataSection() {
                   <p className="flex-1 font-medium text-ink">
                     {result.changes.length === 1 ? "1 setting changed" : `${result.changes.length} settings changed`}
                   </p>
-                  <SmallButton
-                    onClick={() => {
-                      setSettings(result.previous);
-                      setUndone(true);
-                    }}
-                  >
-                    Undo
-                  </SmallButton>
+                  <SmallButton onClick={() => undoImport(result.previous)}>Undo</SmallButton>
                 </div>
                 <ul className="flex flex-col divide-y divide-line rounded-control bg-inset px-2.5 shadow-hairline">
                   {result.changes.map((c) => (
@@ -108,16 +117,17 @@ export function DataSection() {
       </Card>
 
       <Card title="Reset">
-        <Row label="Reset all settings" note={resetDone ? "Everything is back to its default." : "Every section, on this device and on the server."}>
+        <Row label="Reset all settings" note="Every section, on this device and on the server.">
           {confirm ? (
             <span className="flex gap-1.5">
               <SmallButton onClick={() => setConfirm(false)}>Cancel</SmallButton>
               <SmallButton
                 tone="danger"
                 onClick={() => {
+                  const before = getSettings();
                   resetAllSettings();
                   setConfirm(false);
-                  setResetDone(true);
+                  toast({ key: "reset-all", tone: "success", title: "All settings reset", body: "Everything is back to its default.", action: { label: "Undo", run: () => setSettings(before) } });
                 }}
               >
                 Reset all
@@ -126,10 +136,7 @@ export function DataSection() {
           ) : (
             <SmallButton
               tone="danger"
-              onClick={() => {
-                setConfirm(true);
-                setResetDone(false);
-              }}
+              onClick={() => setConfirm(true)}
             >
               Reset all…
             </SmallButton>

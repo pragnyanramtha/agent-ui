@@ -266,7 +266,20 @@ function ensurePending() {
   pending = { ...loadPending(), ...pending };
 }
 
-const savePending = () => lsSet(PENDING_KEY, Object.keys(pending).length ? JSON.stringify(pending) : null);
+/** Writes the unsent changes, keeping ones another tab queued. `sent` drops keys the server confirmed (unless changed since), `refused` drops keys it won't take. */
+function savePending(sent: Patch = {}, refused: string[] = []) {
+  const stored: Record<string, unknown> = loadPending();
+  for (const [k, v] of Object.entries(sent)) if (JSON.stringify(stored[k]) === JSON.stringify(v)) delete stored[k];
+  for (const k of refused) delete stored[k];
+  const out = { ...stored, ...inflight, ...pending };
+  lsSet(PENDING_KEY, Object.keys(out).length ? JSON.stringify(out) : null);
+}
+
+class Refused extends ApiError {
+  constructor(message: string, readonly rejected: string[]) {
+    super(message, 400);
+  }
+}
 
 function queuePush(patch: Patch) {
   ensurePending();
@@ -287,12 +300,13 @@ async function request(method: "GET" | "PUT", body?: unknown): Promise<{ setting
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  const data = (await res.json().catch(() => ({}))) as { settings?: unknown; error?: string };
+  const data = (await res.json().catch(() => ({}))) as { settings?: unknown; error?: string; rejected?: unknown };
+  if (res.status === 400 && Array.isArray(data.rejected)) throw new Refused(data.error ?? "Request failed (400)", data.rejected.filter((k): k is string => typeof k === "string"));
   if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
   return data;
 }
 
-/** Sends the queued changes. Network trouble retries with backoff; a refusal drops them and reloads the server's copy. */
+/** Sends the queued changes. Network trouble retries with backoff; a refusal drops the refused keys, reloads the server's copy and resends the rest. */
 export async function flush(): Promise<void> {
   ensurePending();
   if (flushing || !Object.keys(pending).length) return;
@@ -303,19 +317,27 @@ export async function flush(): Promise<void> {
   let again = false;
   try {
     const res = await request("PUT", inflight);
+    const sent = inflight;
     attempt = 0;
     inflight = {};
-    savePending();
+    savePending(sent);
     merge(res.settings);
     again = Object.keys(pending).length > 0;
   } catch (err) {
+    const sent = inflight;
     pending = { ...inflight, ...pending };
     inflight = {};
     if (err instanceof ApiError && err.status === 400) {
-      pending = {};
+      const named = err instanceof Refused ? err.rejected.filter((k) => k in sent) : [];
+      const refused = named.length ? named : Object.keys(sent);
+      for (const k of refused) if (JSON.stringify(pending[k as SettingKey]) === JSON.stringify(sent[k as SettingKey])) delete pending[k as SettingKey];
+      savePending({}, refused.filter((k) => !(k in pending)));
+      again = Object.keys(pending).length > 0;
       void pull(true);
-    } else if (transient(err) && attempt < 6) schedule(Math.min(30_000, 1000 * 2 ** attempt++));
-    savePending();
+    } else {
+      if (transient(err) && attempt < 6) schedule(Math.min(30_000, 1000 * 2 ** attempt++));
+      savePending();
+    }
   } finally {
     flushing = false;
   }

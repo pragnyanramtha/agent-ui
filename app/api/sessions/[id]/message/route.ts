@@ -54,7 +54,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   if (existing) {
     if (effort !== undefined) await existing.setEffort(effort).catch(() => undefined);
     existing.send(text);
-    guardTurn({ key: id, text, mode: existing.state.permissionMode, model, profile: existing.profile ?? profile });
+    guardTurn({ key: id, text, mode: existing.state.permissionMode, model, effort, profile: existing.profile ?? profile });
     return NextResponse.json({ id: existing.state.sessionId, via: "web" });
   }
 
@@ -90,7 +90,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     if (effort !== undefined) await raced.setEffort(effort).catch(() => undefined);
     raced.send(text);
     setSessionProfile(id, (raced.profile ?? profile).id);
-    guardTurn({ key: id, text, mode: raced.state.permissionMode, model, profile: raced.profile ?? profile });
+    guardTurn({ key: id, text, mode: raced.state.permissionMode, model, effort, profile: raced.profile ?? profile });
     return NextResponse.json({ id: raced.state.sessionId, via: "web" });
   }
 
@@ -98,6 +98,6 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   const run = startRun({ resume: id, cwd: ctx.cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   setSessionProfile(id, profile.id);
-  guardTurn({ key: id, text, mode, model, profile });
+  guardTurn({ key: id, text, mode, model, effort, profile });
   return NextResponse.json({ id, via: "web" });
 }

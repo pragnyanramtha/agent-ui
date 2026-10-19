@@ -67,7 +67,7 @@ function write(data: SyncedFile) {
   }
 }
 
-export type UpdateResult = { ok: true; file: SyncedFile } | { ok: false; errors: string[] };
+export type UpdateResult = { ok: true; file: SyncedFile } | { ok: false; errors: string[]; rejected: string[] };
 
 /** Merges a patch into the stored settings: values replace, `null` goes back to the default. */
 export function updateSynced(patch: unknown, now = Date.now()): UpdateResult {

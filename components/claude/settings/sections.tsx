@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, Terminal } from "iconoir-react";
-import { api } from "@/lib/client/api";
-import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/client/push";
+import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@/lib/client/push";
+import { toast } from "@/lib/client/toast";
+import { sendTestNotification } from "@/lib/client/useNotifications";
 import { settingsIn, type SectionId } from "@/lib/settings-schema";
 import { ShortcutList } from "../ShortcutsDialog";
 import { Card, Row, SmallButton, Switch } from "./controls";
@@ -61,7 +62,6 @@ const PUSH_NOTE: Partial<Record<PushStatus, string>> = {
 function PushRow() {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
     void pushStatus()
       .then(setStatus)
@@ -69,14 +69,13 @@ function PushRow() {
   }, []);
   const toggle = async (on: boolean) => {
     setBusy(true);
-    setNote(null);
     try {
       if (on) {
         await enablePush();
-        setNote("Test notification sent.");
+        toast({ key: "push", tone: "success", title: "Push notifications on", body: "Test notification sent." });
       } else await disablePush();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
+      toast({ key: "push", tone: "error", title: "Couldn't change push notifications", body: err instanceof Error ? err.message : String(err) });
     } finally {
       setStatus(await pushStatus().catch(() => "unsupported" as const));
       setBusy(false);
@@ -84,8 +83,25 @@ function PushRow() {
   };
   const blocked = status ? PUSH_NOTE[status] : undefined;
   return (
-    <Row label="Push notifications" note={note ?? blocked ?? "Finished turns, approvals and failures."}>
+    <Row label="Push notifications" note={blocked ?? "This browser, for the events above, even when agent-u is closed."}>
       <Switch checked={status === "on"} onChange={(v) => void toggle(v)} label="Push notifications" disabled={busy || status === null || Boolean(blocked)} />
+    </Row>
+  );
+}
+
+function TestRow() {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Row label="Send test notification" note="Tries every alert that's on for this device.">
+      <SmallButton
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          void sendTestNotification().finally(() => setBusy(false));
+        }}
+      >
+        {busy ? "Sending…" : "Send test"}
+      </SmallButton>
     </Row>
   );
 }
@@ -96,13 +112,7 @@ function SignOutRow({ everywhere = false }: { everywhere?: boolean }) {
     <Row label={label} note={everywhere ? "Ends the session on every device, this one too. Agents keep running." : "Ends this browser's session. Agents keep running."}>
       <SmallButton
         tone="danger"
-        onClick={() =>
-          void api("/api/auth/logout", everywhere ? { everywhere: true } : {})
-            .catch(() => undefined)
-            .then(() => {
-              window.location.href = "/login";
-            })
-        }
+        onClick={() => void signOut(everywhere)}
       >
         {label}
       </SmallButton>
@@ -133,9 +143,15 @@ function Appearance() {
 
 function Notifications() {
   return (
-    <Card>
-      <PushRow />
-    </Card>
+    <>
+      <RegistryCards section="notifications" />
+      <Card title="Push" footer="Push stays quiet while an agent-u window is in front.">
+        <PushRow />
+      </Card>
+      <Card>
+        <TestRow />
+      </Card>
+    </>
   );
 }
 

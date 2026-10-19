@@ -32,7 +32,15 @@ export const SECTIONS: readonly SectionInfo[] = [
   { id: "composer", label: "Composer", description: "How messages are written and sent." },
   { id: "conversation", label: "Conversation", description: "How sessions read." },
   { id: "terminal", label: "Terminal", description: "Terminals opened from a session or the menu." },
-  { id: "notifications", label: "Notifications", description: "Alerts when agents finish or need you.", items: [{ id: "push", label: "Push notifications", description: "Finished turns, approvals and failures.", keywords: ["alerts", "web push"] }] },
+  {
+    id: "notifications",
+    label: "Notifications",
+    description: "Alerts when agents finish or need you.",
+    items: [
+      { id: "push", label: "Push notifications", description: "Finished turns, approvals and failures.", keywords: ["alerts", "web push"] },
+      { id: "test", label: "Send test notification", description: "Try every alert that's on.", keywords: ["alerts", "try", "check"] },
+    ],
+  },
   { id: "keyboard", label: "Keyboard", description: "Shortcuts on devices with a keyboard.", items: [{ id: "shortcuts", label: "Keyboard shortcuts", keywords: ["keys", "hotkeys", "bindings"] }] },
   { id: "agents", label: "Agents", description: "Agent CLIs, accounts and running terminals.", items: [{ id: "profiles", label: "Profiles and terminals", description: "Accounts, proxies, models and running agents.", keywords: ["claude", "codex", "models", "accounts", "proxy"] }] },
   { id: "git", label: "Git", description: "Diffs, commits, the remote and worktrees." },
@@ -518,12 +526,107 @@ export const SETTINGS = {
     description: "Longer blocks show their first lines and a Show all button.",
     keywords: ["fold", "long code", "lines", "code"],
     scope: "synced",
-    default: "off",
+    default: "40",
     options: [
       { value: "off", label: "Never" },
       { value: "20", label: "20 lines" },
-      { value: "50", label: "50 lines" },
+      { value: "40", label: "40 lines" },
       { value: "100", label: "100 lines" },
+    ],
+  }),
+
+  /* notifications: what notifies is synced (push reaches every device and follows it), how this device alerts isn't */
+  notifyDnd: boolean({
+    section: "notifications",
+    label: "Do not disturb",
+    description: "Pauses alerts, sounds and push on every device. Tab badges still count.",
+    keywords: ["mute", "quiet", "silence", "pause", "focus"],
+    scope: "synced",
+    default: false,
+  }),
+  notifyDone: boolean({
+    section: "notifications",
+    group: "Notify me when",
+    label: "A turn finishes",
+    description: "The agent is done and waiting for your next message.",
+    keywords: ["finished", "done", "complete", "alerts"],
+    scope: "synced",
+    default: true,
+  }),
+  notifyNeeds: boolean({
+    section: "notifications",
+    group: "Notify me when",
+    label: "An agent needs approval",
+    description: "It wants to run something or has a question for you.",
+    keywords: ["permission", "question", "ask", "alerts"],
+    scope: "synced",
+    default: true,
+  }),
+  notifyFailed: boolean({
+    section: "notifications",
+    group: "Notify me when",
+    label: "A turn fails",
+    keywords: ["error", "failure", "alerts"],
+    scope: "synced",
+    default: true,
+  }),
+  notifyToasts: boolean({
+    section: "notifications",
+    group: "On this device",
+    label: "In-app alerts",
+    description: "A small card with a link to the session.",
+    keywords: ["toast", "popup", "banner"],
+    scope: "device",
+    default: true,
+  }),
+  notifySound: boolean({
+    section: "notifications",
+    group: "On this device",
+    label: "Sounds",
+    description: "A short tone for each kind of event.",
+    keywords: ["audio", "chime", "beep", "ding"],
+    scope: "device",
+    default: false,
+  }),
+  notifyVolume: number({
+    section: "notifications",
+    group: "On this device",
+    label: "Volume",
+    keywords: ["sound", "loud", "quiet"],
+    scope: "device",
+    default: 60,
+    min: 5,
+    max: 100,
+    step: 5,
+    unit: "%",
+    control: "slider",
+    showIf: ["notifySound", true],
+  }),
+  notifyWhen: choice({
+    section: "notifications",
+    group: "On this device",
+    label: "Alert me",
+    description: "Alerts and sounds. The session on screen never alerts.",
+    keywords: ["hidden", "background", "away", "focus"],
+    scope: "device",
+    default: "always",
+    options: [
+      { value: "always", label: "Always" },
+      { value: "away", label: "Only when away" },
+    ],
+  }),
+  notifyBadge: choice({
+    section: "notifications",
+    group: "On this device",
+    label: "Tab badge",
+    description: "Marks the tab icon and title while sessions need you.",
+    keywords: ["favicon", "title", "count", "unread", "dot"],
+    scope: "device",
+    default: "count",
+    options: [
+      { value: "off", label: "Off" },
+      { value: "dot", label: "Dot" },
+      { value: "count", label: "Count" },
     ],
   }),
 
@@ -726,25 +829,28 @@ export function parseValue(def: SettingDef, value: unknown): Parsed<unknown> {
   }
 }
 
-export type PatchResult = { ok: true; values: Partial<Settings>; reset: SettingKey[] } | { ok: false; errors: string[] };
+export type PatchResult = { ok: true; values: Partial<Settings>; reset: SettingKey[] } | { ok: false; errors: string[]; rejected: string[] };
 
 /**
  * Validates a partial update. Unknown keys and wrong values are errors; `null` resets a key when `allowNull`.
  * With `scope`, settings kept elsewhere are refused (the server only stores synced ones).
  */
 export function validatePatch(patch: unknown, opts: { scope?: Scope; allowNull?: boolean } = {}): PatchResult {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { ok: false, errors: ["Expected an object of settings."] };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { ok: false, errors: ["Expected an object of settings."], rejected: [] };
   const values: Record<string, unknown> = {};
   const reset: SettingKey[] = [];
   const errors: string[] = [];
+  const rejected: string[] = [];
   for (const [key, value] of Object.entries(patch)) {
     if (!isSettingKey(key)) {
       errors.push(`Unknown setting "${key}".`);
+      rejected.push(key);
       continue;
     }
     const def = SETTINGS[key] as SettingDef;
     if (opts.scope && def.scope !== opts.scope) {
       errors.push(`"${key}" is kept on each device, not on the server.`);
+      rejected.push(key);
       continue;
     }
     if (value === null && opts.allowNull) {
@@ -753,9 +859,12 @@ export function validatePatch(patch: unknown, opts: { scope?: Scope; allowNull?:
     }
     const parsed = parseValue(def, value);
     if (parsed.ok) values[key] = parsed.value;
-    else errors.push(`"${key}" ${parsed.error}.`);
+    else {
+      errors.push(`"${key}" ${parsed.error}.`);
+      rejected.push(key);
+    }
   }
-  return errors.length ? { ok: false, errors } : { ok: true, values: values as Partial<Settings>, reset };
+  return errors.length ? { ok: false, errors, rejected } : { ok: true, values: values as Partial<Settings>, reset };
 }
 
 /** Keeps the valid entries of a stored or imported object and names the rest. */

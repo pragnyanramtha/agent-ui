@@ -14,6 +14,13 @@ const TOKEN =
 /** prose and data files read better uncoloured ("for", "and", "from" aren't keywords there) */
 export const isPlainText = (name?: string) => !!name && (/\.(txt|log|csv|tsv|rst|md|mdx|markdown)$/i.test(name) || /^(text|txt|plain|plaintext|log|markdown|md)$/i.test(name));
 
+/* strings and numbers use --orange-ink: plain --orange is under 3:1 on a light surface */
+const COMMENT = "text-ink-3 italic";
+const LITERAL = "text-orange-ink";
+const KEYWORD = "text-accent-ink";
+const CALL = "font-medium text-ink";
+
+/** One line of code as text runs and colored spans (only tokens get an element). */
 export function highlight(text: string): ReactNode[] {
   const nodes: ReactNode[] = [];
   let last = 0;
@@ -21,15 +28,15 @@ export function highlight(text: string): ReactNode[] {
   for (const m of text.matchAll(TOKEN)) {
     const idx = m.index ?? 0;
     const t = m[0];
-    if (idx > last) nodes.push(<span key={k++}>{text.slice(last, idx)}</span>);
-    let style: { color: string; fontWeight?: number; fontStyle?: string };
-    if (t.startsWith("#") || t.startsWith("//")) style = { color: "var(--ink-3)", fontStyle: "italic" };
-    else if (/^["'`]/.test(t) || /^\d/.test(t)) style = { color: "var(--orange)" };
-    else if (KEYWORDS.has(t)) style = { color: "var(--accent-ink)" };
-    else style = { color: "var(--ink)", fontWeight: 500 };
-    nodes.push(<span key={k++} style={style}>{t}</span>);
+    if (idx > last) nodes.push(text.slice(last, idx));
+    const cls = t.startsWith("#") || t.startsWith("//") ? COMMENT : /^["'`\d]/.test(t) ? LITERAL : KEYWORDS.has(t) ? KEYWORD : CALL;
+    nodes.push(
+      <span key={k++} className={cls}>
+        {t}
+      </span>,
+    );
     last = idx + t.length;
   }
-  if (last < text.length) nodes.push(<span key={k++}>{text.slice(last)}</span>);
+  if (last < text.length) nodes.push(text.slice(last));
   return nodes;
 }

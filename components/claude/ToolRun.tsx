@@ -367,7 +367,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     case "Write":
       return (
         <Stack>
-          <CodeCard code={s("content")} label={s("file_path")} />
+          <CodeCard code={s("content")} label={s("file_path")} collapsible />
           {result?.isError && <Output result={result} />}
         </Stack>
       );

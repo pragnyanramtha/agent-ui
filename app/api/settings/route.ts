@@ -18,6 +18,6 @@ export async function PUT(req: NextRequest) {
     console.error("settings: save failed", err);
     return NextResponse.json({ error: "Couldn't save settings on the server." }, { status: 500 });
   }
-  if (!res.ok) return NextResponse.json({ error: res.errors.join(" "), errors: res.errors }, { status: 400 });
+  if (!res.ok) return NextResponse.json({ error: res.errors.join(" "), errors: res.errors, rejected: res.rejected }, { status: 400 });
   return NextResponse.json(res.file);
 }

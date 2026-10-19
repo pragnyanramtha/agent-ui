@@ -12,7 +12,7 @@ import { allRollouts, fileMeta, idOfRollout, threadNames } from "./agents/codex-
 import { parseRecord as codexRecord, safeParse as codexParse } from "./agents/codex-parse";
 import { chatFiles, chatSummary, geminiEntries, geminiRoot, type GeminiMessage } from "./agents/gemini-store";
 import { sessionKey } from "./agents/index";
-import { allProfiles } from "./profiles";
+import { allProfiles, allSessionMeta } from "./profiles";
 
 /* Full-text search over what was said in every session (Claude transcripts, Codex rollouts,
  * Gemini chats). Files are scanned newest first for the query as it appears inside JSON
@@ -270,7 +270,9 @@ export async function searchMessages(q: string, opts: SearchOptions = {}): Promi
   const query = q.trim();
   if (query.length < 2 || limit <= 0) return { hits: [], partial: false };
   const useRg = opts.engine !== "node" && (await hasRipgrep());
-  const sources = await allSources();
+  const meta = allSessionMeta();
+  /* a deleted session's transcript can stay on disk; it must not come back through search */
+  const sources = (await allSources()).filter((src) => !meta[sessionKey(src.agent, src.native)]?.deleted);
   const re = new RegExp(escapeRe(query), "iu");
   /* the query as it's written inside a JSON string (quotes and backslashes escaped) */
   const needle = JSON.stringify(query).slice(1, -1);

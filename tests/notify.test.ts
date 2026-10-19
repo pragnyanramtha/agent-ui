@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { forgetSeen } from "@/lib/notify-events";
 import { SETTLE_MS, phaseOf, step, type Seen } from "@/lib/server/notify";
 import type { PendingAsk, RunState, SessionSummary } from "@/lib/types";
 
@@ -45,6 +46,14 @@ describe("step", () => {
     const seen = new Map<string, Seen>();
     expect(step(seen, [row(run("idle", [ask]))], 0)).toEqual([]);
     expect(step(seen, [row(run("idle"))], 10_000)).toEqual([]);
+  });
+
+  it("notifies about a session that shows up after a first poll with none, and seeds again after forgetting", () => {
+    const seen = new Map<string, Seen>();
+    expect(step(seen, [], 0)).toEqual([]);
+    expect(step(seen, [row(run("idle", [ask]))], 1000)).toMatchObject([{ kind: "needs" }]);
+    forgetSeen(seen);
+    expect(step(seen, [row(run("idle", [ask]), { id: "s2" })], 2000)).toEqual([]);
   });
 
   it("says done once the session stays idle, not on a short gap between turns", () => {

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { compact, lineDiff } from "@/lib/client/diff";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { PathLabel } from "./PathLabel";
@@ -7,11 +8,15 @@ const HATCH = "repeating-linear-gradient(45deg, var(--red) 0, var(--red) 1.5px, 
 
 /** Beautiful UI's CodeBlock diff view: one gutter, tinted rows, green bar for adds, hatched red for removals. */
 export function DiffBlock({ before, after, file, plain = isPlainText(file) }: { before: string; after: string; file?: string; plain?: boolean }) {
-  const lines = lineDiff(before, after);
-  const rows = compact(lines);
-  const added = lines.filter((l) => l.tone === "add").length;
-  const removed = lines.filter((l) => l.tone === "del").length;
-  const widest = Math.max(1, ...lines.map((l) => l.old ?? l.cur ?? 0));
+  const { rows, added, removed, widest } = useMemo(() => {
+    const lines = lineDiff(before, after);
+    return {
+      rows: compact(lines),
+      added: lines.filter((l) => l.tone === "add").length,
+      removed: lines.filter((l) => l.tone === "del").length,
+      widest: lines.reduce((m, l) => Math.max(m, l.old ?? l.cur ?? 0), 1),
+    };
+  }, [before, after]);
   const cols = { gridTemplateColumns: `calc(${String(widest).length}ch + 18px) minmax(0,1fr)` };
 
   return (

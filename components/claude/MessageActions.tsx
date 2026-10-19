@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "iconoir-react";
 import { useSetting } from "@/lib/client/settings";
 import { clockTime, fullDateTime } from "@/lib/time-format";
@@ -41,7 +41,7 @@ function CopyButton({ text, onCopied }: { text: string; onCopied: (v: boolean) =
  * padding and negative margin) and fades in on hover or keyboard focus, so
  * revealing it never moves anything.
  */
-export function MessageActions({ text, ts, align = "start" }: { text: string; ts?: string; align?: "start" | "end" }) {
+export const MessageActions = memo(function MessageActions({ text, ts, align = "start" }: { text: string; ts?: string; align?: "start" | "end" }) {
   const [copied, setCopied] = useState(false);
   const [fmt] = useSetting("timeFormat");
   const time = ts ? clockTime(ts, fmt) : "";
@@ -60,7 +60,7 @@ export function MessageActions({ text, ts, align = "start" }: { text: string; ts
       )}
     </div>
   );
-}
+});
 
 /*
  * Wrapper classes that make room for MessageActions without adding layout on hover.
