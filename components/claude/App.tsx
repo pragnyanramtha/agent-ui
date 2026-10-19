@@ -3,13 +3,10 @@
 import { AskHost } from "./Ask";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useSessions } from "@/lib/client/useSessions";
-import { CommandPalette, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "./CommandPalette";
+import { OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "@/lib/client/events";
 import type { TerminalTarget } from "./WebTerminal";
-import { TerminalDrawer } from "./TerminalDrawer";
-import { NewSession } from "./NewSession";
+import { CommandPalette, NewSession, preloadScreens, preloadTerminalWhenIdle, SessionScreen, TerminalDrawer } from "./lazy-shell";
 import { SessionList, SessionRail } from "./SessionList";
-import { SessionScreen } from "./SessionScreen";
-import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
 import { applyTheme, useSetting } from "@/lib/client/settings";
@@ -29,6 +26,10 @@ import type { SessionSummary } from "@/lib/types";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
+
+if (typeof window !== "undefined") preloadScreens();
+
+const preloadMarkdown = () => void import("./Markdown").then((m) => m.preloadMarkdown()).catch(() => undefined);
 
 /* the open session stays put while the list, tabs or drawer change around it */
 const OpenSession = memo(SessionScreen);
@@ -101,7 +102,11 @@ export function App() {
       setTermHidden(false);
     };
     window.addEventListener(OPEN_TERMINAL_EVENT, open);
-    return () => window.removeEventListener(OPEN_TERMINAL_EVENT, open);
+    const cancelPreload = preloadTerminalWhenIdle();
+    return () => {
+      window.removeEventListener(OPEN_TERMINAL_EVENT, open);
+      cancelPreload();
+    };
   }, []);
 
   const byId = useMemo(() => new Map((sessions ?? []).map((s) => [s.id, s])), [sessions]);
