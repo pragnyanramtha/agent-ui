@@ -10,6 +10,7 @@ import { once } from "@/lib/server/dedupe";
 import { guardTurn, sameStore } from "@/lib/server/fallback";
 import { pickProfile, setSessionProfile } from "@/lib/server/profiles";
 import { beforeTurn } from "@/lib/server/checkpoints";
+import { parseEffort } from "@/lib/agent-traits";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,8 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     return NextResponse.json({ error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
   }
   const model = str(body.model) || undefined;
+  /* undefined keeps what the run has (or the profile's default for a new one); null goes back to Claude's default */
+  const effort = parseEffort("claude", body.effort);
 
   let existing = getRun(id);
   /* another account or proxy: the next turn runs in a new process on the same transcript */
@@ -49,6 +52,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     existing = null;
   }
   if (existing) {
+    if (effort !== undefined) await existing.setEffort(effort).catch(() => undefined);
     existing.send(text);
     guardTurn({ key: id, text, mode: existing.state.permissionMode, model, profile: existing.profile ?? profile });
     return NextResponse.json({ id: existing.state.sessionId, via: "web" });
@@ -83,6 +87,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   /* another request may have started a run while we were awaiting */
   const raced = getRun(id);
   if (raced) {
+    if (effort !== undefined) await raced.setEffort(effort).catch(() => undefined);
     raced.send(text);
     setSessionProfile(id, (raced.profile ?? profile).id);
     guardTurn({ key: id, text, mode: raced.state.permissionMode, model, profile: raced.profile ?? profile });
@@ -90,7 +95,7 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   }
 
   const mode = parseMode(body.permissionMode) ?? parseMode(ctx.meta.permissionMode) ?? "default";
-  const run = startRun({ resume: id, cwd: ctx.cwd, model, permissionMode: mode, profile });
+  const run = startRun({ resume: id, cwd: ctx.cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   setSessionProfile(id, profile.id);
   guardTurn({ key: id, text, mode, model, profile });

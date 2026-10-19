@@ -9,7 +9,8 @@ import { CONFIG_DIR } from "../profiles";
  * state.json so a restart neither drops the queue nor quietly turns Ask first into Bypass. Shared through
  * globalThis: instrumentation and the route handlers are separate bundles with their own module state. */
 
-export type Queued = { id: string; text: string; model?: string; mode: PermissionMode; profile: unknown; at: number };
+/** `effort`: undefined is the profile's default, null was picked as "default" in the composer */
+export type Queued = { id: string; text: string; model?: string; effort?: string | null; mode: PermissionMode; profile: unknown; at: number };
 type Store = { file: string; queues: Map<string, Queued[]>; modes: Map<string, PermissionMode>; timer: ReturnType<typeof setTimeout> | null };
 
 /** a write waits at most this long, so a crash loses little */
@@ -38,7 +39,7 @@ function read(file: string): Pick<Store, "queues" | "modes"> {
     if (!Array.isArray(list)) continue;
     const items = list.flatMap((q): Queued[] => {
       if (!q || typeof q !== "object" || typeof q.id !== "string" || typeof q.text !== "string" || !q.text) return [];
-      return [{ id: q.id, text: q.text, model: typeof q.model === "string" ? q.model : undefined, mode: parseMode(q.mode) ?? "default", profile: q.profile, at: typeof q.at === "number" ? q.at : 0 }];
+      return [{ id: q.id, text: q.text, model: typeof q.model === "string" ? q.model : undefined, effort: typeof q.effort === "string" || q.effort === null ? q.effort : undefined, mode: parseMode(q.mode) ?? "default", profile: q.profile, at: typeof q.at === "number" ? q.at : 0 }];
     });
     if (items.length) queues.set(key, items);
   }

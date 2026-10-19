@@ -114,10 +114,21 @@ export function useAttachments() {
 
   useEffect(() => clear, [clear]);
 
+  /** puts back files uploaded earlier (a stashed prompt's) */
+  const restore = useCallback((saved: { name: string; size: number; path: string }[]) => {
+    setItems((cur) => [
+      ...cur,
+      ...saved
+        .filter((f) => !cur.some((a) => a.path === f.path))
+        .slice(0, Math.max(0, MAX_FILES - cur.length))
+        .map((f, i): Attachment => ({ id: `r${Date.now().toString(36)}${i}`, name: f.name, size: f.size, preview: isImagePath(f.path) ? `/api/files/raw?path=${encodeURIComponent(f.path)}` : null, state: "done", sent: f.size, path: f.path, error: null })),
+    ]);
+  }, []);
+
   const uploading = items.some((a) => a.state === "uploading");
   const failed = items.some((a) => a.state === "error");
   const paths = items.filter((a) => a.state === "done" && a.path).map((a) => a.path!);
-  return { items, add, remove, retry: upload, clear, uploading, failed, paths };
+  return { items, add, remove, retry: upload, clear, restore, uploading, failed, paths };
 }
 
 export function AttachmentChips({ items, onRemove, onRetry }: { items: Attachment[]; onRemove: (id: string) => void; onRetry: (id: string) => void }) {

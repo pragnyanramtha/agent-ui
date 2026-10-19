@@ -4,6 +4,7 @@ import { confirmAsk, promptAsk } from "./Ask";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check as CheckIcon, Copy, Menu, Plus, Terminal, Trash } from "iconoir-react";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo, type ServerTerminal } from "@/lib/types";
+import { effortOptions } from "@/lib/agent-traits";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
 import type { Check as HealthRow, CheckStatus as HealthStatus, DoctorReport } from "@/lib/server/doctor";
 import { openServerTerminal } from "@/lib/client/terminals";
@@ -309,7 +310,7 @@ function FixCommand({ command }: { command: string }) {
 
 /* ── profiles ──────────────────────────────────────────────── */
 
-type Draft = { id: string; label: string; agent: AgentId; bin: string; args: string; env: string; models: string; defaultModel: string; fallback: string; launchArgs: string; notes: string; hidden: boolean };
+type Draft = { id: string; label: string; agent: AgentId; bin: string; args: string; env: string; models: string; defaultModel: string; defaultEffort: string; fallback: string; launchArgs: string; notes: string; hidden: boolean };
 
 const toDraft = (p: ProfileInfo): Draft => ({
   id: p.id,
@@ -320,6 +321,7 @@ const toDraft = (p: ProfileInfo): Draft => ({
   env: Object.entries(p.env).map(([k, v]) => `${k}=${v}`).join("\n"),
   models: p.models.join(", "),
   defaultModel: p.defaultModel ?? "",
+  defaultEffort: p.defaultEffort ?? "",
   fallback: p.fallback.join(", "),
   launchArgs: p.launchArgs.join("\n"),
   notes: p.notes,
@@ -338,6 +340,7 @@ const fromDraft = (d: Draft) => ({
   env: Object.fromEntries(lines(d.env).map((l) => [l.slice(0, l.indexOf("=") < 0 ? l.length : l.indexOf("=")).trim(), l.indexOf("=") < 0 ? "" : l.slice(l.indexOf("=") + 1)])),
   models: commas(d.models),
   defaultModel: d.defaultModel.trim() || undefined,
+  defaultEffort: effortOptions(d.agent).some((o) => o.key === d.defaultEffort) ? d.defaultEffort : undefined,
   fallback: commas(d.fallback),
   launchArgs: lines(d.launchArgs),
   notes: d.notes,
@@ -390,7 +393,7 @@ function Profiles() {
         aside={
           <button
             type="button"
-            onClick={() => setEdit({ isNew: true, draft: { id: "", label: "", agent: "codex", bin: "", args: "", env: "", models: "", defaultModel: "", fallback: "", launchArgs: "", notes: "", hidden: false } })}
+            onClick={() => setEdit({ isNew: true, draft: { id: "", label: "", agent: "codex", bin: "", args: "", env: "", models: "", defaultModel: "", defaultEffort: "", fallback: "", launchArgs: "", notes: "", hidden: false } })}
             className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover"
           >
             <Plus width={14} height={14} strokeWidth={2} /> Add profile
@@ -505,6 +508,19 @@ function ProfileEditor({
         {row("Environment", "KEY=value per line. ${VAR} reads .env.local.", <textarea rows={3} value={d.env} onChange={(e) => set({ env: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" placeholder={"OPENAI_BASE_URL=https://proxy.example/v1\nOPENAI_API_KEY=${PROXY_KEY}"} />)}
         {row("Models", "Comma separated", <input value={d.models} onChange={(e) => set({ models: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}
         {row("Default model", "", <input value={d.defaultModel} onChange={(e) => set({ defaultModel: e.target.value })} className={`${field} font-mono`} spellCheck={false} autoCapitalize="off" />)}
+        {effortOptions(d.agent).length > 0 &&
+          row(
+            "Default effort",
+            "When a session hasn't picked one",
+            <select value={d.defaultEffort} onChange={(e) => set({ defaultEffort: e.target.value })} className={field}>
+              <option value="">Agent default</option>
+              {effortOptions(d.agent).map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.name}
+                </option>
+              ))}
+            </select>,
+          )}
         {row(
           "Fallback profiles",
           `Comma separated, used in order on a usage limit. Known: ${profiles.filter((p) => p.id !== d.id).map((p) => p.id).join(", ")}`,

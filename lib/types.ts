@@ -53,6 +53,7 @@ export type ProfileInfo = {
   env: Record<string, string>;
   models: string[];
   defaultModel: string | null;
+  defaultEffort: string | null;
   fallback: string[];
   launchArgs: string[];
   hidden: boolean;

@@ -9,6 +9,7 @@ import { onDelta, onTurn } from "./cli-run";
 import { adapterFor, parseSessionKey, sessionKey } from "./index";
 import { modeOf, queueStore, saveQueues, setMode, type Queued } from "./queue-store";
 import { handoffTitle } from "@/lib/handoff-text";
+import { parseEffort } from "@/lib/agent-traits";
 import { guardTurn, onSessionEvent, postNotice, postToSession, sameStore } from "../fallback";
 import { getSessionMeta, pickProfile, setSessionProfile, withProfile } from "../profiles";
 
@@ -189,7 +190,7 @@ async function sendQueuedNow(agent: AgentId, native: string, id: string) {
   else void drain(agent, native);
 }
 
-async function sendNow(agent: AgentId, native: string, text: string, o: { id?: string; model?: string; mode: PermissionMode; profile: unknown }): Promise<{ ok: true } | { ok: false; error: string; status: number; code?: string }> {
+async function sendNow(agent: AgentId, native: string, text: string, o: { id?: string; model?: string; effort?: string | null; mode: PermissionMode; profile: unknown }): Promise<{ ok: true } | { ok: false; error: string; status: number; code?: string }> {
   const a = await adapterFor(agent);
   if (!a) return { ok: false, error: "Session not found.", status: 404 };
   const key = sessionKey(agent, native);
@@ -197,7 +198,8 @@ async function sendNow(agent: AgentId, native: string, text: string, o: { id?: s
   const profile = pickProfile(agent, o.profile, key);
   if (!sameStore(before, profile)) return { ok: false, error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, status: 409, code: "other_store" };
   try {
-    await withProfile(profile, () => a.send(native, text, { model: o.model || profile.defaultModel || profile.models?.[0] || undefined, mode: o.mode }));
+    const effort = (o.effort === undefined ? profile.defaultEffort : o.effort) ?? undefined;
+    await withProfile(profile, () => a.send(native, text, { model: o.model || profile.defaultModel || profile.models?.[0] || undefined, effort, mode: o.mode }));
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err), status: 500 };
   }
@@ -335,19 +337,20 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
     }
   }
   const model = str(body.model) || undefined;
+  const effort = parseEffort(agent, body.effort);
   if (busy(a, native, key) || queues().get(key)?.length) {
     const before = pickProfile(agent, null, key);
     const next = pickProfile(agent, body.profile, key);
     if (!sameStore(before, next)) {
       return NextResponse.json({ error: `Can't switch this session to ${next.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
     }
-    enqueue(agent, native, { id: str(body.clientId) || `q${Date.now().toString(36)}`, text, model, mode, profile: body.profile, at: Date.now() });
+    enqueue(agent, native, { id: str(body.clientId) || `q${Date.now().toString(36)}`, text, model, effort, mode, profile: body.profile, at: Date.now() });
     /* the turn may have ended while this was queued */
     void settle(agent, native);
     return NextResponse.json({ id: key, via: "queued" });
   }
   sending.add(key);
-  const res = await sendNow(agent, native, text, { id: str(body.clientId), model, mode, profile: body.profile }).finally(() => sending.delete(key));
+  const res = await sendNow(agent, native, text, { id: str(body.clientId), model, effort, mode, profile: body.profile }).finally(() => sending.delete(key));
   void settle(agent, native);
   if (!res.ok) return NextResponse.json({ error: res.error, code: res.code }, { status: res.status });
   return NextResponse.json({ id: key, via: "web" });
@@ -367,9 +370,11 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
   const mode = parseMode(body.permissionMode) ?? DEFAULT_MODE;
   const profile = chosen;
   const model = str(body.model) || profile.defaultModel || profile.models?.[0] || undefined;
+  const asked = parseEffort(agent, body.effort);
+  const effort = (asked === undefined ? profile.defaultEffort : asked) ?? undefined;
   try {
     const { id } = await Promise.race([
-      withProfile(profile, () => a.start({ cwd, text, model, mode })),
+      withProfile(profile, () => a.start({ cwd, text, model, effort, mode })),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${a.label} didn't start in time.`)), 90_000)),
     ]);
     const key = sessionKey(agent, id);
@@ -393,6 +398,6 @@ export async function agentControl(agent: AgentId, native: string, body: Record<
     const mode = parseMode(body.value);
     if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
     setMode(key, mode);
-  } else if (body.action !== "model") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
+  } else if (body.action !== "model" && body.action !== "effort") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

@@ -9,7 +9,8 @@ import { responsesItems, type Source } from "../handoff-shape";
 import { appServerTurn } from "./codex-app";
 import { allRollouts, fileMeta, findRollout, idOfRollout, readRecords, rolloutRoots, tailRollout, threadNames, type FileMeta } from "./codex-files";
 import { errorText, parseLines, safeParse } from "./codex-parse";
-import type { AgentAdapter, AgentSession, HistoryPage } from "./types";
+import type { AgentAdapter, AgentSession, HistoryPage, SendOptions, StartOptions } from "./types";
+import { effortArgs } from "@/lib/agent-traits";
 
 /* Codex CLI (codex-cli 0.15x). History comes from the rollout JSONL files,
  * web turns run `codex app-server` (thread/start or thread/resume, then turn/start;
@@ -191,12 +192,12 @@ async function requireBinary() {
  * CODEX_WEB_DRIVER=exec falls back to `codex exec --json`, which only reports finished items. */
 const useExec = () => process.env.CODEX_WEB_DRIVER === "exec";
 
-async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
+async function start(opts: StartOptions): Promise<{ id: string }> {
   const bin = await requireBinary();
   const st = await fs.stat(opts.cwd).catch(() => null);
   if (!st?.isDirectory()) throw new Error(`Folder not found: ${opts.cwd}`);
   if (!useExec()) return startApp(bin, opts);
-  const args = ["exec", "--json", "--skip-git-repo-check", "--cd", opts.cwd, ...(opts.model ? ["--model", opts.model] : []), ...modeArgs(opts.mode, false), "-"];
+  const args = ["exec", "--json", "--skip-git-repo-check", "--cd", opts.cwd, ...(opts.model ? ["--model", opts.model] : []), ...effortArgs("codex", opts.effort), ...modeArgs(opts.mode, false), "-"];
   const pending = key(`pending-${randomUUID()}`);
   return new Promise((resolve, reject) => {
     let id: string | null = null;
@@ -239,7 +240,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
 }
 
 /** New session over the app server; resolves once the thread exists (before the model answers). */
-function startApp(bin: string, opts: { cwd: string; text: string; model?: string; mode: PermissionMode }, inject?: unknown[]): Promise<{ id: string }> {
+function startApp(bin: string, opts: StartOptions, inject?: unknown[]): Promise<{ id: string }> {
   const pending = key(`pending-${randomUUID()}`);
   return new Promise((resolve, reject) => {
     let id: string | null = null;
@@ -252,6 +253,7 @@ function startApp(bin: string, opts: { cwd: string; text: string; model?: string
         cwd: opts.cwd,
         text: opts.text,
         model: opts.model,
+        effort: opts.effort,
         mode: opts.mode,
         inject,
         onThread: (thread) => {
@@ -285,7 +287,7 @@ function startApp(bin: string, opts: { cwd: string; text: string; model?: string
   });
 }
 
-async function send(id: string, text: string, opts: { model?: string; mode: PermissionMode }): Promise<void> {
+async function send(id: string, text: string, opts: SendOptions): Promise<void> {
   const bin = await requireBinary();
   const file = await findRollout(id);
   if (!file) throw new Error("Codex session not found.");
@@ -293,17 +295,17 @@ async function send(id: string, text: string, opts: { model?: string; mode: Perm
   const cwdOk = meta?.cwd ? (await fs.stat(meta.cwd).catch(() => null))?.isDirectory() : false;
   const cwd = cwdOk ? meta!.cwd : os.homedir();
   if (!useExec()) {
-    appServerTurn({ key: key(id), bin, cwd, text, model: opts.model, mode: opts.mode, threadId: id });
+    appServerTurn({ key: key(id), bin, cwd, text, model: opts.model, effort: opts.effort, mode: opts.mode, threadId: id });
     return;
   }
-  const args = ["exec", "resume", "--json", "--skip-git-repo-check", ...(opts.model ? ["--model", opts.model] : []), ...modeArgs(opts.mode, true), id, "-"];
+  const args = ["exec", "resume", "--json", "--skip-git-repo-check", ...(opts.model ? ["--model", opts.model] : []), ...effortArgs("codex", opts.effort), ...modeArgs(opts.mode, true), id, "-"];
   let lineHandler: (line: string) => void = () => {};
   const run = startTurn(key(id), { cmd: bin, args, cwd, stdin: text }, (line) => lineHandler(line));
   lineHandler = trackErrors(run);
 }
 
 /** A new thread with another agent's conversation injected as its history, then the first turn. */
-async function importStart(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }, src: Source): Promise<{ id: string }> {
+async function importStart(opts: StartOptions, src: Source): Promise<{ id: string }> {
   const bin = await requireBinary();
   return startApp(bin, opts, responsesItems(src));
 }

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { query, type CanUseTool, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type EffortLevel, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta } from "@/lib/types";
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
 import { childEnv } from "./child-env";
 import { LIMIT_ERROR, type ResolvedProfile } from "./profiles";
+import { parseEffort } from "@/lib/agent-traits";
 
 /** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
  * The SDK writes every extraArgs key as "--key", so short flags go in executableArgs, which it puts before its own
@@ -116,11 +117,15 @@ export class Run {
 
   readonly cwd: string;
 
-  constructor(opts: { resume?: string; fork?: boolean; cwd: string; model?: string; permissionMode: PermissionMode; profile?: ResolvedProfile | null }) {
+  /** the reasoning effort this process runs at; null leaves it to Claude Code */
+  effort: EffortLevel | null;
+
+  constructor(opts: { resume?: string; fork?: boolean; cwd: string; model?: string; effort?: string | null; permissionMode: PermissionMode; profile?: ResolvedProfile | null }) {
     this.cwd = opts.cwd;
     this.profile = opts.profile ?? null;
     const p = this.profile;
     const model = opts.model ?? p?.defaultModel;
+    this.effort = (parseEffort("claude", opts.effort === undefined ? p?.defaultEffort : opts.effort) ?? null) as EffortLevel | null;
     this.state = {
       status: "starting",
       model: model ?? null,
@@ -139,6 +144,7 @@ export class Run {
         resume: opts.resume,
         forkSession: opts.fork,
         model,
+        ...(this.effort ? { effort: this.effort } : {}),
         permissionMode: opts.permissionMode,
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
@@ -209,6 +215,14 @@ export class Run {
   async setPermissionMode(mode: PermissionMode) {
     await this.q.setPermissionMode(mode);
     this.update({ permissionMode: mode });
+  }
+
+  /** null goes back to the model's default effort */
+  async setEffort(effort: string | null) {
+    const e = (parseEffort("claude", effort) ?? null) as EffortLevel | null;
+    if (e === this.effort) return;
+    await this.q.applyFlagSettings({ effortLevel: e });
+    this.effort = e;
   }
 
   async setModel(model: string | undefined) {

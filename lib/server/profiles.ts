@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo } from "@/lib/types";
 import { APP_SECRETS } from "./child-env";
+import { effortOptions, parseEffort } from "@/lib/agent-traits";
 
 /* Agent profiles: which CLI to run for an agent kind, with what arguments and environment.
  * Every installed agent has a built-in profile under its own id ("claude", "codex", ...).
@@ -29,6 +30,8 @@ export type Profile = {
   /** model ids offered in the composer; the first is the default when `defaultModel` isn't set */
   models?: string[];
   defaultModel?: string;
+  /** reasoning effort when a session hasn't picked one (see lib/agent-traits.ts for each agent's levels) */
+  defaultEffort?: string;
   /** profiles to continue with when a turn fails on a usage limit, quota, or capacity error */
   fallback?: string[];
   /** extra arguments for interactive launches only (e.g. "--dangerously-skip-permissions") */
@@ -114,6 +117,11 @@ export function parseProfile(raw: unknown): Profile | string {
   }
   const bin = typeof r.bin === "string" && r.bin.trim() ? r.bin.trim() : undefined;
   if (bin && bin.includes("/") && !path.isAbsolute(bin)) return `${id}: bin must be a name on PATH or an absolute path.`;
+  const effort = r.defaultEffort === undefined ? null : parseEffort(agent, r.defaultEffort);
+  if (effort === undefined) {
+    const levels = effortOptions(agent).map((o) => o.key);
+    return levels.length ? `${id}: defaultEffort must be one of ${levels.join(", ")}.` : `${id}: ${AGENT_LABEL[agent]} has no effort levels.`;
+  }
   const out: Profile = {
     id,
     label: typeof r.label === "string" && r.label.trim() ? r.label.trim().slice(0, 60) : id,
@@ -123,6 +131,7 @@ export function parseProfile(raw: unknown): Profile | string {
     env: Object.keys(env).length ? env : undefined,
     models: strings(r.models)?.map((m) => m.trim()).filter(Boolean),
     defaultModel: typeof r.defaultModel === "string" && r.defaultModel.trim() ? r.defaultModel.trim() : undefined,
+    defaultEffort: effort ?? undefined,
     fallback: strings(r.fallback)?.filter((f) => ID.test(f) && f !== id),
     launchArgs: strings(r.launchArgs),
     hidden: r.hidden === true ? true : undefined,
@@ -194,6 +203,7 @@ export function profileInfo(p: ResolvedProfile): ProfileInfo {
     env: Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, SECRET.test(k) && !/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(v) ? MASK : v])),
     models: p.models ?? [],
     defaultModel: p.defaultModel ?? null,
+    defaultEffort: p.defaultEffort ?? null,
     fallback: p.fallback ?? [],
     launchArgs: p.launchArgs ?? [],
     hidden: Boolean(p.hidden),
