@@ -275,6 +275,8 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 let flushing = false;
 let attempt = 0;
 let lastPull = 0;
+/** bumped when a save starts or lands, so a GET that was already on its way can't put older values back */
+let writes = 0;
 
 function ensurePending() {
   if (pendingLoaded) return;
@@ -330,9 +332,11 @@ export async function flush(): Promise<void> {
   flushing = true;
   inflight = pending;
   pending = {};
+  writes++;
   let again = false;
   try {
     const res = await request("PUT", inflight);
+    writes++;
     const sent = inflight;
     attempt = 0;
     inflight = {};
@@ -360,11 +364,11 @@ export async function flush(): Promise<void> {
   if (again) schedule(PUSH_DELAY_MS);
 }
 
-/** Takes the server's settings, keeping local changes it hasn't confirmed yet. */
+/** Takes the server's settings, keeping local changes it hasn't confirmed yet (this tab's and other tabs' unsent ones). */
 function merge(server: unknown) {
   ensurePending();
   const next: Record<string, unknown> = { ...pickValid(server, "synced").values };
-  for (const [k, v] of Object.entries({ ...inflight, ...pending })) {
+  for (const [k, v] of Object.entries({ ...loadPending(), ...inflight, ...pending })) {
     if (v === null) delete next[k];
     else next[k] = v;
   }
@@ -378,8 +382,11 @@ function merge(server: unknown) {
 export async function pull(force = false): Promise<void> {
   if (!force && Date.now() - lastPull < PULL_EVERY_MS) return;
   lastPull = Date.now();
+  const gen = writes;
   try {
-    merge((await request("GET")).settings);
+    const res = await request("GET");
+    /* a save started or landed meanwhile: its answer is newer than this one */
+    if (gen === writes && !flushing) merge(res.settings);
   } catch {}
 }
 

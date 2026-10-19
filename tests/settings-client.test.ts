@@ -41,7 +41,7 @@ function fakeRoot() {
 }
 
 let root: ReturnType<typeof fakeRoot>;
-let net: "up" | "down" | "refuse" | "refuse-palette" = "up";
+let net: "up" | "down" | "refuse" | "refuse-palette" | "slow-get" = "up";
 const g = globalThis as Record<string, unknown>;
 
 async function fakeFetch(url: string, init?: RequestInit) {
@@ -50,6 +50,12 @@ async function fakeFetch(url: string, init?: RequestInit) {
   if (net === "refuse-palette" && init?.method === "PUT" && "palette" in JSON.parse(String(init.body))) {
     net = "up";
     return Response.json({ error: "no", rejected: ["palette"] }, { status: 400 });
+  }
+  if (net === "slow-get" && init?.method !== "PUT") {
+    /* answered from the file as it is now, but the response arrives late */
+    const res = route.GET();
+    await new Promise((r) => setTimeout(r, 30));
+    return res;
   }
   return init?.method === "PUT" ? route.PUT(new NextRequest(`http://x${url}`, init as ConstructorParameters<typeof NextRequest>[1])) : route.GET();
 }
@@ -178,6 +184,16 @@ describe("client settings store", () => {
     expect(s.getSetting("palette")).toBe("midnight");
     await s.flush();
     expect(server.readSynced().settings).toEqual({ accent: "violet", palette: "midnight" });
+  });
+
+  it("ignores a pull that started before a save and answers after it", async () => {
+    const s = await load();
+    s.setSetting("palette", "nord");
+    net = "slow-get";
+    /* window focus pulls and saves at the same time */
+    await Promise.all([s.pull(true), s.flush()]);
+    expect(server.readSynced().settings).toEqual({ palette: "nord" });
+    expect(s.getSetting("palette")).toBe("nord");
   });
 
   it("drops changes the server refuses and goes back to its copy", async () => {
