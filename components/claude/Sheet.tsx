@@ -41,7 +41,7 @@ export function Sheet({ title, onClose, children, footer, wide }: { title: strin
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong sm:hidden" />
         <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-          <h2 id={headingId} className="min-w-0 flex-1 truncate text-[14.5px] font-semibold text-ink">
+          <h2 id={headingId} className="min-w-0 flex-1 truncate text-base font-semibold text-ink">
             {title}
           </h2>
           <button type="button" onClick={onClose} aria-label="Close" className="icon-btn">
@@ -64,8 +64,8 @@ export function Sheet({ title, onClose, children, footer, wide }: { title: strin
   );
 }
 
-export const fieldBase = "w-full rounded-[9px] bg-inset px-3 text-[16px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-accent/30 sm:text-[13.5px]";
+export const fieldBase = "w-full rounded-[9px] bg-inset px-3 text-[16px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-accent/30 sm:text-sm";
 export const field = `${fieldBase} h-10 sm:h-9`;
 export const area = `${fieldBase} py-2 leading-relaxed`;
-export const primaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full bg-ink px-4 text-[13px] font-medium text-page transition-opacity duration-150 hover:opacity-90 disabled:opacity-50";
-export const secondaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full px-3.5 text-[13px] font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover disabled:opacity-50";
+export const primaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full bg-ink px-4 text-sm font-medium text-page transition-opacity duration-150 hover:opacity-90 disabled:opacity-50";
+export const secondaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full px-3.5 text-sm font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover disabled:opacity-50";

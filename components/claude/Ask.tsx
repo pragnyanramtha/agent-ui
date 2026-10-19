@@ -68,7 +68,7 @@ export function AskHost() {
         </>
       }
     >
-      {req.body && <p className="text-[13.5px] leading-relaxed text-ink-2">{req.body}</p>}
+      {req.body && <p className="text-sm leading-relaxed text-ink-2">{req.body}</p>}
       {prompt && (
         <input
           value={value}

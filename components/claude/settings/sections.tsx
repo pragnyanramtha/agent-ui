@@ -145,7 +145,7 @@ function Keyboard() {
       <div className="rounded-card border border-line bg-surface px-3.5 py-3">
         <ShortcutList />
       </div>
-      <p className="px-1 pt-2 text-[12px] text-ink-3">Press ? outside a text field to see these anywhere.</p>
+      <p className="px-1 pt-2 text-xs text-ink-3">Press ? outside a text field to see these anywhere.</p>
     </section>
   );
 }
@@ -164,7 +164,7 @@ function Git() {
   return (
     <>
       <RegistryCards section="git" />
-      <p className="px-1 text-[12px] leading-relaxed text-ink-3">
+      <p className="px-1 text-xs leading-relaxed text-ink-3">
         A checkpoint of your files is saved before each message you send here, so a turn can be rewound. Commit, push and pull requests are in each session&apos;s Git panel.
       </p>
     </>

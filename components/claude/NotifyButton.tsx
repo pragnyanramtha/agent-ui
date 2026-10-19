@@ -56,7 +56,7 @@ export function NotifyButton() {
         {on ? <Bell width={17} height={17} strokeWidth={1.8} aria-hidden /> : <BellOff width={17} height={17} strokeWidth={1.8} aria-hidden />}
       </IconButton>
       {note && (
-        <span role="status" className="absolute bottom-full left-1/2 z-20 mb-2 w-60 -translate-x-1/2 rounded-[10px] border border-line bg-surface px-3 py-2 text-[12.5px] leading-snug text-ink-2 shadow-overlay">
+        <span role="status" className="absolute bottom-full left-1/2 z-20 mb-2 w-60 -translate-x-1/2 rounded-[10px] border border-line bg-surface px-3 py-2 text-sm leading-snug text-ink-2 shadow-overlay">
           {note}
         </span>
       )}

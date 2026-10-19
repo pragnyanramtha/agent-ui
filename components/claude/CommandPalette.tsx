@@ -590,7 +590,7 @@ export function CommandPalette({
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[14.5px] sm:pointer-coarse:text-[16px]"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-base sm:pointer-coarse:text-[16px]"
           />
           <button
             type="button"
@@ -605,7 +605,7 @@ export function CommandPalette({
         <div ref={listRef} id={listId} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
           {groups.map(({ g, rows }) => (
             <div key={g} role="group" aria-labelledby={`${uid}-${g}`} className="pb-1">
-              <div id={`${uid}-${g}`} role="presentation" className="px-2.5 pt-2 pb-1 text-[12px] font-medium text-ink-3">
+              <div id={`${uid}-${g}`} role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
                 {g}
               </div>
               {rows.map(({ it, i }) => {
@@ -625,8 +625,8 @@ export function CommandPalette({
                       {it.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-medium sm:text-[13.5px]">{it.label}</span>
-                      {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-ink-3">{it.hint}</span>}
+                      <span className="block truncate text-base font-medium sm:text-sm">{it.label}</span>
+                      {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-ink-3">{it.hint}</span>}
                     </span>
                     {it.current && <Check width={15} height={15} strokeWidth={2} className="shrink-0 text-accent-ink" aria-label="In use" />}
                     {on ? (
@@ -646,23 +646,23 @@ export function CommandPalette({
             </div>
           ))}
           {loading && !groups.some((x) => x.g === "Sessions") && (
-            <p className="px-2.5 py-2 text-[13px] text-ink-3" role="status">
+            <p className="px-2.5 py-2 text-sm text-ink-3" role="status">
               Loading sessions…
             </p>
           )}
           {messages.searching && (
-            <p className="px-2.5 py-2 text-[13px] text-ink-3" role="status">
+            <p className="px-2.5 py-2 text-sm text-ink-3" role="status">
               Searching messages…
             </p>
           )}
           {!items.length && !messages.searching && (
-            <p className="px-2.5 py-6 text-center text-[13px] text-ink-3" role="status">
+            <p className="px-2.5 py-6 text-center text-sm text-ink-3" role="status">
               Nothing matches <span className="font-medium text-ink-2">“{query.trim()}”</span>.
             </p>
           )}
         </div>
 
-        <div className="hidden h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-[11.5px] text-ink-3 pointer-fine:flex" aria-hidden>
+        <div className="hidden h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-xs text-ink-3 pointer-fine:flex" aria-hidden>
           <span>
             <Key>↑</Key> <Key>↓</Key> {picker ? "to preview" : "to move"}
           </span>

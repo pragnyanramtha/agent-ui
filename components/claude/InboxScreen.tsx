@@ -8,7 +8,7 @@ import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
 import { runFailed } from "@/lib/status";
 
-const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
+const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 
 export const inboxCount = (sessions: SessionSummary[] | null, finished: Finished) =>
   (sessions ?? []).filter((s) => s.web?.pending.length || runFailed(s.web)).length + Object.keys(finished).length;
@@ -49,14 +49,14 @@ export function InboxScreen({
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">Inbox</h1>
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">Inbox</h1>
           {extra}
         </div>
       </header>
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-[820px] flex-col gap-7 px-3 pt-2 pb-16 sm:px-6">
-          {sessions === null && <p className="py-10 text-center text-[13px] text-ink-3">Loading…</p>}
-          {empty && <p className="py-16 text-center text-[13.5px] text-ink-3">Nothing needs you.</p>}
+          {sessions === null && <p className="py-10 text-center text-sm text-ink-3">Loading…</p>}
+          {empty && <p className="py-16 text-center text-sm text-ink-3">Nothing needs you.</p>}
 
           {needs.length > 0 && (
             <Group title="Needs you" count={needs.length}>
@@ -74,7 +74,7 @@ export function InboxScreen({
             <Group title="Failed" count={failed.length}>
               {failed.map((s) => (
                 <Card key={s.id} s={s} onOpen={onOpen}>
-                  <p className="text-[12.5px] leading-snug text-red-ink [overflow-wrap:anywhere]">{s.web?.error ?? "The turn failed."}</p>
+                  <p className="text-sm leading-snug text-red-ink [overflow-wrap:anywhere]">{s.web?.error ?? "The turn failed."}</p>
                 </Card>
               ))}
             </Group>
@@ -85,7 +85,7 @@ export function InboxScreen({
               title="Finished"
               count={done.length}
               aside={
-                <button type="button" onClick={() => onDismiss(null)} className="text-[12.5px] font-medium text-ink-2 hover:text-ink">
+                <button type="button" onClick={() => onDismiss(null)} className="text-sm font-medium text-ink-2 hover:text-ink">
                   Clear all
                 </button>
               }
@@ -105,8 +105,8 @@ function Group({ title, count, aside, children }: { title: string; count: number
   return (
     <section aria-label={title}>
       <div className="flex items-center gap-2 pb-2">
-        <h2 className="text-[13px] font-semibold text-ink">{title}</h2>
-        <span className="text-[12px] text-ink-3 tabular-nums">{count}</span>
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <span className="text-xs text-ink-3 tabular-nums">{count}</span>
         <span className="ml-auto">{aside}</span>
       </div>
       <ul className="flex flex-col gap-2">{children}</ul>
@@ -119,8 +119,8 @@ function Card({ s, onOpen, when, onDismiss, children }: { s: SessionSummary; onO
     <li className="rounded-[14px] bg-surface px-3.5 py-3 shadow-hairline">
       <div className="flex min-w-0 items-center gap-2">
         <button type="button" onClick={() => onOpen(s.id)} className="min-w-0 flex-1 text-left">
-          <span className="block truncate text-[14px] font-medium text-ink">{s.title || "Session"}</span>
-          <span className="block truncate text-[12px] text-ink-3">
+          <span className="block truncate text-base font-medium text-ink">{s.title || "Session"}</span>
+          <span className="block truncate text-xs text-ink-3">
             {AGENT_LABEL[s.agent]} · {s.project || "No folder"}
             {when ? ` · ${timeAgo(when)}` : ""}
           </span>
@@ -145,8 +145,8 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
   if (ask.kind === "question") {
     return (
       <div className="rounded-[10px] bg-inset px-3 py-2 shadow-hairline">
-        <p className="text-[13px] text-ink">{ask.questions[0]?.question ?? "Question"}</p>
-        <button type="button" onClick={onOpen} className="mt-1.5 text-[12.5px] font-medium text-accent-ink hover:underline">
+        <p className="text-sm text-ink">{ask.questions[0]?.question ?? "Question"}</p>
+        <button type="button" onClick={onOpen} className="mt-1.5 text-sm font-medium text-accent-ink hover:underline">
           Answer in the session
         </button>
       </div>
@@ -166,12 +166,12 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
   };
   return (
     <div className="rounded-[10px] bg-inset px-3 py-2 shadow-hairline">
-      <p className="text-[13px] font-medium text-ink [overflow-wrap:anywhere]">{ask.title || ask.toolName}</p>
-      {ask.description && <p className="mt-0.5 text-[12.5px] text-ink-2 [overflow-wrap:anywhere]">{ask.description}</p>}
+      <p className="text-sm font-medium text-ink [overflow-wrap:anywhere]">{ask.title || ask.toolName}</p>
+      {ask.description && <p className="mt-0.5 text-sm text-ink-2 [overflow-wrap:anywhere]">{ask.description}</p>}
       {command && !ask.title.includes(command) && (
-        <pre className="mt-1.5 max-h-32 overflow-auto rounded-[8px] bg-surface px-2.5 py-1.5 font-mono text-[12px] whitespace-pre-wrap text-ink-2 shadow-hairline [overflow-wrap:anywhere]">{command}</pre>
+        <pre className="mt-1.5 max-h-32 overflow-auto rounded-[8px] bg-surface px-2.5 py-1.5 font-mono text-xs whitespace-pre-wrap text-ink-2 shadow-hairline [overflow-wrap:anywhere]">{command}</pre>
       )}
-      {error && <p className="mt-1.5 text-[12px] text-red-ink">{error}</p>}
+      {error && <p className="mt-1.5 text-xs text-red-ink">{error}</p>}
       <div className="mt-2 flex flex-wrap gap-2">
         <button type="button" disabled={busy !== null} onClick={() => void answer("allow")} className={`${btn} bg-ink text-surface`}>
           {busy === "allow" ? "Allowing…" : "Allow"}

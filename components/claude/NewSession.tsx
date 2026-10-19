@@ -187,7 +187,7 @@ export function NewSession({
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="flex size-10 items-center justify-center rounded-[10px] text-ink-2 hover:bg-hover hover:text-ink">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <span className="min-w-0 flex-1 truncate px-1 text-[14.5px] font-semibold tracking-[-0.01em] text-ink">New session</span>
+          <span className="min-w-0 flex-1 truncate px-1 text-base font-semibold tracking-[-0.01em] text-ink">New session</span>
           {extra}
         </div>
       </header>
@@ -231,7 +231,7 @@ export function NewSession({
               autoFocus
             />
             {error && (
-              <p role="alert" className="px-4 pt-2.5 text-[13px] text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <p role="alert" className="px-4 pt-2.5 text-sm text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 {error}
               </p>
             )}
@@ -246,7 +246,7 @@ export function NewSession({
                   } catch {}
                 }}
                 title="New branch in a separate folder"
-                className={`tap relative inline-flex items-center gap-1.5 rounded-chip px-1 text-[12.5px] transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
+                className={`tap relative inline-flex items-center gap-1.5 rounded-chip px-1 text-sm transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
               >
                 <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
                   {worktree && <Check width={10} height={10} strokeWidth={3} />}
@@ -257,7 +257,7 @@ export function NewSession({
                 type="button"
                 onClick={startInTerminal}
                 disabled={launching}
-                className="tap relative rounded-chip px-1 text-[12.5px] text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
+                className="tap relative rounded-chip px-1 text-sm text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
               >
                 {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
               </button>
@@ -282,12 +282,12 @@ export function NewSession({
                           {live ? <Pulse busy={isBusy(s)} cellClass={waiting ? "bg-orange" : "bg-ink"} /> : <Clock width={15} height={15} strokeWidth={1.8} />}
                         </span>
                         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                          <span className="min-w-0 truncate text-[14px] text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
-                          <span className="hidden min-w-0 max-w-[40%] shrink-0 truncate text-[13px] text-ink-3 min-[420px]:inline" translate="no">
+                          <span className="min-w-0 truncate text-base text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
+                          <span className="hidden min-w-0 max-w-[40%] shrink-0 truncate text-sm text-ink-3 min-[420px]:inline" translate="no">
                             {[s.project, s.agent !== "claude" ? AGENT_LABEL[s.agent] : null].filter(Boolean).join(" · ")}
                           </span>
                         </span>
-                        <span className="shrink-0 text-[12px] text-ink-3">
+                        <span className="shrink-0 text-xs text-ink-3">
                           {waiting ? <span className="text-orange-ink">Needs you</span> : live ? "Open" : now ? timeAgo(s.mtime, now) : null}
                         </span>
                       </button>

@@ -65,7 +65,7 @@ export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode
   );
 }
 
-const BTN = "tap relative h-9 rounded-full px-3.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover";
+const BTN = "tap relative h-9 rounded-full px-3.5 text-sm font-medium text-ink shadow-btn hover:bg-hover";
 
 function PanelFallback({ retry, onClose }: { retry: () => void; onClose?: () => void }) {
   return (
@@ -73,7 +73,7 @@ function PanelFallback({ retry, onClose }: { retry: () => void; onClose?: () => 
       role="alert"
       className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-page px-6 text-center lg:static lg:inset-auto lg:border-l lg:border-line"
     >
-      <p className="text-[13px] text-ink-3">This panel failed to load.</p>
+      <p className="text-sm text-ink-3">This panel failed to load.</p>
       <div className="flex items-center gap-2">
         <button type="button" onClick={retry} className={BTN}>
           Retry

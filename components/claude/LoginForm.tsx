@@ -39,14 +39,14 @@ export function LoginForm() {
         </span>
         <div>
           <h1 className="text-[18px] font-semibold tracking-[-0.015em] text-ink">Sign in to agent-u</h1>
-          <p className="mt-0.5 min-h-[18px] text-[12.5px] text-ink-3" translate="no">
+          <p className="mt-0.5 min-h-[18px] text-sm text-ink-3" translate="no">
             {host}
           </p>
         </div>
       </div>
 
       <div className="flex flex-col gap-2">
-        <label htmlFor="password" className="text-[12.5px] font-medium text-ink-2">
+        <label htmlFor="password" className="text-sm font-medium text-ink-2">
           Password
         </label>
         <div
@@ -71,7 +71,7 @@ export function LoginForm() {
             enterKeyHint="go"
             aria-invalid={Boolean(error)}
             aria-describedby={error ? "login-error" : undefined}
-            className="h-full min-w-0 flex-1 bg-transparent px-3 text-[16px] text-ink outline-none sm:text-[14px] sm:pointer-coarse:text-[16px]"
+            className="h-full min-w-0 flex-1 bg-transparent px-3 text-[16px] text-ink outline-none sm:text-base sm:pointer-coarse:text-[16px]"
           />
           <button
             type="button"
@@ -84,7 +84,7 @@ export function LoginForm() {
           </button>
         </div>
         {error && (
-          <p id="login-error" role="alert" className="text-[12.5px] text-red-ink">
+          <p id="login-error" role="alert" className="text-sm text-red-ink">
             {error}
           </p>
         )}
@@ -93,12 +93,12 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={busy || !password}
-        className="tap relative flex h-10 w-full items-center justify-center rounded-[8px] bg-ink text-[13.5px] font-medium text-page transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
+        className="tap relative flex h-10 w-full items-center justify-center rounded-[8px] bg-ink text-sm font-medium text-page transition-opacity duration-150 hover:opacity-90 disabled:opacity-40"
       >
         {busy ? "Signing in…" : "Sign in"}
       </button>
 
-      <p className="text-center text-[12px] leading-relaxed text-ink-3">This password opens a shell on the server. Treat it like an SSH key.</p>
+      <p className="text-center text-xs leading-relaxed text-ink-3">This password opens a shell on the server. Treat it like an SSH key.</p>
     </form>
   );
 }

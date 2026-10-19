@@ -9,12 +9,12 @@ const COMMIT = process.env.NEXT_PUBLIC_BUILD_COMMIT || "";
 const REPO = process.env.NEXT_PUBLIC_REPO_URL || "";
 
 function Value({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-[12.5px] text-ink-2 select-all">{children}</span>;
+  return <span className="font-mono text-sm text-ink-2 select-all">{children}</span>;
 }
 
 function Link({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="tap relative inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+    <a href={href} target="_blank" rel="noreferrer" className="tap relative inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
       {children}
       <OpenNewWindow width={13} height={13} strokeWidth={1.9} aria-hidden />
     </a>
@@ -33,7 +33,7 @@ export function AboutSection() {
         {COMMIT && (
           <Row label="Build">
             {REPO ? (
-              <a href={`${REPO}/commit/${COMMIT}`} target="_blank" rel="noreferrer" className="font-mono text-[12.5px] text-accent-ink hover:underline">
+              <a href={`${REPO}/commit/${COMMIT}`} target="_blank" rel="noreferrer" className="font-mono text-sm text-accent-ink hover:underline">
                 {COMMIT}
               </a>
             ) : (

@@ -316,7 +316,7 @@ export function App() {
           panel.addEventListener("blur", () => panel.removeAttribute("tabindex"), { once: true });
           panel.focus();
         }}
-        className="fixed top-[max(0.5rem,env(safe-area-inset-top))] left-2 z-[60] rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-page shadow-overlay not-focus:sr-only"
+        className="fixed top-[max(0.5rem,env(safe-area-inset-top))] left-2 z-[60] rounded-full bg-ink px-4 py-2 text-sm font-medium text-page shadow-overlay not-focus:sr-only"
       >
         Skip to message
       </a>

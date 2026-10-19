@@ -26,7 +26,7 @@ function SectionHeader({ id }: { id: SectionId }) {
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
       <div className="min-w-0 flex-1">
         <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
-        <p className="mt-0.5 text-[13px] text-ink-3">{info.description}</p>
+        <p className="mt-0.5 text-sm text-ink-3">{info.description}</p>
       </div>
       {own.length > 0 &&
         (undo ? (
@@ -65,7 +65,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
         onKeyDown={(e) => e.key === "Escape" && value && (e.preventDefault(), onChange(""))}
         placeholder="Search settings"
         aria-label="Search settings"
-        className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3 md:text-[13px] [&::-webkit-search-cancel-button]:hidden"
+        className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3 md:text-sm [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -78,7 +78,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
 
 function Results({ query, onOpen }: { query: string; onOpen: (id: SectionId) => void }) {
   const hits = searchSettings(query);
-  if (!hits.length) return <p className="px-1 py-10 text-center text-[13px] text-ink-3">No settings match &ldquo;{query.trim()}&rdquo;.</p>;
+  if (!hits.length) return <p className="px-1 py-10 text-center text-sm text-ink-3">No settings match &ldquo;{query.trim()}&rdquo;.</p>;
   return (
     <>
       {hits.map((h) => {
@@ -86,8 +86,8 @@ function Results({ query, onOpen }: { query: string; onOpen: (id: SectionId) => 
         return (
           <section key={h.section} className="flex flex-col">
             <div className="flex items-center px-1 pb-2">
-              <h3 className="flex-1 text-[12px] font-medium text-ink-3">{info.label}</h3>
-              <button type="button" onClick={() => onOpen(h.section)} className="tap relative text-[12px] font-medium text-accent-ink hover:underline">
+              <h3 className="flex-1 text-xs font-medium text-ink-3">{info.label}</h3>
+              <button type="button" onClick={() => onOpen(h.section)} className="tap relative text-xs font-medium text-accent-ink hover:underline">
                 Open {info.label}
               </button>
             </div>
@@ -163,7 +163,7 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
               <NavArrowLeft width={19} height={19} strokeWidth={1.9} />
             </button>
           )}
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">
             <span className={paged && !searching ? "hidden md:inline" : ""}>Settings</span>
             {paged && !searching && <span className="md:hidden">{info.label}</span>}
           </h1>
@@ -184,7 +184,7 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
                     type="button"
                     onClick={() => open(s.id)}
                     aria-current={current ? "page" : undefined}
-                    className={`tap relative flex w-full items-center gap-3 text-left text-ink max-md:min-h-13 max-md:px-3.5 max-md:py-2.5 md:h-8 md:gap-2.5 md:rounded-control md:px-2.5 md:text-[13.5px] ${
+                    className={`tap relative flex w-full items-center gap-3 text-left text-ink max-md:min-h-13 max-md:px-3.5 max-md:py-2.5 md:h-8 md:gap-2.5 md:rounded-control md:px-2.5 md:text-sm ${
                       current ? "md:bg-sidebar-active md:font-medium" : "md:text-ink-2 md:hover:bg-hover md:hover:text-ink"
                     }`}
                   >
@@ -192,8 +192,8 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
                       <Icon width={15} height={15} strokeWidth={1.8} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14.5px] md:text-[13.5px]">{s.label}</span>
-                      <span className="block truncate text-[12px] text-ink-3 md:hidden">{s.description}</span>
+                      <span className="block truncate text-base md:text-sm">{s.label}</span>
+                      <span className="block truncate text-xs text-ink-3 md:hidden">{s.description}</span>
                     </span>
                     <NavArrowRight width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-3 md:hidden" aria-hidden />
                   </button>

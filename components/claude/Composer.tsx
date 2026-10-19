@@ -102,14 +102,14 @@ function moveFocus(e: React.KeyboardEvent<HTMLElement>) {
 
 function MenuLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p role="presentation" className="px-2.5 pt-2 pb-1 text-[11.5px] font-medium text-ink-3">
+    <p role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
       {children}
     </p>
   );
 }
 
 const menuRow =
-  "flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13.5px] text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent h-10 sm:h-8 sm:text-[13px]";
+  "flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-sm text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent h-10 sm:h-8";
 
 const ghost = "tap relative flex shrink-0 items-center justify-center rounded-full text-ink-2 transition-[background-color,color] duration-150 hover:bg-hover hover:text-ink";
 
@@ -478,7 +478,7 @@ export function Composer({
       className={menuRow}
     >
       <span className="min-w-0 truncate">{m.name}</span>
-      {m.key === "" && model && !list.some((x) => x.key === model) && <span className="truncate text-[12px] text-ink-3">{modelName(model)}</span>}
+      {m.key === "" && model && !list.some((x) => x.key === model) && <span className="truncate text-xs text-ink-3">{modelName(model)}</span>}
       {on && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
     </button>
   );
@@ -498,7 +498,7 @@ export function Composer({
             }}
             placeholder={`Filter ${models.length - 1} models…`}
             aria-label="Filter models"
-            className="h-9 w-full rounded-[8px] bg-inset px-2.5 text-[13px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8"
+            className="h-9 w-full rounded-[8px] bg-inset px-2.5 text-sm text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8"
             autoComplete="off"
             spellCheck={false}
             autoCapitalize="off"
@@ -513,7 +513,7 @@ export function Composer({
             closeMenu(true);
           }),
         )}
-        {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-[12.5px] text-ink-3">No models match.</p>}
+        {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-sm text-ink-3">No models match.</p>}
       </div>
     </>
   );
@@ -543,7 +543,7 @@ export function Composer({
               const header = i === 0 || commands[i - 1].kind !== c.kind ? KIND_LABEL[c.kind] : null;
               return (
                 <div key={`${c.kind}:${c.name}`}>
-                  {header && !slashQuery && <p className="px-2.5 pt-2 pb-1 text-[11.5px] font-medium text-ink-3">{header}</p>}
+                  {header && !slashQuery && <p className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">{header}</p>}
                   <button
                     id={`${uid}-cmd-${i}`}
                     type="button"
@@ -557,20 +557,20 @@ export function Composer({
                     className={`flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition-colors duration-75 sm:py-1.5 ${i === active ? "bg-hover" : ""}`}
                   >
                     <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2.5">
-                      <span className="shrink-0 font-mono text-[13px] text-ink sm:text-[12.5px]" translate="no">
+                      <span className="shrink-0 font-mono text-sm text-ink" translate="no">
                         /{c.name}
                         {c.hint && <span className="text-ink-3"> {c.hint}</span>}
                       </span>
-                      {c.description && <span className="min-w-0 truncate text-[12px] text-ink-3">{c.description}</span>}
+                      {c.description && <span className="min-w-0 truncate text-xs text-ink-3">{c.description}</span>}
                     </span>
-                    {slashQuery ? <span className="shrink-0 text-[10.5px] font-medium text-ink-3">{KIND_LABEL[c.kind]}</span> : null}
+                    {slashQuery ? <span className="shrink-0 text-2xs font-medium text-ink-3">{KIND_LABEL[c.kind]}</span> : null}
                   </button>
                 </div>
               );
             })}
           </div>
           {commands.length === 0 && (
-            <p className="px-2.5 py-2 text-[12.5px] text-ink-3">{allCommands.length ? `No command matches “${slashQuery}”.` : "Loading commands…"}</p>
+            <p className="px-2.5 py-2 text-sm text-ink-3">{allCommands.length ? `No command matches “${slashQuery}”.` : "Loading commands…"}</p>
           )}
         </MenuShell>
       )}
@@ -594,12 +594,12 @@ export function Composer({
                   onClick={() => pickMention(f)}
                   className={`flex h-10 w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left transition-colors duration-75 sm:h-8 ${i === active ? "bg-hover" : ""}`}
                 >
-                  <span className="shrink-0 truncate font-mono text-[13px] text-ink sm:text-[12.5px]" translate="no">
+                  <span className="shrink-0 truncate font-mono text-sm text-ink" translate="no">
                     {f.slice(cut + 1)}
                   </span>
                   {cut > 0 && (
                     /* rtl keeps the end of a long folder path in view; bdi keeps its characters in order */
-                    <span className="min-w-0 truncate text-[12px] text-ink-3" translate="no" dir="rtl">
+                    <span className="min-w-0 truncate text-xs text-ink-3" translate="no" dir="rtl">
                       <bdi>{f.slice(0, cut)}</bdi>
                     </span>
                   )}
@@ -608,7 +608,7 @@ export function Composer({
             })}
           </div>
           {found.files.length === 0 && (
-            <p className="px-2.5 py-2 text-[12.5px] text-ink-3">
+            <p className="px-2.5 py-2 text-sm text-ink-3">
               {found.loading ? "Searching files…" : found.error ? "Couldn't list files here." : mention?.query ? `No files match “${mention.query}”.` : "No files here."}
             </p>
           )}
@@ -631,7 +631,7 @@ export function Composer({
                 <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
                 <span className="shrink-0">Folder</span>
                 {folder && (
-                  <span className="ml-auto min-w-0 truncate text-[12px] text-ink-3" translate="no">
+                  <span className="ml-auto min-w-0 truncate text-xs text-ink-3" translate="no">
                     {shortPath(folder)}
                   </span>
                 )}
@@ -662,11 +662,11 @@ export function Composer({
               }}
               className={menuRow}
             >
-              <span aria-hidden className="flex size-4 shrink-0 items-center justify-center font-mono text-[14px] leading-none text-ink-2">
+              <span aria-hidden className="flex size-4 shrink-0 items-center justify-center font-mono text-base leading-none text-ink-2">
                 /
               </span>
               <span>Commands</span>
-              <span className="ml-auto text-[12px] text-ink-3">Type /</span>
+              <span className="ml-auto text-xs text-ink-3">Type /</span>
             </button>
             <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
             <button
@@ -682,13 +682,13 @@ export function Composer({
             >
               <Archive width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
               <span>Stash prompt</span>
-              <span className="ml-auto text-[12px] text-ink-3 pointer-coarse:hidden">{comboFor("stash")}</span>
+              <span className="ml-auto text-xs text-ink-3 pointer-coarse:hidden">{comboFor("stash")}</span>
             </button>
             {stashes.length > 0 && (
               <button type="button" role="menuitem" aria-haspopup="menu" onClick={() => setMenu("stash")} className={menuRow}>
                 <span aria-hidden className="size-4 shrink-0" />
                 <span>Stashed prompts</span>
-                <span className="ml-auto text-[12px] text-ink-3 tabular-nums">{stashes.length}</span>
+                <span className="ml-auto text-xs text-ink-3 tabular-nums">{stashes.length}</span>
               </button>
             )}
           </div>
@@ -706,7 +706,7 @@ export function Composer({
                   <button type="button" role="menuitem" onClick={() => restoreStash(st)} title="Put back in the box" className={`${menuRow} flex-1`}>
                     <span className="min-w-0 flex-1 truncate">{title}</span>
                     {st.files.length > 0 && <Attachment width={14} height={14} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-label={`${st.files.length} attached`} />}
-                    <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{timeAgo(st.at)}</span>
+                    <span className="shrink-0 text-xs text-ink-3 tabular-nums">{timeAgo(st.at)}</span>
                   </button>
                   <button type="button" role="menuitem" aria-label={`Delete stashed prompt: ${title}`} title="Delete" onClick={() => deleteStash(st.id)} className={`${ghost} size-10 rounded-[8px] sm:size-8`}>
                     <Trash width={15} height={15} strokeWidth={1.8} aria-hidden />
@@ -714,7 +714,7 @@ export function Composer({
                 </div>
               );
             })}
-            {stashes.length === 0 && <p className="px-2.5 py-2 text-[12.5px] text-ink-3">No stashed prompts.</p>}
+            {stashes.length === 0 && <p className="px-2.5 py-2 text-sm text-ink-3">No stashed prompts.</p>}
           </div>
         </MenuShell>
       )}
@@ -738,7 +738,7 @@ export function Composer({
                   className={menuRow}
                 >
                   <span className="shrink-0">{o.name}</span>
-                  <span className="ml-auto min-w-0 truncate text-[12px] text-ink-3">{o.desc}</span>
+                  <span className="ml-auto min-w-0 truncate text-xs text-ink-3">{o.desc}</span>
                   <Check width={15} height={15} strokeWidth={2.2} className={`shrink-0 text-ink ${on ? "" : "invisible"}`} aria-hidden />
                 </button>
               );
@@ -782,7 +782,7 @@ export function Composer({
                           className={menuRow}
                         >
                           <span className={a.installed ? "" : "text-ink-3"}>{a.label}</span>
-                          {!a.installed && <span className="ml-auto text-[12px] text-ink-3">Not installed</span>}
+                          {!a.installed && <span className="ml-auto text-xs text-ink-3">Not installed</span>}
                           {agent === a.id && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
                         </button>
                       ))}
@@ -821,7 +821,7 @@ export function Composer({
                     className={menuRow}
                   >
                     <span className={`min-w-0 truncate ${p.installed ? "" : "text-ink-3"}`}>{p.label}</span>
-                    {!p.installed && <span className="ml-auto text-[12px] text-ink-3">Not installed</span>}
+                    {!p.installed && <span className="ml-auto text-xs text-ink-3">Not installed</span>}
                     {p.id === profile && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
                   </button>
                 ))}
@@ -829,7 +829,7 @@ export function Composer({
             )}
             <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
             <div role="group" aria-label="Approvals" className="px-1.5 pb-1.5">
-              <p role="presentation" className="px-1 pt-1.5 pb-1.5 text-[11.5px] font-medium text-ink-3">
+              <p role="presentation" className="px-1 pt-1.5 pb-1.5 text-xs font-medium text-ink-3">
                 Approvals
               </p>
               <div className="grid grid-cols-4 gap-0.5 rounded-[8px] bg-inset p-0.5 shadow-hairline">
@@ -844,7 +844,7 @@ export function Composer({
                       aria-label={m.name}
                       title={m.desc}
                       onClick={() => onModeChange(m.key)}
-                      className={`h-9 rounded-[6px] text-[12.5px] font-medium outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-7 sm:text-[12px] ${
+                      className={`h-9 rounded-[6px] text-sm font-medium outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-7 sm:text-xs ${
                         on ? `bg-surface shadow-btn ${m.key === "bypassPermissions" ? "text-orange-ink" : "text-ink"}` : "text-ink-3 hover:text-ink-2"
                       }`}
                     >
@@ -853,7 +853,7 @@ export function Composer({
                   );
                 })}
               </div>
-              <p className="px-1 pt-1.5 text-[12px] leading-4 text-ink-3">{currentMode.desc}</p>
+              <p className="px-1 pt-1.5 text-xs leading-4 text-ink-3">{currentMode.desc}</p>
             </div>
           </div>
         </MenuShell>
@@ -893,7 +893,7 @@ export function Composer({
             {notice}
             <AttachmentChips items={files.items} onRemove={files.remove} onRetry={(id) => void files.retry(id)} />
             {fileNote && (
-              <p role="status" className="text-[12px] text-ink-3">
+              <p role="status" className="text-xs text-ink-3">
                 {fileNote}
               </p>
             )}
@@ -904,10 +904,10 @@ export function Composer({
                   setDraft(suggestion);
                   inputRef.current?.focus();
                 }}
-                className="flex w-full min-w-0 items-center gap-2 rounded-[12px] px-1 pt-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink-2"
+                className="flex w-full min-w-0 items-center gap-2 rounded-[12px] px-1 pt-0.5 text-left text-sm text-ink-3 hover:text-ink-2"
                 title="Use this suggestion (Tab)"
               >
-                <span className="shrink-0 rounded-[5px] bg-inset px-1.5 py-px font-mono text-[10.5px] shadow-hairline">Tab</span>
+                <span className="shrink-0 rounded-[5px] bg-inset px-1.5 py-px font-mono text-2xs shadow-hairline">Tab</span>
                 <span className="min-w-0 truncate">{suggestion}</span>
               </button>
             )}
@@ -936,7 +936,7 @@ export function Composer({
               aria-label={folder ? `Folder: ${folder}. Change folder` : "Choose a folder"}
               aria-haspopup="dialog"
               aria-invalid={folderInvalid || undefined}
-              className={`tap relative flex h-9 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-[background-color,color] duration-150 sm:max-w-[13rem] ${
+              className={`tap relative flex h-9 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2.5 text-sm transition-[background-color,color] duration-150 sm:max-w-[13rem] ${
                 folderInvalid ? "bg-red-tint text-red-ink" : folder ? "text-ink-2 hover:bg-hover hover:text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
               }`}
             >
@@ -1055,7 +1055,7 @@ export function Composer({
           aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : mentionOpen && found.files.length ? `${uid}-file-${Math.min(active, found.files.length - 1)}` : undefined}
           aria-autocomplete="list"
           enterKeyHint="enter"
-          className={`composer-input w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-ink outline-none [grid-area:primary] [overflow-wrap:anywhere] sm:text-[15px] sm:pointer-coarse:text-[16px] ${
+          className={`composer-input w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-ink outline-none [grid-area:primary] [overflow-wrap:anywhere] sm:text-md sm:pointer-coarse:text-[16px] ${
             busy ? "placeholder:text-ink-2 composer-busy" : "placeholder:text-ink-3"
           }`}
         />
@@ -1076,13 +1076,13 @@ export function Composer({
                 toggleMenu("pick");
               }
             }}
-            className={`tap relative flex h-9 min-w-0 items-center gap-1 rounded-full pr-2 pl-2.5 text-[13px] transition-[background-color,color] duration-150 ${
+            className={`tap relative flex h-9 min-w-0 items-center gap-1 rounded-full pr-2 pl-2.5 text-sm transition-[background-color,color] duration-150 ${
               openMenu === "pick" ? "bg-hover text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"
             }`}
           >
             {mode === "bypassPermissions" && <ShieldAlert width={14} height={14} strokeWidth={1.9} className="shrink-0 text-orange-ink" aria-hidden />}
             {mode === "acceptEdits" && <ShieldCheck width={14} height={14} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />}
-            {mode === "plan" && <span className="shrink-0 rounded-[5px] bg-accent-tint px-1.5 py-px text-[11px] font-medium text-accent-ink">Plan</span>}
+            {mode === "plan" && <span className="shrink-0 rounded-[5px] bg-accent-tint px-1.5 py-px text-2xs font-medium text-accent-ink">Plan</span>}
             <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
             <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
           </button>
@@ -1102,7 +1102,7 @@ export function Composer({
                   toggleMenu("effort");
                 }
               }}
-              className={`tap relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2 text-[13px] transition-[background-color,color] duration-150 ${
+              className={`tap relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2 text-sm transition-[background-color,color] duration-150 ${
                 openMenu === "effort" ? "bg-hover text-ink" : effortName ? "text-ink-2 hover:bg-hover hover:text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
               }`}
             >
