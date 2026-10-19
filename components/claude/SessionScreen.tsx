@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Folder, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
+import { ArrowRight, Download, Folder, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
@@ -528,6 +528,20 @@ export function SessionScreen({
                     <span>Continue in another agent…</span>
                   </button>
                 )}
+                {view.entries.length > 0 &&
+                  (["md", "json"] as const).map((format) => (
+                    <a
+                      key={format}
+                      role="menuitem"
+                      href={`/api/sessions/${id}/export?format=${format}`}
+                      download
+                      onClick={() => setTimeout(closeMenu)}
+                      className="menu-item"
+                    >
+                      <Download width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                      {format === "md" ? "Download as Markdown" : "Download JSON"}
+                    </a>
+                  ))}
                 {run && (
                   <>
                     <div className="mx-2 my-1 h-px bg-line" />
