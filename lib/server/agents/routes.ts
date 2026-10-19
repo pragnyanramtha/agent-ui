@@ -160,7 +160,7 @@ async function sendNow(agent: AgentId, native: string, text: string, o: { id?: s
     return { ok: false, error: err instanceof Error ? err.message : String(err), status: 500 };
   }
   setSessionProfile(key, profile.id);
-  guardTurn({ key, text, mode: o.mode, model: o.model, profile });
+  guardTurn({ key, text, mode: o.mode, model: o.model, effort: o.effort, profile });
   if (o.id) void checkLanding(agent, native, o.id, text);
   return { ok: true };
 }
@@ -336,7 +336,7 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
     const key = sessionKey(agent, id);
     modes.set(key, mode);
     setSessionProfile(key, profile.id);
-    guardTurn({ key, text, mode, model, profile });
+    guardTurn({ key, text, mode, model, effort: asked, profile });
     return NextResponse.json({ id: key });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
