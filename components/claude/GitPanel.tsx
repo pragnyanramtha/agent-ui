@@ -7,6 +7,8 @@ import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LA
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
 import { modalOpen } from "@/lib/client/shortcuts";
+import { useSetting } from "@/lib/client/settings";
+import { fullDateTime } from "@/lib/time-format";
 
 type Status = {
   root: string;
@@ -127,6 +129,7 @@ function ActionBar({
 /** The session folder's git: branch, commit / push / pull request, and checkpoints to rewind the files to. */
 export function GitPanel({ session, busy, onClose, view: initialView = "diff" }: { session: string; busy: boolean; onClose: () => void; view?: "diff" | "commit" }) {
   const [view, setView] = useState(initialView);
+  const [timeFmt] = useSetting("timeFormat");
   const [target, setTarget] = useState<{ scope: DiffScope; checkpoint?: string; n: number }>({ scope: "uncommitted", n: 0 });
   const [rev, setRev] = useState(0);
   const [data, setData] = useState<Data | null>(null);
@@ -450,7 +453,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
               </div>
               <p className="mb-2 text-[12px] leading-snug text-ink-3">The files as they were before each message you sent from here. Rewinding changes files only, never the conversation or your commits.</p>
               {data?.checkpointSkip && (
-                <p className="mb-2 rounded-[10px] bg-inset px-3 py-2 text-[12px] leading-snug text-ink-2 shadow-hairline" title={new Date(data.checkpointSkip.at).toLocaleString()}>
+                <p className="mb-2 rounded-[10px] bg-inset px-3 py-2 text-[12px] leading-snug text-ink-2 shadow-hairline" title={fullDateTime(data.checkpointSkip.at, timeFmt)}>
                   The last checkpoint was skipped: {data.checkpointSkip.reason}. Add them to .gitignore to keep saving checkpoints.
                 </p>
               )}
@@ -461,7 +464,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                   {cps.map((cp) => (
                     <li key={cp.id} className="rounded-[10px] px-2 py-1.5 hover:bg-hover/60">
                       <div className="flex min-w-0 items-center gap-2">
-                        <span className="w-10 shrink-0 text-[11.5px] text-ink-3 tabular-nums" title={new Date(cp.at).toLocaleString()}>
+                        <span className="w-10 shrink-0 text-[11.5px] text-ink-3 tabular-nums" title={fullDateTime(cp.at, timeFmt)}>
                           {timeAgo(cp.at)}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={cp.label}>

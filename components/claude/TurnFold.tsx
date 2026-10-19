@@ -14,10 +14,11 @@ const FOCUS_INSET = "focus-visible:[outline-offset:-2px]! focus-visible:rounded-
 /**
  * A finished turn's work behind one quiet row: "Worked for 2m 14s · 9 tool calls".
  * Collapsed, the body stays in the DOM but hidden, so find in session still reaches its text.
+ * `defaultOpen` (Settings > Conversation > Finished turns) opens or closes every fold when it changes.
  */
-export function TurnFold({ ms, tools, failed, children }: { ms: number | null; tools: number; failed: number; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const [shown, setShown] = useState(false);
+export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: { ms: number | null; tools: number; failed: number; defaultOpen?: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [shown, setShown] = useState(defaultOpen);
   const ref = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const { title, detail } = foldLabel(ms, tools);
@@ -32,6 +33,15 @@ export function TurnFold({ ms, tools, failed, children }: { ms: number | null; t
     /* hide the body once the close animation is done, so collapsed folds cost no layout */
     timer.current = setTimeout(() => setShown(false), 220);
   };
+
+  const firstDefault = useRef(true);
+  useEffect(() => {
+    if (firstDefault.current) {
+      firstDefault.current = false;
+      return;
+    }
+    toggle(defaultOpen);
+  }, [defaultOpen]);
 
   useEffect(() => {
     const el = ref.current;

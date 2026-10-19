@@ -45,7 +45,21 @@ describe("settings registry", () => {
 
   it("lists a setting in its own section and the ones it also shows in", () => {
     expect(settingsIn("composer").map((d) => d.key)).toEqual(["sendWithEnter"]);
-    expect(settingsIn("conversation").map((d) => d.key)).toEqual(["conversationWidth", "showTimestamps"]);
+    expect(settingsIn("conversation").map((d) => d.key)).toEqual([
+      "conversationWidth",
+      "showTimestamps",
+      "timeFormat",
+      "workLog",
+      "toolCalls",
+      "showThinking",
+      "turnChanges",
+      "turnUndo",
+      "autoScroll",
+      "streamText",
+      "codeLineNumbers",
+      "codeWrap",
+      "codeCollapse",
+    ]);
     expect(settingsIn("general").map((d) => d.key)).toContain("theme");
   });
 });

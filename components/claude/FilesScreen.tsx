@@ -441,7 +441,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           <Markdown text={text.text} />
         </div>
       );
-    return <CodeCard code={text.text} label={name} />;
+    return <CodeCard code={text.text} label={name} collapsible={false} />;
   })();
 
   const canEdit = ["html", "markdown", "text"].includes(kind) && text !== null && !("error" in text) && !text.partial;

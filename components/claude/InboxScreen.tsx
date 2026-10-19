@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import { Menu } from "iconoir-react";
 import { timeAgo } from "@/lib/client/api";
+import { useSetting } from "@/lib/client/settings";
+import { fullDateTime } from "@/lib/time-format";
 import { answerAsk, failureText } from "@/lib/client/send";
 import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
@@ -115,6 +117,7 @@ function Group({ title, count, aside, children }: { title: string; count: number
 }
 
 function Card({ s, onOpen, when, onDismiss, children }: { s: SessionSummary; onOpen: (id: string) => void; when?: number; onDismiss?: () => void; children?: ReactNode }) {
+  const [fmt] = useSetting("timeFormat");
   return (
     <li className="rounded-[14px] bg-surface px-3.5 py-3 shadow-hairline">
       <div className="flex min-w-0 items-center gap-2">
@@ -122,7 +125,7 @@ function Card({ s, onOpen, when, onDismiss, children }: { s: SessionSummary; onO
           <span className="block truncate text-[14px] font-medium text-ink">{s.title || "Session"}</span>
           <span className="block truncate text-[12px] text-ink-3">
             {AGENT_LABEL[s.agent]} · {s.project || "No folder"}
-            {when ? ` · ${timeAgo(when)}` : ""}
+            {when ? <span title={fullDateTime(when, fmt)}> · {timeAgo(when)}</span> : ""}
           </span>
         </button>
         {onDismiss && (
