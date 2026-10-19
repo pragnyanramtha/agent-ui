@@ -3,9 +3,11 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { ApiError } from "./api";
 import { transient } from "./send";
+import type { AgentId } from "@/lib/types";
 import {
   DEFAULTS,
   DOM_ATTRS,
+  EFFORT_SETTING,
   DOM_VARS,
   PALETTES,
   SETTING_KEYS,
@@ -178,6 +180,12 @@ export function useSetting<K extends SettingKey>(key: K): [Settings[K], (value: 
   );
   const set = useCallback((v: Settings[K]) => write(key, v), [key]);
   return [value, set];
+}
+
+/** The agent's default reasoning effort from Settings > Composer: a level, or "" for the agent's own. */
+export function useDefaultEffort(agent: AgentId): string {
+  const [value] = useSetting(EFFORT_SETTING[agent] ?? "effortClaude");
+  return EFFORT_SETTING[agent] && value !== "default" ? value : "";
 }
 
 /** Every setting at once, for screens that show many. */

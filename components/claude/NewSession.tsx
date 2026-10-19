@@ -8,6 +8,7 @@ import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/c
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { saveEffort } from "@/lib/client/storage";
+import { useDefaultEffort } from "@/lib/client/settings";
 import { Composer, MODELS, type AgentOption } from "./Composer";
 import { FolderPicker } from "./lazy";
 import { Pulse } from "./Pulse";
@@ -85,7 +86,8 @@ export function NewSession({
     localStorage.setItem(`cui:newProfile:${agent}`, id);
   };
   const profileInfo = profiles?.find((p) => p.id === profile);
-  const sentEffort = effort || profileInfo?.defaultEffort || "";
+  const settingsEffort = useDefaultEffort(agent);
+  const sentEffort = effort || profileInfo?.defaultEffort || settingsEffort || "";
   const agentModels = useAgentModels(agent, profile);
 
   const pickAgent = (a: AgentId) => {
@@ -193,7 +195,7 @@ export function NewSession({
       </header>
 
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex min-h-full w-full max-w-[740px] flex-col px-3 pb-3 sm:justify-center sm:px-6 sm:pt-8 sm:pb-[14vh]">
+        <div className="mx-auto flex min-h-full w-full max-w-(--thread-w) flex-col px-3 pb-3 sm:justify-center sm:px-8 sm:pt-8 sm:pb-[14vh]">
           {/* phones: the question sits in the middle, the composer at the bottom (where the reply composer lives) */}
           <div className="order-1 flex flex-1 flex-col justify-center py-8 sm:flex-none sm:py-0">
             <h1 className="home-reveal text-center text-[24px] leading-8 font-normal tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9" style={reveal(stage >= 1)}>
@@ -229,39 +231,41 @@ export function NewSession({
               folderInvalid={folderInvalid}
               busyLabel={`Starting ${name}…`}
               autoFocus
+              context={
+                <button
+                  type="button"
+                  aria-pressed={worktree}
+                  onClick={() => {
+                    setWorktree((v) => !v);
+                    try {
+                      localStorage.setItem("cui:worktree", worktree ? "0" : "1");
+                    } catch {}
+                  }}
+                  title="New branch in a separate folder"
+                  className={`tap relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1 transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
+                >
+                  <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
+                    {worktree && <Check width={10} height={10} strokeWidth={3} />}
+                  </span>
+                  New worktree
+                </button>
+              }
+              contextEnd={
+                <button
+                  type="button"
+                  onClick={startInTerminal}
+                  disabled={launching}
+                  className="tap relative inline-flex h-6 shrink-0 items-center rounded-md px-1 text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
+                >
+                  {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
+                </button>
+              }
             />
             {error && (
               <p role="alert" className="px-4 pt-2.5 text-[13px] text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 {error}
               </p>
             )}
-            <div className="flex items-center justify-between gap-3 px-3 pt-2">
-              <button
-                type="button"
-                aria-pressed={worktree}
-                onClick={() => {
-                  setWorktree((v) => !v);
-                  try {
-                    localStorage.setItem("cui:worktree", worktree ? "0" : "1");
-                  } catch {}
-                }}
-                title="New branch in a separate folder"
-                className={`tap relative inline-flex items-center gap-1.5 rounded-chip px-1 text-[12.5px] transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
-              >
-                <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
-                  {worktree && <Check width={10} height={10} strokeWidth={3} />}
-                </span>
-                New worktree
-              </button>
-              <button
-                type="button"
-                onClick={startInTerminal}
-                disabled={launching}
-                className="tap relative rounded-chip px-1 text-[12.5px] text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
-              >
-                {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
-              </button>
-            </div>
           </div>
 
           {rows.length > 0 && (

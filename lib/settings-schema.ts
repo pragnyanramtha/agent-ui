@@ -10,6 +10,9 @@
  * Adding one: add an entry to SETTINGS below. The Settings screen lists it in its section with a control picked
  * from its type; search, reset, export and import pick it up too. */
 
+import { effortOptions } from "./agent-traits";
+import type { AgentId } from "./types";
+
 export type Scope = "device" | "synced";
 
 export type SectionId = "general" | "appearance" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
@@ -84,7 +87,7 @@ type Common<T> = {
    * Older keys keep their own format so earlier choices survive. */
   storage?: { key: string; parse(raw: string): T | undefined; format(value: T): string; plain?: boolean };
   dom?: Dom;
-  /** listed only while another setting has this value */
+  /** listed only while another setting has this value (or one of these values) */
   showIf?: readonly [key: string, value: unknown];
 };
 
@@ -384,14 +387,133 @@ export const SETTINGS = {
   }),
 
   /* composer */
-  sendWithEnter: boolean({
+  sendShortcut: choice({
     section: "composer",
-    label: "Send with Enter",
-    description: "On: Shift+Enter adds a new line. Off: Enter adds a new line and Ctrl+Enter sends.",
-    keywords: ["submit", "newline", "return key"],
+    group: "Sending",
+    label: "Send with",
+    description: "Ctrl/Cmd+Enter always sends. On phones, Enter adds a new line unless you pick Enter everywhere.",
+    keywords: ["submit", "newline", "new line", "return key", "enter", "ctrl enter", "cmd enter", "keyboard"],
     scope: "device",
-    default: false,
-    storage: { key: "cui:send-enter", ...bit },
+    default: "mod-enter",
+    control: "select",
+    options: [
+      { value: "enter", label: "Enter (Shift+Enter for a new line)" },
+      { value: "mod-enter", label: "Ctrl/Cmd+Enter (Enter for a new line)" },
+      { value: "enter-always", label: "Enter everywhere, phones too" },
+    ],
+    /* the old "Send with Enter" switch stored 1/0 under this key; those choices read as Enter and Ctrl/Cmd+Enter */
+    storage: {
+      key: "cui:send-enter",
+      parse: (raw) => (raw === "1" ? "enter" : raw === "0" ? "mod-enter" : raw === "always" ? "enter-always" : undefined),
+      format: (v) => (v === "enter" ? "1" : v === "mod-enter" ? "0" : "always"),
+    },
+  }),
+  busySend: choice({
+    section: "composer",
+    group: "Sending",
+    label: "Messages sent while the agent works",
+    description: "Stop and send ends the current turn first, then sends.",
+    keywords: ["queue", "interrupt", "steer", "busy", "running", "follow up"],
+    scope: "synced",
+    default: "queue",
+    options: [
+      { value: "queue", label: "Queue" },
+      { value: "interrupt", label: "Stop and send" },
+    ],
+  }),
+  longPaste: choice({
+    section: "composer",
+    group: "Sending",
+    label: "Long pastes",
+    description: "Pasted text over the line limit can ask before it's sent, or go in as a text file.",
+    keywords: ["paste", "clipboard", "attachment", "file", "confirm", "large"],
+    scope: "device",
+    default: "text",
+    control: "select",
+    options: [
+      { value: "text", label: "Paste as text" },
+      { value: "confirm", label: "Ask before sending" },
+      { value: "attach", label: "Attach as a file" },
+    ],
+  }),
+  longPasteLines: number({
+    section: "composer",
+    group: "Sending",
+    label: "Long paste limit",
+    keywords: ["paste", "lines", "threshold"],
+    scope: "device",
+    default: 200,
+    min: 20,
+    max: 1000,
+    step: 10,
+    unit: " lines",
+    control: "slider",
+    showIf: ["longPaste", ["confirm", "attach"]],
+  }),
+
+  spellCheck: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Spell check",
+    description: "Underline misspelled words in the message box.",
+    keywords: ["spelling", "spellcheck", "typos"],
+    scope: "device",
+    default: true,
+  }),
+  phoneAutocorrect: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Autocorrect on phones",
+    description: "Off suits code: no autocorrect and no automatic capitals.",
+    keywords: ["autocapitalize", "capitals", "keyboard", "mobile", "code"],
+    scope: "device",
+    default: true,
+  }),
+  composerMaxLines: number({
+    section: "composer",
+    group: "Typing",
+    label: "Message box height",
+    description: "How many lines it grows to before it scrolls.",
+    keywords: ["max height", "lines", "rows", "textarea", "size"],
+    scope: "device",
+    default: 8,
+    min: 3,
+    max: 24,
+    step: 1,
+    unit: " lines",
+    control: "slider",
+  }),
+  rememberDrafts: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Remember drafts",
+    description: "Keep unsent text for each session on this device, across reloads.",
+    keywords: ["draft", "unsent", "save", "restore"],
+    scope: "device",
+    default: true,
+  }),
+
+  effortClaude: choice({
+    section: "composer",
+    group: "Reasoning effort",
+    label: "Claude",
+    description: "Used when a session has no effort of its own. A profile's default wins.",
+    keywords: ["effort", "thinking", "reasoning", "default"],
+    scope: "synced",
+    default: "default",
+    options: [{ value: "default", label: "Default" }, ...effortOptions("claude").map((o) => ({ value: o.key, label: o.name }))],
+    control: "select",
+  }),
+  effortCodex: choice({
+    section: "composer",
+    group: "Reasoning effort",
+    label: "Codex",
+    description: "Used when a session has no effort of its own. A profile's default wins.",
+    keywords: ["effort", "reasoning", "default"],
+    scope: "synced",
+    default: "default",
+    options: [{ value: "default", label: "Default" }, ...effortOptions("codex").map((o) => ({ value: o.key, label: o.name }))],
+    control: "select",
   }),
 
   /* terminal */
@@ -531,6 +653,27 @@ export function settingsIn(section: SectionId): SettingWithKey[] {
 }
 
 export const sectionInfo = (id: SectionId) => SECTIONS.find((s) => s.id === id)!;
+
+/** False while the setting's `showIf` doesn't hold. */
+export function isShown(def: SettingDef, values: Settings): boolean {
+  if (!def.showIf) return true;
+  const [key, want] = def.showIf;
+  const v = values[key as SettingKey];
+  return Array.isArray(want) ? want.includes(v) : v === want;
+}
+
+/** The setting that holds an agent's default reasoning effort, for agents that have levels. */
+export const EFFORT_SETTING: Partial<Record<AgentId, "effortClaude" | "effortCodex">> = { claude: "effortClaude", codex: "effortCodex" };
+
+/** Settings files from older versions: renamed or replaced keys, read as their new form. Current keys win. */
+export function migrateLegacy(obj: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...obj };
+  if ("sendWithEnter" in out) {
+    if (typeof out.sendWithEnter === "boolean" && !("sendShortcut" in out)) out.sendShortcut = out.sendWithEnter ? "enter" : "mod-enter";
+    delete out.sendWithEnter;
+  }
+  return out;
+}
 
 export type SearchHit = { section: SectionId; settings: SettingKey[]; items: string[] };
 
@@ -696,7 +839,7 @@ export function parseSettingsFile(text: string): ImportParse {
   const root = data && typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : null;
   if (!root) return { ok: false, error: "That file has no settings in it." };
   const body = root.kind === EXPORT_KIND || ("settings" in root && typeof root.settings === "object") ? root.settings : root;
-  const { values, skipped } = pickValid(body);
+  const { values, skipped } = pickValid(body && typeof body === "object" && !Array.isArray(body) ? migrateLegacy(body as Record<string, unknown>) : body);
   if (!Object.keys(values).length) return { ok: false, error: "That file has no agent-u settings in it." };
   return { ok: true, values, skipped };
 }
