@@ -82,7 +82,9 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 - Host allowlist against DNS rebinding (`lib/hosts.ts`, copied in `server/pty.mjs`): only loopback names, `PUBLIC_HOSTNAME`
   and `ALLOWED_HOSTS` are answered; other Hosts get 421 and the WebSocket is refused. With neither variable set (servers
   set up before this existed) any Host is accepted and a warning is logged; rerun `scripts/setup.sh` or set one.
-- The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade.
+- The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade. Its
+  `/internal/*` API is matched on the raw request path (so `/pty/%2e%2e/internal/...` can't reach it) and refuses
+  anything carrying `cf-ray`, `cf-connecting-ip` or `x-forwarded-for`.
 - `UI_SECRET`, `UI_PASSWORD` and `UI_PASSWORD_HASH` never reach child processes: every spawn takes its env from
   `lib/server/child-env.ts`, profiles can't expand them, and `server/pty.mjs` drops them from its own env at startup
   (and from the global env of a tmux server it reuses). Session cookies expiring more than 30 days out are refused.
