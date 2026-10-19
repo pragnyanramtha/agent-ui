@@ -101,6 +101,28 @@ describe("what a failed turn says", () => {
   });
 });
 
+describe("permission mode", () => {
+  it("follows a mode change the CLI reports in a status message", async () => {
+    const id = newId();
+    const run = startRun({ resume: id, cwd: "/", permissionMode: "plan" });
+    run.send("plan it");
+    const f = fakes.at(-1)!;
+    f.push(init(id, { permissionMode: "plan" }));
+    const seen: string[] = [];
+    run.subscribe((e) => e.type === "run" && seen.push(e.run.permissionMode));
+    f.push({ type: "system", subtype: "status", status: null, permissionMode: "acceptEdits", uuid: "x", session_id: id });
+    await tick();
+    expect(run.state.permissionMode).toBe("acceptEdits");
+    expect(seen).toContain("acceptEdits");
+    /* a status without a mode, or with one the UI doesn't offer, leaves it */
+    f.push({ type: "system", subtype: "status", status: "compacting", uuid: "y", session_id: id });
+    f.push({ type: "system", subtype: "status", status: null, permissionMode: "dontAsk", uuid: "z", session_id: id });
+    await tick();
+    expect(run.state.permissionMode).toBe("acceptEdits");
+    run.close();
+  });
+});
+
 describe("failed Claude turns", () => {
   it("a turn that ends with an error reads as failed while the run stays open", async () => {
     const id = newId();

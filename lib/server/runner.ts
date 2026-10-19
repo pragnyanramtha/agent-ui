@@ -43,6 +43,9 @@ export type RunEvent =
   /* output the transcript doesn't carry (slash command output, notices), replayed to late viewers */
   | { type: "entries"; entries: Entry[] };
 
+/** the modes the web UI can show; others the CLI may report (e.g. "dontAsk") leave the current one */
+const MODES: string[] = ["default", "acceptEdits", "bypassPermissions", "plan"] satisfies PermissionMode[];
+
 type Decision = { allow: boolean; always?: boolean; answers?: Record<string, string>; message?: string };
 
 /** Older CLIs don't send a prompt sentence with permission asks; write one in the same voice. */
@@ -317,7 +320,7 @@ export class Run {
       const hidden = new Set(m.terminal_slash_commands ?? []);
       this.update({
         model: m.model,
-        permissionMode: (["default", "acceptEdits", "bypassPermissions", "plan"].includes(m.permissionMode) ? m.permissionMode : this.state.permissionMode) as PermissionMode,
+        permissionMode: (MODES.includes(m.permissionMode) ? m.permissionMode : this.state.permissionMode) as PermissionMode,
         slashCommands: m.slash_commands.filter((c) => !hidden.has(c)),
       });
       this.markReady(m.session_id);
@@ -338,6 +341,11 @@ export class Run {
     }
     if (m.type === "prompt_suggestion") {
       this.update({ suggestion: m.suggestion });
+      return;
+    }
+    /* the mode can change inside the CLI (plan mode accepted, Shift+Tab, a hook); keep the composer in step */
+    if (m.type === "system" && m.subtype === "status") {
+      if (m.permissionMode && m.permissionMode !== this.state.permissionMode && MODES.includes(m.permissionMode)) this.update({ permissionMode: m.permissionMode as PermissionMode });
       return;
     }
     if (m.type === "system" && m.subtype === "session_state_changed") {
