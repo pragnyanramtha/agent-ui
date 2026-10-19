@@ -255,4 +255,28 @@ describe("diff", () => {
     await expect(g.diff(fresh, "s1", { scope: "branch" })).rejects.toThrow(/no commits/i);
     await expect(g.diff(tmp, "s1", { scope: "uncommitted" })).rejects.toThrow(/git repository/);
   });
+
+  it("keeps tabs in file names, renamed ones too", async () => {
+    const tabs = path.join(tmp, "tabs");
+    fs.mkdirSync(tabs);
+    sh(["init", "-q", "-b", "main"], tabs);
+    fs.writeFileSync(path.join(tabs, "old\tname.txt"), "same\ncontent\nhere\n");
+    sh(["add", "-A"], tabs);
+    sh(["commit", "-qm", "init"], tabs);
+    fs.renameSync(path.join(tabs, "old\tname.txt"), path.join(tabs, "new\tname.txt"));
+    fs.writeFileSync(path.join(tabs, "a\tb.txt"), "x\n");
+    const d = await g.diff(tabs, "s1", { scope: "uncommitted" });
+    expect(d.files.map((f) => [f.path, f.oldPath, f.status, f.additions])).toEqual([
+      ["a\tb.txt", undefined, "added", 1],
+      ["new\tname.txt", "old\tname.txt", "renamed", 0],
+    ]);
+  });
+
+  it("shares one diff between identical requests in flight", async () => {
+    const [a, b] = await Promise.all([g.diff(repo, "s1", { scope: "uncommitted" }), g.diff(repo, "s2", { scope: "uncommitted" })]);
+    expect(a).toBe(b);
+    const c = await g.diff(repo, "s1", { scope: "uncommitted" });
+    expect(c).not.toBe(a);
+    expect(c).toEqual(a);
+  });
 });

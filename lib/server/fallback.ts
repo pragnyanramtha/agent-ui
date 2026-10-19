@@ -101,10 +101,11 @@ export function guardTurn(t: GuardedTurn) {
       if (s.status === "running") return;
       stop();
     void (async () => {
-      let error = s.error && LIMIT_ERROR.test(s.error) ? s.error : null;
+      const a = await adapterFor(k.agent);
+      /* the adapter's error is the agent's own report; s.error can be just the last line of stderr (a stack frame) */
+      let error = [a?.runState(k.native)?.error, s.error].find((e) => e && LIMIT_ERROR.test(e)) ?? null;
       if (!error) {
         /* some CLIs exit cleanly and leave the limit message in the transcript */
-        const a = await adapterFor(k.agent);
         const page = await a?.history(k.native, null).catch(() => null);
         const hit = page?.entries.filter((e) => e.kind === "notice" && e.tone === "warn" && Date.parse(e.ts) >= started - 5000 && LIMIT_ERROR.test(e.text)).pop();
         if (hit?.kind === "notice") error = hit.text;
