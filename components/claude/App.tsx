@@ -4,7 +4,8 @@ import { AskHost } from "./Ask";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSessions } from "@/lib/client/useSessions";
 import { CommandPalette, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "./CommandPalette";
-import { WebTerminal, type TerminalTarget } from "./WebTerminal";
+import { type TerminalTarget } from "./WebTerminal";
+import { TerminalDrawer } from "./TerminalDrawer";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
@@ -197,14 +198,22 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cycle, reopen, close, select, active, newTab, drawer, sheet]);
 
-  /* Mod+J or Ctrl+`: open a shell in the current session's folder, or show/hide the terminal.
+  /* Mod+J or Ctrl+`: open a shell in the current session's folder, or show/hide the terminal. Ctrl+Shift+` adds a terminal tab.
    * Capture phase, so a focused terminal can't swallow Ctrl+`. Ctrl+J inside a terminal is a line feed
    * (newline in Claude Code, accept-line in bash), so off a Mac it's left to the terminal. */
   const activeCwd = sessionId ? byId.get(sessionId)?.cwd || undefined : undefined;
   useEffect(() => {
     const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey || e.shiftKey || e.isComposing) return;
+      if (e.altKey || e.isComposing) return;
+      if (e.shiftKey) {
+        if (e.code !== "Backquote" || !(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setTermHidden(false);
+        window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `Shell: ${shortPath(activeCwd)}` : "Shell", newTab: true } }));
+        return;
+      }
       const inTerm = e.target instanceof Element && Boolean(e.target.closest(".xterm"));
       const backquote = e.code === "Backquote" && e.ctrlKey && !e.metaKey;
       const modJ = e.code === "KeyJ" && hasMod(e, mac) && (mac || !inTerm);
@@ -381,8 +390,8 @@ export function App() {
           )}
         </div>
         {terminal && (
-          <WebTerminal
-            key={termKey}
+          <TerminalDrawer
+            openKey={termKey}
             target={terminal}
             onClose={() => setTerminal(null)}
             docked={docked}

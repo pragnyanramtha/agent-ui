@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
@@ -14,7 +14,10 @@ import { findPathLinks, resolveTerminalPath } from "@/lib/client/terminal-links"
 import { deviceBoxTrusted } from "@/lib/client/terminal-render";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
-export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
+export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string; newTab?: boolean };
+
+/** What a terminal tab shows about itself */
+export type TerminalInfo = { label: string; conn: Conn; id: string | null; kind: string | null; cwd: string | null };
 
 type Conn = "connecting" | "open" | "reconnecting" | "ended";
 
@@ -129,6 +132,9 @@ export function WebTerminal({
   docked = false,
   hidden = false,
   onDock,
+  tabs,
+  onInfo,
+  enter = true,
 }: {
   target: TerminalTarget;
   onClose: () => void;
@@ -137,13 +143,25 @@ export function WebTerminal({
   /** docked and folded away; the connection stays up */
   hidden?: boolean;
   onDock?: (docked: boolean) => void;
+  /** the tab strip, shown in place of the label */
+  tabs?: ReactNode;
+  onInfo?: (info: TerminalInfo) => void;
+  /** pop in when first shown (a sheet) */
+  enter?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(DOCK_DEFAULT);
   useEffect(() => {
     const stored = Number(localStorage.getItem(DOCK_KEY));
     if (stored >= DOCK_MIN) setHeight(Math.max(DOCK_MIN, Math.min(stored, Math.round(window.innerHeight * 0.8))));
-  }, []);
+    /* tabs share the height: another tab may have been resized while this one was in the background */
+  }, [hidden]);
+  const [popped, setPopped] = useState(!enter);
+  useEffect(() => {
+    if (hidden || popped) return;
+    const t = setTimeout(() => setPopped(true), 250);
+    return () => clearTimeout(t);
+  }, [hidden, popped]);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
@@ -157,6 +175,8 @@ export function WebTerminal({
   closeRef.current = onClose;
   const [fontSize, setFontSize] = useState<number | null>(null);
   const [kind, setKind] = useState<string | null>(null);
+  const [termId, setTermId] = useState<string | null>(target.term ?? null);
+  const [cwd, setCwd] = useState<string | null>(target.cwd ?? null);
   const [output, setOutput] = useState(false);
   /* after a shell exits, "New shell" opens a fresh one in the same folder */
   const [fresh, setFresh] = useState(false);
@@ -315,7 +335,11 @@ export function WebTerminal({
             }
             if (msg.type === "hello") {
               if (msg.label) setLabel(msg.label);
-              if (msg.cwd) cwdRef.current = msg.cwd;
+              if (msg.cwd) {
+                cwdRef.current = msg.cwd;
+                setCwd(msg.cwd);
+              }
+              if (msg.id) setTermId(msg.id);
               setKind(msg.kind ?? null);
               /* an attach starts over each time; the multiplexer redraws everything */
               if (msg.persistent && msg.id) {
@@ -447,6 +471,10 @@ export function WebTerminal({
       cleanup();
     };
   }, [tgt.term, tgt.tmux, tgt.session, tgt.pid, tgt.cwd, attempt]);
+
+  const onInfoRef = useRef(onInfo);
+  onInfoRef.current = onInfo;
+  useEffect(() => onInfoRef.current?.({ label, conn, id: termId, kind, cwd }), [label, conn, termId, kind, cwd]);
 
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
@@ -646,13 +674,17 @@ export function WebTerminal({
             ? "flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-page"
             : "safe-top safe-bottom flex w-full flex-col overflow-hidden bg-page shadow-overlay lg:h-[min(90dvh,1000px)] lg:max-w-[1400px] lg:rounded-[14px] lg:border lg:border-line"
         }
-        style={docked ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
+        style={docked || popped ? undefined : { animation: "pop-in 200ms cubic-bezier(0.23,1,0.32,1) both" }}
       >
         <div className={`flex shrink-0 items-center gap-1.5 border-b border-line px-3 text-[12.5px] text-ink-2 ${docked ? "h-9" : "h-12 sm:h-11"}`}>
-          <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
-          <span className="min-w-0 truncate font-mono text-[12px] text-ink" title={label}>
-            {label}
-          </span>
+          {tabs ?? (
+            <>
+              <span className={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden />
+              <span className="min-w-0 truncate font-mono text-[12px] text-ink" title={label}>
+                {label}
+              </span>
+            </>
+          )}
           {conn === "reconnecting" && <span className="shrink-0 text-[11.5px] text-orange-ink">Reconnecting…</span>}
           {conn === "ended" && kind !== "agent" && (
             <button
