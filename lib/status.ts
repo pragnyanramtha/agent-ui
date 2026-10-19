@@ -3,6 +3,6 @@
  * a tool command runs. Anything that isn't idle counts as working. */
 export const terminalBusy = (status: string | undefined | null) => Boolean(status) && status !== "idle" && status !== "unknown";
 
-/** A web turn that failed: the run ended in an error, or it is back at the prompt with the last turn's error kept. */
+/** A web run whose last turn failed: it ended on an error, or it's still open and the turn ended with one. */
 export const runFailed = (run: { status: string; error: string | null } | null | undefined) =>
-  Boolean(run) && (run!.status === "error" || (run!.status === "idle" && Boolean(run!.error)));
+  Boolean(run && (run.status === "error" || (run.status === "idle" && run.error)));
