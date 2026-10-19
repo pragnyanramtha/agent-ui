@@ -10,6 +10,8 @@ import { getProfile, type ResolvedProfile } from "./profiles";
 import { childEnv } from "./child-env";
 import { storedSetting, syncedSetting } from "./settings";
 import type { Settings } from "@/lib/settings-schema";
+import { branchPrefixFor } from "./projects";
+import { DEFAULT_BRANCH_PREFIX } from "@/lib/projects";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
  * throwaway index so HEAD, the branch and the staging area are never touched), rewinding to one, the branch's
@@ -973,9 +975,11 @@ export function summaryMessage(stats: { path: string; status: PatchStatus }[]): 
 
 export const WORKTREE_ROOT = process.env.AGENT_U_WORKTREES || path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "agent-u", "worktrees");
 
-/** A new branch checked out in its own folder, so a session can work without touching the main checkout. */
-export async function newWorktree(cwd: string, name: string) {
+/** A new branch checked out in its own folder, so a session can work without touching the main checkout.
+ * The branch starts with `prefix`, else the project's branch prefix (Settings > Projects), else "agent-u/". */
+export async function newWorktree(cwd: string, name: string, prefix?: string) {
   const root = await needRoot(cwd);
+  const lead = prefix ?? (await branchPrefixFor(cwd)) ?? DEFAULT_BRANCH_PREFIX;
   const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
   if (!head) throw new GitError("No commits yet.");
   const slug =
@@ -985,7 +989,7 @@ export async function newWorktree(cwd: string, name: string) {
       .replace(/^-+|-+$/g, "")
       .slice(0, 40) || "session";
   const stamp = new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "");
-  const branch = `agent-u/${slug}-${stamp}`;
+  const branch = `${lead}${slug}-${stamp}`;
   const dir = path.join(WORKTREE_ROOT, path.basename(root), `${slug}-${stamp}`);
   await fs.mkdir(path.dirname(dir), { recursive: true });
   await git(root, ["worktree", "add", "-b", branch, dir, "HEAD"], { timeout: 120_000 });
