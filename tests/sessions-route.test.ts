@@ -43,11 +43,11 @@ const { setSessionMeta } = await import("@/lib/server/profiles");
 afterAll(() => fs.rmSync(home, { recursive: true, force: true }));
 
 type Page = { sessions: SessionSummary[]; projects?: string[]; more?: boolean };
-async function get(query: string): Promise<Page> {
+function call(query: string, headers: HeadersInit = {}) {
   const url = new URL(`http://127.0.0.1:3311/api/sessions${query}`);
-  const res = await GET({ nextUrl: url, url: url.href, headers: new Headers() } as unknown as NextRequest);
-  return (await res.json()) as Page;
+  return GET({ nextUrl: url, url: url.href, headers: new Headers(headers) } as unknown as NextRequest);
 }
+const get = async (query: string) => (await (await call(query)).json()) as Page;
 const ids = (p: Page) => p.sessions.map((s) => s.id);
 
 describe("GET /api/sessions", () => {
@@ -89,6 +89,13 @@ describe("GET /api/sessions", () => {
     const one = await get("?limit=0");
     expect(one).toMatchObject({ sessions: [], more: true });
     expect(ids(await get("?limit=6"))).toEqual([uuid(5)]);
+  });
+
+  it("answers an unchanged list with 304", async () => {
+    const first = await call("?limit=20");
+    const tag = first.headers.get("etag")!;
+    expect((await call("?limit=20", { "If-None-Match": tag })).status).toBe(304);
+    expect((await call("?limit=30", { "If-None-Match": tag })).status).toBe(200);
   });
 
   it("searches past the loaded pages", async () => {

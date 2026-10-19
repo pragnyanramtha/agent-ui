@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummary } from "@/lib/types";
-import { api, ApiError } from "./api";
+import { ApiError } from "./api";
 
 type Listing = { sessions: SessionSummary[]; projects: string[]; more?: boolean };
 
@@ -84,6 +84,20 @@ export function shareRows(prev: SessionSummary[] | undefined, next: SessionSumma
   return same ? prev : rows;
 }
 
+/** The listing at `url`, or null when the server says it's unchanged since `etag` (which follows each answer). */
+export async function getListing(url: string, etag: { current: string | null }): Promise<Listing | null> {
+  const res = await fetch(url, { cache: "no-store", headers: etag.current ? { "If-None-Match": etag.current } : undefined });
+  if (res.status === 304) return null;
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new ApiError("Signed out", 401);
+  }
+  const data = (await res.json().catch(() => ({}))) as Listing & { error?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+  etag.current = res.headers.get("etag");
+  return data;
+}
+
 /** Session list, refreshed every few seconds while the tab is visible. */
 export function useSessions(intervalMs = 5000) {
   const [data, setData] = useState<Listing | null>(null);
@@ -94,17 +108,20 @@ export function useSessions(intervalMs = 5000) {
   const loaded = useRef(false);
   const limit = useRef(SESSIONS_PAGE);
   const growing = useRef(false);
+  const etag = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const next = await api<Listing>(`/api/sessions?limit=${limit.current}`);
-      /* the poll mostly returns what's on screen: unchanged rows keep their objects, an unchanged list keeps the state */
-      setData((prev) => {
-        const sessions = shareRows(prev?.sessions, next.sessions);
-        const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
-        const more = Boolean(next.more);
-        return prev && sessions === prev.sessions && projects === prev.projects && more === prev.more ? prev : { sessions, projects, more };
-      });
+      const next = await getListing(`/api/sessions?limit=${limit.current}`, etag);
+      /* the poll mostly returns what's on screen (or a 304, null): unchanged rows keep their objects, an unchanged
+       * list keeps the state */
+      if (next)
+        setData((prev) => {
+          const sessions = shareRows(prev?.sessions, next.sessions);
+          const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
+          const more = Boolean(next.more);
+          return prev && sessions === prev.sessions && projects === prev.projects && more === prev.more ? prev : { sessions, projects, more };
+        });
       setError(null);
       fails.current = 0;
       loaded.current = true;

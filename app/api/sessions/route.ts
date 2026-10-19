@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { startRun } from "@/lib/server/runner";
 import { sessionRows } from "@/lib/server/rows";
 import { newestFirst } from "@/lib/server/order";
+import { jsonWithEtag } from "@/lib/server/etag";
 import type { ListingSeen } from "@/lib/server/sessions";
 import { matchSession, queryWords } from "@/lib/session-match";
 import { parseMode, readJson, str } from "@/lib/server/http";
@@ -28,7 +29,7 @@ const SEARCH_CAP = 50;
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const q = params.get("q");
-  if (q !== null) return NextResponse.json({ sessions: await findSessions(q) });
+  if (q !== null) return jsonWithEtag(req, { sessions: await findSessions(q) });
   const asked = Number.parseInt(params.get("limit") ?? "", 10);
   const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), MAX_LIMIT) : PAGE;
   const seen: ListingSeen = { total: 0 };
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   const edge = seen.total > limit ? seen.oldest : undefined;
   const sessions = rows.filter((s, i) => s.pinned || (i < limit && (!edge || newestFirst(s, edge) <= 0)));
   const projects = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))].slice(0, 30);
-  return NextResponse.json({ sessions, projects, more: seen.total > limit || rows.length > limit });
+  return jsonWithEtag(req, { sessions, projects, more: seen.total > limit || rows.length > limit });
 }
 
 async function findSessions(q: string) {
