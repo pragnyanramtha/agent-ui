@@ -8,6 +8,7 @@ import { SentFiles } from "./Attachments";
 import LoadingState from "@/components/primitives/LoadingState";
 import type { Entry, ToolResult } from "@/lib/types";
 import type { SessionView } from "@/lib/client/useSession";
+import { useSetting } from "@/lib/client/settings";
 import { Markdown } from "./Markdown";
 import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./MessageActions";
 import { ENTER } from "./motion";
@@ -182,7 +183,7 @@ const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }:
     <div className={`flex flex-col items-end pl-8 sm:pl-20 ${actions ? ACTIONS_PAD : ""}`} style={enter}>
       <SentFiles paths={paths} />
       <div
-        className={`flex max-w-full min-w-0 flex-col gap-1.5 rounded-[14px] bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink shadow-hairline sm:py-2 sm:text-[13.5px] ${pending ? "opacity-60" : ""}`}
+        className={`flex max-w-full min-w-0 flex-col gap-1.5 rounded-window bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink shadow-hairline sm:py-2 sm:text-[13.5px] ${pending ? "opacity-60" : ""}`}
         aria-busy={pending || undefined}
       >
         {images ? (
@@ -285,6 +286,7 @@ export function Thread({
   const runs = useStableRuns(blocks, view.results);
   /* the timer counts from the latest user message; a message still being sent has no timestamp yet, so it counts from now */
   const since = useMemo(() => (view.pending.length ? undefined : turnStart(view.entries)), [view.entries, view.pending.length]);
+  const [timestamps] = useSetting("showTimestamps");
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
@@ -356,7 +358,7 @@ export function Thread({
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain" role="log" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
-        <div ref={contentRef} className="mx-auto flex w-full max-w-[740px] flex-col gap-5 px-4 pt-5 sm:px-8 sm:pt-8" style={{ paddingBottom: bottomPad + 24 }}>
+        <div ref={contentRef} className="mx-auto flex w-full max-w-(--thread-w) flex-col gap-(--thread-gap) px-4 pt-5 sm:px-8 sm:pt-8" style={{ paddingBottom: bottomPad + 24 }}>
           {view.cursor !== null && (
             <div className="flex justify-center">
               <button
@@ -393,7 +395,7 @@ export function Thread({
               return (
                 <div key={b.key} className={ACTIONS_HOST} style={style}>
                   <Markdown text={b.entry.text} />
-                  <MessageActions text={b.entry.text} />
+                  <MessageActions text={b.entry.text} ts={timestamps ? b.entry.ts : undefined} />
                 </div>
               );
             if (b.type === "notice")

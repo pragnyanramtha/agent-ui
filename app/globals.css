@@ -178,11 +178,11 @@
   --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, "SF Mono", monospace;
 
-  /* radii: chips 6, controls 8, cards 10, windows 14, pills 999 */
-  --radius-chip: 6px;
-  --radius-control: 8px;
-  --radius-card: 10px;
-  --radius-window: 14px;
+  /* radii: chips 6, controls 8, cards 10, windows 14, pills 999; scaled by the Corners setting */
+  --radius-chip: calc(6px * var(--radius-scale, 1));
+  --radius-control: calc(8px * var(--radius-scale, 1));
+  --radius-card: calc(10px * var(--radius-scale, 1));
+  --radius-window: calc(14px * var(--radius-scale, 1));
 
   /* easing: strong curves; built-ins are too weak */
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
@@ -472,14 +472,23 @@ a:focus-visible .animated-underline::after {
   }
 }
 
+/* Reduce motion: "System" follows the OS, "On" always reduces, "Off" keeps motion even when the OS asks for less */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:not([data-motion="off"]) *,
+  html:not([data-motion="off"]) *::before,
+  html:not([data-motion="off"]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+html[data-motion="on"] *,
+html[data-motion="on"] *::before,
+html[data-motion="on"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -862,7 +871,7 @@ label {
     position: relative;
     display: flex;
     width: 100%;
-    height: 34px;
+    height: var(--row-h, 34px);
     flex-shrink: 0;
     align-items: center;
     gap: 8px;
@@ -885,7 +894,7 @@ label {
   }
   @media (pointer: coarse) {
     .side-row {
-      height: 44px;
+      height: var(--row-h-touch, 44px);
     }
   }
 
@@ -1091,7 +1100,7 @@ label {
 }
 
 .composer-pill {
-  border-radius: 24px;
+  border-radius: calc(24px * var(--radius-scale, 1));
   background: var(--surface);
   box-shadow:
     0 0 0 1px var(--line-strong),
@@ -1101,7 +1110,7 @@ label {
     border-radius 200ms var(--ease-out-strong);
 }
 .composer-pill[data-stacked] {
-  border-radius: 18px;
+  border-radius: calc(18px * var(--radius-scale, 1));
 }
 .composer-pill:focus-within {
   box-shadow:
@@ -1244,6 +1253,624 @@ label {
 @media (min-width: 1024px) {
   .shell-main {
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: calc(12px * var(--radius-scale, 1));
   }
+}
+
+/* ══════════════════════════════════════════════════════════
+ * SETTINGS: appearance (lib/settings-schema.ts)
+ * Each setting lands on <html> as a data attribute (and some as a
+ * CSS variable) before first paint; the rules below turn them into
+ * tokens. Default values set nothing, so the tokens above stand.
+ * ══════════════════════════════════════════════════════════ */
+
+/* ── scales: density, width, corners, text size ────────── */
+
+:root {
+  --row-h: 34px;
+  --row-h-touch: 44px;
+  --thread-gap: 1.25rem;
+  --composer-pad: 10px;
+  --thread-w: 740px;
+}
+[data-density="compact"] {
+  --row-h: 30px;
+  --row-h-touch: 38px;
+  --thread-gap: 0.875rem;
+  --composer-pad: 6px;
+}
+[data-density="spacious"] {
+  --row-h: 38px;
+  --row-h-touch: 48px;
+  --thread-gap: 1.875rem;
+  --composer-pad: 14px;
+}
+[data-density] .composer-pill {
+  padding-block: var(--composer-pad);
+}
+
+[data-width="narrow"] {
+  --thread-w: 620px;
+}
+[data-width="wide"] {
+  --thread-w: 960px;
+}
+[data-width="full"] {
+  --thread-w: 100%;
+}
+
+[data-corners="sharp"] {
+  --radius-scale: 0.35;
+}
+[data-corners="round"] {
+  --radius-scale: 1.5;
+}
+
+/* Interface size zooms the app shell (sidebar, sessions, composer) as one, like browser zoom. Overlays that
+ * place themselves from measured positions live in portals outside it, so they still line up. The terminal
+ * keeps its own size: xterm measures its cells and pointer in unzoomed pixels. */
+html[data-ui-scale] body > main:has(> .shell-main) {
+  zoom: var(--ui-scale);
+  height: calc((100dvh - var(--kb, 0px)) / var(--ui-scale)) !important;
+}
+html[data-ui-scale] body > main:has(> .shell-main) .xterm {
+  zoom: calc(1 / var(--ui-scale));
+}
+
+/* code blocks, diffs, tool output and pasted code (each is a font-mono box marked translate="no") */
+html[data-code-size] [translate="no"].font-mono {
+  font-size: var(--code-size);
+}
+
+/* ── fonts: optional faces are declared in app/layout.tsx without preload, so they download only when picked ── */
+
+html[data-ui-font="inter"] body {
+  --font-sans-face: var(--font-inter-face);
+}
+html[data-ui-font="system"] body {
+  --font-sans-face: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+html[data-code-font="geist-mono"] body {
+  --font-mono-face: var(--font-geist-mono-face);
+}
+html[data-code-font="fira-code"] body {
+  --font-mono-face: var(--font-fira-face);
+}
+html[data-code-font="system"] body {
+  --font-mono-face: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono";
+}
+
+/* ── timestamps: times under every message stay visible; copy still waits for hover ── */
+
+@media (pointer: fine) {
+  html[data-timestamps] .msg-actions {
+    opacity: 1;
+  }
+  html[data-timestamps] .msg-actions .msg-copy {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  html[data-timestamps] .group\/msg:hover .msg-copy,
+  html[data-timestamps] .msg-actions:focus-within .msg-copy,
+  html[data-timestamps] .msg-actions[data-copied] .msg-copy {
+    opacity: 1;
+  }
+}
+
+/* ── palettes: the same tokens as :root / .dark, per palette and mode ── */
+
+[data-palette="graphite"] {
+  --page: #fcfcfc;
+  --canvas: #f4f4f5;
+  --surface: #ffffff;
+  --inset: #f7f7f8;
+  --hover: #f2f2f3;
+  --hover-2: #e8e8eb;
+  --ink: #18181b;
+  --ink-2: #4c4c55;
+  --ink-3: #6b6b74;
+  --line: #e9e9ec;
+  --line-strong: #dadadf;
+  --line-soft: #f1f1f3;
+  --field: #f4f4f5;
+  --stripe-bg: #f4f4f5;
+  --sidebar: #f6f6f7;
+  --sidebar-hover: #ececee;
+  --sidebar-active: #e4e4e7;
+  --accent: #52525b;
+  --accent-ink: #3f3f46;
+  --accent-tint: #ededef;
+  --accent-solid: #27272a;
+  --accent-solid-hover: #3f3f46;
+}
+.dark[data-palette="graphite"] {
+  --page: #18181b;
+  --canvas: #141416;
+  --surface: #1f1f23;
+  --inset: #1b1b1e;
+  --hover: #26262a;
+  --hover-2: #2e2e33;
+  --ink: #f4f4f5;
+  --ink-2: #b8b8c0;
+  --ink-3: #93939c;
+  --line: #2a2a2e;
+  --line-strong: #37373c;
+  --line-soft: #222226;
+  --field: #232327;
+  --stripe-bg: #1f1f23;
+  --sidebar: #121214;
+  --sidebar-hover: #1e1e21;
+  --sidebar-active: #27272b;
+  --accent: #d4d4d8;
+  --accent-ink: #e4e4e7;
+  --accent-tint: rgb(212 212 216 / 0.12);
+  --accent-solid: #52525b;
+  --accent-solid-hover: #5f5f69;
+}
+
+[data-palette="midnight"] {
+  --page: #f8fafc;
+  --canvas: #eef2f7;
+  --surface: #ffffff;
+  --inset: #f3f6fa;
+  --hover: #eef2f7;
+  --hover-2: #e2e8f0;
+  --ink: #0f172a;
+  --ink-2: #44526a;
+  --ink-3: #5b6b82;
+  --line: #e2e8f0;
+  --line-strong: #cfd8e3;
+  --line-soft: #edf1f6;
+  --field: #eef2f7;
+  --stripe-bg: #f1f5f9;
+  --sidebar: #f1f5f9;
+  --sidebar-hover: #e6ecf3;
+  --sidebar-active: #dce4ee;
+  --accent: #3b63e6;
+  --accent-ink: #2f55d4;
+  --accent-tint: #e8edfd;
+  --accent-solid: #3157d6;
+  --accent-solid-hover: #284ac0;
+}
+.dark[data-palette="midnight"] {
+  --page: #0b1020;
+  --canvas: #080c18;
+  --surface: #111831;
+  --inset: #0e1428;
+  --hover: #172042;
+  --hover-2: #1d2850;
+  --ink: #e6ebf5;
+  --ink-2: #aab4ca;
+  --ink-3: #8793ad;
+  --line: #1c2544;
+  --line-strong: #283358;
+  --line-soft: #151d38;
+  --field: #131b36;
+  --stripe-bg: #111831;
+  --sidebar: #070b16;
+  --sidebar-hover: #10172c;
+  --sidebar-active: #172040;
+  --accent: #7c9cff;
+  --accent-ink: #9db4ff;
+  --accent-tint: rgb(124 156 255 / 0.15);
+  --accent-solid: #3d63e0;
+  --accent-solid-hover: #4a70ec;
+}
+
+[data-palette="nord"] {
+  --page: #eceff4;
+  --canvas: #e5e9f0;
+  --surface: #f8f9fb;
+  --inset: #e8ecf2;
+  --hover: #e3e7ee;
+  --hover-2: #d8dee9;
+  --ink: #2e3440;
+  --ink-2: #434c5e;
+  --ink-3: #566176;
+  --line: #d8dee9;
+  --line-strong: #c7cfdc;
+  --line-soft: #e3e8ef;
+  --field: #e5e9f0;
+  --stripe-bg: #e5e9f0;
+  --sidebar: #e5e9f0;
+  --sidebar-hover: #dce1ea;
+  --sidebar-active: #d3d9e4;
+  --accent: #5e81ac;
+  --accent-ink: #4a6890;
+  --accent-tint: #dde5ef;
+  --accent-solid: #4c6a92;
+  --accent-solid-hover: #43608a;
+  --green: #5d7f45;
+  --green-tint: #e1e9d9;
+  --orange: #a65a35;
+  --orange-tint: #f1e2d9;
+  --orange-ink: #995131;
+  --red: #b04a54;
+  --red-tint: #f1dcdf;
+  --red-ink: #a3434c;
+}
+.dark[data-palette="nord"] {
+  --page: #2e3440;
+  --canvas: #2a2f3a;
+  --surface: #3b4252;
+  --inset: #343a48;
+  --hover: #3b4252;
+  --hover-2: #434c5e;
+  --ink: #eceff4;
+  --ink-2: #d8dee9;
+  --ink-3: #a3acbd;
+  --line: #3f4757;
+  --line-strong: #4c566a;
+  --line-soft: #363c4a;
+  --field: #3b4252;
+  --stripe-bg: #353b49;
+  --sidebar: #272c36;
+  --sidebar-hover: #2e3440;
+  --sidebar-active: #3b4252;
+  --accent: #88c0d0;
+  --accent-ink: #88c0d0;
+  --accent-tint: rgb(136 192 208 / 0.16);
+  --accent-solid: #4c6a92;
+  --accent-solid-hover: #56769f;
+  --green: #a3be8c;
+  --green-tint: rgb(163 190 140 / 0.16);
+  --orange: #d08770;
+  --orange-tint: rgb(208 135 112 / 0.16);
+  --orange-ink: #d08770;
+  --red: #bf616a;
+  --red-tint: rgb(191 97 106 / 0.18);
+  --red-ink: #d57780;
+}
+
+[data-palette="solarized"] {
+  --page: #fdf6e3;
+  --canvas: #f5eedb;
+  --surface: #fffbef;
+  --inset: #f7f0dc;
+  --hover: #f3ecd7;
+  --hover-2: #eae3cd;
+  --ink: #073642;
+  --ink-2: #3f565d;
+  --ink-3: #586e75;
+  --line: #e8e1cc;
+  --line-strong: #dbd3bb;
+  --line-soft: #f0e9d5;
+  --field: #f3ecd8;
+  --stripe-bg: #f5eedb;
+  --sidebar: #f5eedb;
+  --sidebar-hover: #ede6d1;
+  --sidebar-active: #e5dec7;
+  --accent: #268bd2;
+  --accent-ink: #1d6fa9;
+  --accent-tint: #e2ecec;
+  --accent-solid: #1d6fa9;
+  --accent-solid-hover: #1a6194;
+  --green: #6b7b00;
+  --green-tint: #eaebcc;
+  --orange: #b8410f;
+  --orange-tint: #f6e0cc;
+  --orange-ink: #a83b0e;
+  --red: #c8292a;
+  --red-tint: #f7dccf;
+  --red-ink: #b42526;
+}
+.dark[data-palette="solarized"] {
+  --page: #002b36;
+  --canvas: #00252f;
+  --surface: #073642;
+  --inset: #04313c;
+  --hover: #0b3e4b;
+  --hover-2: #114755;
+  --ink: #eee8d5;
+  --ink-2: #b9c1bd;
+  --ink-3: #93a1a1;
+  --line: #0d404c;
+  --line-strong: #1a4f5c;
+  --line-soft: #06333f;
+  --field: #073642;
+  --stripe-bg: #04313c;
+  --sidebar: #00232c;
+  --sidebar-hover: #062f3a;
+  --sidebar-active: #0a3a46;
+  --accent: #268bd2;
+  --accent-ink: #5cace6;
+  --accent-tint: rgb(38 139 210 / 0.2);
+  --accent-solid: #1d6fa9;
+  --accent-solid-hover: #2179b8;
+  --green: #a4b51a;
+  --green-tint: rgb(133 153 0 / 0.2);
+  --orange: #e5743f;
+  --orange-tint: rgb(203 75 22 / 0.2);
+  --orange-ink: #e5743f;
+  --red: #ef5b58;
+  --red-tint: rgb(220 50 47 / 0.2);
+  --red-ink: #ef5b58;
+}
+
+[data-palette="catppuccin"] {
+  --page: #eff1f5;
+  --canvas: #e6e9ef;
+  --surface: #f7f8fb;
+  --inset: #e9ecf2;
+  --hover: #e4e7ee;
+  --hover-2: #d9dde6;
+  --ink: #4c4f69;
+  --ink-2: #565970;
+  --ink-3: #62657b;
+  --line: #dce0e8;
+  --line-strong: #ccd0da;
+  --line-soft: #e6e9ef;
+  --field: #e6e9ef;
+  --stripe-bg: #e6e9ef;
+  --sidebar: #e6e9ef;
+  --sidebar-hover: #dce0e8;
+  --sidebar-active: #d3d7e1;
+  --accent: #8839ef;
+  --accent-ink: #7429d6;
+  --accent-tint: #ebe2fb;
+  --accent-solid: #7c2fe6;
+  --accent-solid-hover: #6c22cf;
+  --green: #2f8a1d;
+  --green-tint: #dcebd8;
+  --orange: #c4500a;
+  --orange-tint: #f8e2d3;
+  --orange-ink: #b4490a;
+  --red: #d20f39;
+  --red-tint: #f6d8de;
+  --red-ink: #bb0d33;
+}
+.dark[data-palette="catppuccin"] {
+  --page: #1e1e2e;
+  --canvas: #181825;
+  --surface: #252536;
+  --inset: #212132;
+  --hover: #2a2b3d;
+  --hover-2: #313244;
+  --ink: #cdd6f4;
+  --ink-2: #bac2de;
+  --ink-3: #9399b2;
+  --line: #2e2f42;
+  --line-strong: #3c3d54;
+  --line-soft: #27283a;
+  --field: #29293c;
+  --stripe-bg: #232334;
+  --sidebar: #181825;
+  --sidebar-hover: #202030;
+  --sidebar-active: #29293c;
+  --accent: #cba6f7;
+  --accent-ink: #cba6f7;
+  --accent-tint: rgb(203 166 247 / 0.14);
+  --accent-solid: #7c2fe6;
+  --accent-solid-hover: #8a42ec;
+  --green: #a6e3a1;
+  --green-tint: rgb(166 227 161 / 0.14);
+  --orange: #fab387;
+  --orange-tint: rgb(250 179 135 / 0.14);
+  --orange-ink: #fab387;
+  --red: #f38ba8;
+  --red-tint: rgb(243 139 168 / 0.14);
+  --red-ink: #f38ba8;
+}
+
+[data-palette="rose-pine"] {
+  --page: #faf4ed;
+  --canvas: #f2e9e1;
+  --surface: #fffaf3;
+  --inset: #f4ede8;
+  --hover: #f2e9e1;
+  --hover-2: #e9dfd6;
+  --ink: #464261;
+  --ink-2: #575279;
+  --ink-3: #6b6787;
+  --line: #ebe2d9;
+  --line-strong: #dfd5cb;
+  --line-soft: #f2ebe3;
+  --field: #f2e9e1;
+  --stripe-bg: #f4ede8;
+  --sidebar: #f4ede8;
+  --sidebar-hover: #ece3db;
+  --sidebar-active: #e5dad0;
+  --accent: #286983;
+  --accent-ink: #286983;
+  --accent-tint: #e2ebe9;
+  --accent-solid: #286983;
+  --accent-solid-hover: #1f5669;
+  --green: #2f7766;
+  --green-tint: #dfeae3;
+  --orange: #a7651a;
+  --orange-tint: #f6e6cf;
+  --orange-ink: #995c17;
+  --red: #b4637a;
+  --red-tint: #f4e0e1;
+  --red-ink: #a3566c;
+}
+.dark[data-palette="rose-pine"] {
+  --page: #191724;
+  --canvas: #15131f;
+  --surface: #1f1d2e;
+  --inset: #1c1a29;
+  --hover: #26233a;
+  --hover-2: #2e2a44;
+  --ink: #e0def4;
+  --ink-2: #bcb8d4;
+  --ink-3: #908caa;
+  --line: #2a2740;
+  --line-strong: #403d52;
+  --line-soft: #221f33;
+  --field: #232136;
+  --stripe-bg: #1f1d2e;
+  --sidebar: #15131f;
+  --sidebar-hover: #1f1d2e;
+  --sidebar-active: #26233a;
+  --accent: #c4a7e7;
+  --accent-ink: #c4a7e7;
+  --accent-tint: rgb(196 167 231 / 0.14);
+  --accent-solid: #7652a8;
+  --accent-solid-hover: #845fb7;
+  --green: #9ccfd8;
+  --green-tint: rgb(156 207 216 / 0.14);
+  --orange: #f6c177;
+  --orange-tint: rgb(246 193 119 / 0.14);
+  --orange-ink: #f6c177;
+  --red: #eb6f92;
+  --red-tint: rgb(235 111 146 / 0.15);
+  --red-ink: #eb6f92;
+}
+
+[data-palette="github"] {
+  --page: #ffffff;
+  --canvas: #f6f8fa;
+  --surface: #ffffff;
+  --inset: #f6f8fa;
+  --hover: #f3f4f6;
+  --hover-2: #eaeef2;
+  --ink: #1f2328;
+  --ink-2: #4e5761;
+  --ink-3: #636c76;
+  --line: #d8dee4;
+  --line-strong: #d0d7de;
+  --line-soft: #eaeef2;
+  --field: #f6f8fa;
+  --stripe-bg: #f6f8fa;
+  --sidebar: #f6f8fa;
+  --sidebar-hover: #eaeef2;
+  --sidebar-active: #e1e6eb;
+  --accent: #0969da;
+  --accent-ink: #0969da;
+  --accent-tint: #ddf4ff;
+  --accent-solid: #0969da;
+  --accent-solid-hover: #0860c6;
+  --green: #1a7f37;
+  --green-tint: #dafbe1;
+  --orange: #9a6700;
+  --orange-tint: #fff8c5;
+  --orange-ink: #9a6700;
+  --red: #d1242f;
+  --red-tint: #ffebe9;
+  --red-ink: #c11f2a;
+}
+.dark[data-palette="github"] {
+  --page: #0d1117;
+  --canvas: #010409;
+  --surface: #161b22;
+  --inset: #11161d;
+  --hover: #1c2129;
+  --hover-2: #262c36;
+  --ink: #e6edf3;
+  --ink-2: #b7c0c9;
+  --ink-3: #8d96a0;
+  --line: #21262d;
+  --line-strong: #30363d;
+  --line-soft: #1a1f26;
+  --field: #161b22;
+  --stripe-bg: #11161d;
+  --sidebar: #010409;
+  --sidebar-hover: #0d1117;
+  --sidebar-active: #161b22;
+  --accent: #4493f8;
+  --accent-ink: #58a6ff;
+  --accent-tint: rgb(56 139 253 / 0.15);
+  --accent-solid: #1f6feb;
+  --accent-solid-hover: #388bfd;
+  --green: #3fb950;
+  --green-tint: rgb(46 160 67 / 0.15);
+  --orange: #d29922;
+  --orange-tint: rgb(187 128 9 / 0.15);
+  --orange-ink: #d29922;
+  --red: #f85149;
+  --red-tint: rgb(248 81 73 / 0.15);
+  --red-ink: #ff7b72;
+}
+
+/* ── accent: a hue (and chroma factor) over the palette's own accent ── */
+
+[data-accent="blue"] { --ah: 256; }
+[data-accent="violet"] { --ah: 292; }
+[data-accent="green"] { --ah: 150; --ac: 0.8; }
+[data-accent="orange"] { --ah: 50; }
+[data-accent="pink"] { --ah: 350; }
+[data-accent="teal"] { --ah: 190; --ac: 0.75; }
+[data-accent="neutral"] { --ah: 260; --ac: 0; }
+
+:root[data-accent] {
+  --accent: oklch(0.58 calc(0.17 * var(--ac, 1)) var(--ah, 256));
+  --accent-ink: oklch(0.52 calc(0.17 * var(--ac, 1)) var(--ah, 256));
+  --accent-tint: oklch(0.96 calc(0.025 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid: oklch(0.55 calc(0.19 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid-hover: oklch(0.5 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+}
+:root.dark[data-accent] {
+  --accent: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256));
+  --accent-ink: oklch(0.8 calc(0.11 * var(--ac, 1)) var(--ah, 256));
+  --accent-tint: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256) / 0.14);
+  --accent-solid: oklch(0.55 calc(0.19 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid-hover: oklch(0.6 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+}
+/* neutral reads as ink, not as a gray version of blue */
+:root[data-accent="neutral"] {
+  --accent: oklch(0.45 0 0);
+  --accent-ink: oklch(0.38 0 0);
+  --accent-tint: oklch(0.94 0 0);
+  --accent-solid: oklch(0.3 0 0);
+  --accent-solid-hover: oklch(0.38 0 0);
+}
+:root.dark[data-accent="neutral"] {
+  --accent: oklch(0.82 0 0);
+  --accent-ink: oklch(0.9 0 0);
+  --accent-tint: oklch(1 0 0 / 0.1);
+  --accent-solid: oklch(0.48 0 0);
+  --accent-solid-hover: oklch(0.54 0 0);
+}
+
+/* ── increase contrast: secondary text and hairlines move toward ink, in any palette ── */
+
+:root[data-contrast] {
+  --ink-2: color-mix(in oklch, var(--ink) 86%, var(--page));
+  --ink-3: color-mix(in oklch, var(--ink) 72%, var(--page));
+  --line: color-mix(in oklch, var(--ink) 20%, var(--page));
+  --line-strong: color-mix(in oklch, var(--ink) 34%, var(--page));
+  --line-soft: color-mix(in oklch, var(--ink) 13%, var(--page));
+}
+
+/* ── settings controls (components/claude/settings/controls.tsx) ── */
+
+/* a thin track filled up to the value (or a custom gradient, for hue), and a round thumb */
+.settings-range {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.settings-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--track, linear-gradient(to right, var(--accent-solid) var(--fill), var(--line-strong) var(--fill)));
+}
+.settings-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--track, linear-gradient(to right, var(--accent-solid) var(--fill), var(--line-strong) var(--fill)));
+}
+.settings-range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 999px;
+  appearance: none;
+  background: oklch(1 0 0);
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.18), 0 1px 3px oklch(0 0 0 / 0.22);
+  transition: box-shadow 150ms ease;
+}
+.settings-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: oklch(1 0 0);
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.18), 0 1px 3px oklch(0 0 0 / 0.22);
+}
+.settings-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.18), 0 0 0 4px color-mix(in oklch, var(--accent) 40%, transparent);
+}
+.settings-range:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.18), 0 0 0 4px color-mix(in oklch, var(--accent) 40%, transparent);
 }
