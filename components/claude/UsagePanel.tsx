@@ -217,7 +217,7 @@ function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
   return (
     <Section title="Turns" aside={avg !== null ? `avg ${fmtDuration(avg)}` : undefined}>
       <div role="table" aria-label="Turn timing" className="text-[12.5px]">
-        <div role="row" className="grid grid-cols-[3.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] gap-2 border-b border-line pb-1.5 text-[11.5px] text-ink-3">
+        <div role="row" className="grid grid-cols-[4.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] gap-2 border-b border-line pb-1.5 text-[11.5px] text-ink-3">
           <span role="columnheader">Time</span>
           <span role="columnheader">Prompt</span>
           <span role="columnheader" className="text-right">
@@ -233,8 +233,8 @@ function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
         {recent.map((t) => {
           const live = t.open && busy;
           return (
-            <div key={t.id} role="row" className="grid grid-cols-[3.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] items-baseline gap-2 border-b border-line py-1.5 last:border-b-0">
-              <span role="cell" className="text-ink-3 tabular-nums">
+            <div key={t.id} role="row" className="grid grid-cols-[4.25rem_minmax(0,1fr)_4rem_3.5rem_3.5rem] items-baseline gap-2 border-b border-line py-1.5 last:border-b-0">
+              <span role="cell" className="whitespace-nowrap text-ink-3 tabular-nums">
                 {fmtTime(t.ts)}
               </span>
               <span role="cell" className="truncate text-ink-2" title={t.text}>

@@ -8,19 +8,19 @@ import { SentFiles } from "./Attachments";
 import LoadingState from "@/components/primitives/LoadingState";
 import type { Entry, ToolResult } from "@/lib/types";
 import type { SessionView } from "@/lib/client/useSession";
+import { editsIn, failedCount, splitTurns, toBlocks, undoCheckpoint, type Block } from "@/lib/client/turns";
+import type { GitInfo } from "@/lib/client/useGitInfo";
+import { api } from "@/lib/client/api";
+import { confirmAsk } from "./Ask";
 import { Markdown } from "./Markdown";
 import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./MessageActions";
 import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
+import { TurnChanges, TurnFold } from "./TurnFold";
+import "./thread.css";
 
 /** Dispatched on the thread's scroll box to stop following new content before jumping to an earlier spot. */
 export const RELEASE_PIN_EVENT = "cui:release-pin";
-
-type Block =
-  | { type: "user"; key: string; entry: Extract<Entry, { kind: "user" }> }
-  | { type: "text"; key: string; entry: Extract<Entry, { kind: "text" }> }
-  | { type: "notice"; key: string; entry: Extract<Entry, { kind: "notice" }> }
-  | { type: "run"; key: string; items: RunItem[] };
 
 const GAP_MS = 30 * 60_000;
 
@@ -49,20 +49,24 @@ function separators(blocks: Block[]) {
   return out;
 }
 
-function toBlocks(entries: Entry[]): Block[] {
-  const blocks: Block[] = [];
-  for (const e of entries) {
-    /* models that keep reasoning private still log an empty thinking block; it carries nothing to show */
-    if (e.kind === "thinking" && !e.text.trim()) continue;
-    if (e.kind === "tool" || e.kind === "thinking") {
-      const last = blocks[blocks.length - 1];
-      if (last?.type === "run") last.items.push(e);
-      else blocks.push({ type: "run", key: e.id, items: [e] });
-    } else if (e.kind === "user" || e.kind === "text" || e.kind === "notice") {
-      blocks.push({ type: e.kind, key: e.id, entry: e } as Block);
+/**
+ * Whether the agent is still on the last turn. Busy alone isn't enough: right after a send the
+ * agent is busy before the new prompt reaches the transcript, and the turn before it must stay
+ * folded. A turn seen finished counts as finished until it grows again.
+ */
+function useLiveTurn(entries: Entry[], busy: boolean) {
+  const settled = useRef<{ key: string; size: number } | null>(null);
+  let size = 0;
+  let key = "";
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].kind === "user") {
+      key = entries[i].id;
+      break;
     }
+    size++;
   }
-  return blocks;
+  if (!busy) settled.current = { key, size };
+  return busy && !(settled.current?.key === key && settled.current.size === size);
 }
 
 type RunProps = { items: RunItem[]; results: Record<string, ToolResult> };
@@ -82,7 +86,7 @@ function useStableRuns(blocks: Block[], results: Record<string, ToolResult>) {
   return useMemo(() => {
     const prev = cache.current;
     const next = new Map<string, RunProps>();
-    for (const b of blocks) {
+    for (const b of blocks.flatMap((x) => (x.type === "fold" ? x.blocks : [x]))) {
       if (b.type !== "run") continue;
       const old = prev.get(b.key);
       const items = old && sameItems(old.items, b.items) ? old.items : b.items;
@@ -179,10 +183,10 @@ const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }:
   /* a message still being sent has nothing settled to copy or time yet. The caller's wrapper carries ACTIONS_GAP. */
   const actions = !pending && Boolean(text || ts);
   return (
-    <div className={`flex flex-col items-end pl-8 sm:pl-20 ${actions ? ACTIONS_PAD : ""}`} style={enter}>
+    <div className={`flex flex-col items-end ${actions ? ACTIONS_PAD : ""}`} style={enter}>
       <SentFiles paths={paths} />
       <div
-        className={`flex max-w-full min-w-0 flex-col gap-1.5 rounded-[14px] bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink shadow-hairline sm:py-2 sm:text-[13.5px] ${pending ? "opacity-60" : ""}`}
+        className={`flex max-w-[80%] min-w-0 flex-col gap-1.5 rounded-2xl bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink sm:px-4 sm:py-3 sm:text-[14px] ${pending ? "opacity-60" : ""}`}
         aria-busy={pending || undefined}
       >
         {images ? (
@@ -268,6 +272,7 @@ export function Thread({
   footer,
   empty,
   pendingSlot,
+  changes,
 }: {
   /** renders a not-yet-recorded message (status, retry, discard) */
   pendingSlot?: (p: SessionView["pending"][number]) => ReactNode;
@@ -279,10 +284,36 @@ export function Thread({
   bottomPad: number;
   footer?: ReactNode;
   empty?: ReactNode;
+  /** the session's folder, for a finished turn's changed-files card: View diff and Undo */
+  changes?: { session: string; git: GitInfo | null; onView?: () => void; onUndone?: () => void };
 }) {
-  const blocks = useMemo(() => toBlocks(view.entries), [view.entries]);
+  const live = useLiveTurn(view.entries, busy);
+  const blocks = useMemo(() => toBlocks(view.entries, live), [view.entries, live]);
   const dividers = useMemo(() => separators(blocks), [blocks]);
   const runs = useStableRuns(blocks, view.results);
+  const lastChanges = useMemo(() => blocks.findLast((b) => b.type === "changes")?.key, [blocks]);
+  const turnRefs = useMemo(
+    () => (changes?.git?.checkpoints.length ? splitTurns(view.entries).map((t) => ({ text: t.user?.text ?? "", ts: t.user?.ts ?? "", edits: editsIn(t.entries).length > 0 })) : []),
+    [view.entries, changes?.git],
+  );
+  /* only the latest changes can be undone on their own: rewinding further back would take later turns' work too */
+  const undoFor = (b: Extract<Block, { type: "changes" }>) => {
+    if (!changes?.git || busy || b.key !== lastChanges) return undefined;
+    const id = undoCheckpoint(changes.git.checkpoints, turnRefs, b.turn);
+    if (!id) return undefined;
+    return async () => {
+      const ok = await confirmAsk({
+        title: "Undo these changes?",
+        body: "Files go back to how they were before this turn. The conversation stays as it is, and the current files are saved as a checkpoint first, so you can get them back from Git.",
+        confirm: "Undo changes",
+        danger: true,
+      });
+      if (!ok) return null;
+      const r = await api<{ changed: number; removed: number }>("/api/git", { session: changes.session, action: "rewind", id });
+      changes.onUndone?.();
+      return r.changed || r.removed ? "Changes undone" : "Nothing to undo";
+    };
+  };
   /* the timer counts from the latest user message; a message still being sent has no timestamp yet, so it counts from now */
   const since = useMemo(() => (view.pending.length ? undefined : turnStart(view.entries)), [view.entries, view.pending.length]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -354,7 +385,7 @@ export function Thread({
   const showWorking = busy && liveText.length === 0 && !thinkingAlone && (!lastIsRun || view.pending.length > 0);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="thread-prose relative min-h-0 flex-1">
       <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain" role="log" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
         <div ref={contentRef} className="mx-auto flex w-full max-w-[740px] flex-col gap-5 px-4 pt-5 sm:px-8 sm:pt-8" style={{ paddingBottom: bottomPad + 24 }}>
           {view.cursor !== null && (
@@ -390,16 +421,40 @@ export function Thread({
               );
             }
             if (b.type === "text")
-              return (
+              return b.final ? (
                 <div key={b.key} className={ACTIONS_HOST} style={style}>
                   <Markdown text={b.entry.text} />
                   <MessageActions text={b.entry.text} />
+                </div>
+              ) : (
+                <div key={b.key} style={style}>
+                  <Markdown text={b.entry.text} />
                 </div>
               );
             if (b.type === "notice")
               return (
                 <div key={b.key} style={style}>
                   <Notice entry={b.entry} />
+                </div>
+              );
+            if (b.type === "fold")
+              return (
+                <div key={b.key} style={style}>
+                  <TurnFold ms={b.ms} tools={b.tools} failed={b.blocks.reduce((n, c) => n + (c.type === "run" ? failedCount(c.items, runs.get(c.key)?.results ?? EMPTY_RESULTS) : 0), 0)}>
+                    {b.blocks.map((c) =>
+                      c.type === "run" ? (
+                        <ToolRun key={c.key} items={runs.get(c.key)?.items ?? c.items} results={runs.get(c.key)?.results ?? EMPTY_RESULTS} active={false} />
+                      ) : c.type === "text" ? (
+                        <Markdown key={c.key} text={c.entry.text} />
+                      ) : null,
+                    )}
+                  </TurnFold>
+                </div>
+              );
+            if (b.type === "changes")
+              return (
+                <div key={b.key} style={style}>
+                  <TurnChanges tools={b.tools} results={view.results} onView={changes?.onView} onUndo={undoFor(b)} />
                 </div>
               );
             const run = runs.get(b.key);

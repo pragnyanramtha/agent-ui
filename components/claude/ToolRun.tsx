@@ -5,6 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
+import { failedCount, runSummary } from "@/lib/client/turns";
 import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
@@ -387,15 +388,12 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     case "NotebookRead":
       return (
         <Stack>
-          <span className={`${MONO} text-ink-3 [overflow-wrap:anywhere]`}>
-            <BreakablePath path={s("file_path") || s("notebook_path")} />
-            {typeof input.offset === "number" || typeof input.limit === "number" ? (
-              <span className="font-sans">
-                {"  "}from line {typeof input.offset === "number" ? input.offset : 1}
-                {typeof input.limit === "number" ? `, ${input.limit} lines` : ""}
-              </span>
-            ) : null}
-          </span>
+          {typeof input.offset === "number" || typeof input.limit === "number" ? (
+            <span className="text-[12px] text-ink-3">
+              From line {typeof input.offset === "number" ? input.offset : 1}
+              {typeof input.limit === "number" ? `, ${input.limit} lines` : ""}
+            </span>
+          ) : null}
           <FileOutput result={result} path={s("file_path") || s("notebook_path")} />
         </Stack>
       );
@@ -485,7 +483,7 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
   const summary = item.kind === "thinking" ? { verb: "Thought", chip: item.text.split("\n")[0], mono: false, icon: "think" as const } : summarizeTool(item.name, item.input);
   const failed = result?.isError;
   const waiting = item.kind === "tool" && !result && active;
-  const iconProps = { width: 14, height: 14, strokeWidth: 1.8 };
+  const iconProps = { width: 16, height: 16, strokeWidth: 1.6 };
 
   return (
     <div style={ENTER}>
@@ -493,9 +491,9 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className={`group/row -mx-1 flex h-9 w-[calc(100%+8px)] min-w-0 items-center gap-2 rounded-control px-1 text-left transition-colors duration-100 hover:bg-hover-2 sm:h-7 ${FOCUS_INSET}`}
+        className={`group/row -mx-1 flex min-h-10 w-[calc(100%+8px)] min-w-0 items-center gap-1.5 rounded-control px-1 py-0.5 text-left leading-relaxed transition-colors duration-100 hover:bg-hover-2 pointer-fine:min-h-7 ${FOCUS_INSET}`}
       >
-        <span className="relative flex size-4 shrink-0 items-center justify-center text-ink-3">
+        <span className="relative flex h-4 w-5 shrink-0 items-center justify-center text-ink-3">
           <span className={`flex transition-opacity duration-100 group-hover/row:opacity-0 group-focus-visible/row:opacity-0 ${open ? "opacity-0" : ""}`}>{ICONS[summary.icon](iconProps)}</span>
           <span
             className={`absolute flex transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 ${open ? "opacity-100" : "opacity-0"}`}
@@ -504,10 +502,10 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
             <NavArrowDown width={13} height={13} strokeWidth={2.2} />
           </span>
         </span>
-        <span className="max-w-[45%] shrink-0 truncate text-[13px] font-medium text-ink sm:text-[12.5px]">{summary.verb}</span>
+        <span className="max-w-[45%] shrink-0 truncate text-[13px] text-ink-2">{summary.verb}</span>
         {summary.chip && (
-          <span className={`inline-flex h-5.5 min-w-0 items-center rounded-chip bg-field px-1.5 text-[11.5px] text-ink-2 shadow-hairline ${summary.mono ? "font-mono" : ""}`}>
-            <span className="truncate">{summary.chip}</span>
+          <span className={`min-w-0 truncate text-ink-3 ${summary.mono ? "font-mono text-[12px]" : "text-[12.5px]"}`} title={item.kind === "tool" && typeof item.input?.file_path === "string" ? item.input.file_path : undefined}>
+            {summary.chip}
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center pl-1">
@@ -522,7 +520,7 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
         </span>
       </button>
       <Collapse open={open}>
-        <div className="mt-0.5 mb-2 ml-[7px] min-w-0 border-l border-line py-1 pl-3.5">
+        <div className="mt-0.5 mb-2 ml-2.5 min-w-0 border-l border-line-soft py-1 pl-3">
           <Detail item={item} result={result} active={active} />
         </div>
       </Collapse>
@@ -561,14 +559,6 @@ function LiveThinking({ text }: { text: string }) {
   );
 }
 
-function headerLabel(items: RunItem[]) {
-  const tools = items.filter((i) => i.kind === "tool").length;
-  const thoughts = items.length - tools;
-  if (!tools) return "Thought";
-  const t = `${tools} tool ${tools === 1 ? "call" : "calls"}`;
-  return thoughts ? `Thought, ${t}` : t;
-}
-
 /**
  * A run of tool calls and thinking between two pieces of prose, styled after Beautiful UI's ToolChips.
  * `results` holds only this run's results so memo skips runs whose results did not change.
@@ -594,6 +584,7 @@ export const ToolRun = memo(function ToolRun({
   const live = thinking?.trim() ? thinking : undefined;
   /* an open run's live thinking row carries the shimmer itself, so the header stays quiet while it streams */
   const shimmer = active && !(live && open);
+  const failed = failedCount(items, results);
 
   if (!items.length) {
     return (
@@ -609,7 +600,7 @@ export const ToolRun = memo(function ToolRun({
         type="button"
         aria-expanded={open}
         onClick={() => setManual(!open)}
-        className={`-mx-1.5 flex h-8 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-[13px] text-ink-2 transition-colors duration-100 hover:bg-hover-2 sm:h-7 sm:text-[12.5px] ${FOCUS_INSET}`}
+        className={`-mx-1.5 flex h-10 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-[13px] text-ink-2 transition-colors duration-100 hover:bg-hover-2 pointer-fine:h-7 sm:text-[12.5px] ${FOCUS_INSET}`}
       >
         <span className="flex shrink-0 transition-transform duration-200" style={{ transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>
           <NavArrowDown width={12} height={12} strokeWidth={2.2} />
@@ -617,11 +608,9 @@ export const ToolRun = memo(function ToolRun({
         {shimmer ? (
           <span className={`shrink-0 font-medium ${SHIMMER} ${PLAY}`}>{live || !lastSummary ? "Thinking…" : lastSummary.verb}</span>
         ) : (
-          <span className="shrink-0 tabular-nums">{headerLabel(items)}</span>
+          <span className="min-w-0 truncate tabular-nums">{runSummary(items)}</span>
         )}
-        {!open && !live && lastSummary?.chip && (
-          <span className={`min-w-0 truncate text-[11.5px] text-ink-3 ${lastSummary.mono ? "font-mono" : ""}`}>{lastSummary.chip}</span>
-        )}
+        {!shimmer && failed > 0 && <span className="shrink-0 text-red">· {failed} failed</span>}
       </button>
       {/* the collapse clips overflow; widen it by the rows' hover bleed so their backgrounds and focus rings aren't cut */}
       <Collapse open={open} className="-mx-1">
