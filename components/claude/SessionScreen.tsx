@@ -398,6 +398,7 @@ export function SessionScreen({
     onStop: busy && (run || terminal) ? () => (live ? void control("interrupt") : void pressKey("Escape")) : null,
     models: profileModels(profileInfo, agent === "claude" ? MODELS : agentModels),
     model,
+    defaultModel: profileInfo?.defaultModel || profileInfo?.models[0] || null,
     onModel: (m) => {
       setLocalModel(m || null);
       if (live) void control("model", m);

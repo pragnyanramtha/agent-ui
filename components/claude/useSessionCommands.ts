@@ -182,6 +182,8 @@ export function useSessionPalette(o: {
   onStop: (() => void) | null;
   models: { key: string; name: string }[];
   model: string | null;
+  /** the model "Default" resolves to, when the profile names one */
+  defaultModel: string | null;
   onModel: (m: string) => void;
   mode: PermissionMode;
   onMode: (m: PermissionMode) => void;
@@ -200,7 +202,8 @@ export function useSessionPalette(o: {
     };
     const levels = effortOptions(o.agent);
     const currentMode = MODES.find((m) => m.key === o.mode);
-    const modelName = (o.model && o.models.find((m) => m.key === o.model)?.name) || modelLabel(o.model);
+    const nameOf = (m: string) => o.models.find((x) => x.key === m)?.name || modelLabel(m);
+    const modelName = o.model ? nameOf(o.model) : o.defaultModel ? nameOf(o.defaultModel) : "Default";
     const effortName = effortLabel(o.agent, o.effort || o.defaultEffort) ?? "Default";
     const actions: PaletteAction[] = [
       ...(o.hasFolder
@@ -229,7 +232,7 @@ export function useSessionPalette(o: {
         id: "model",
         title: o.agent === "claude" ? "Model" : `${o.agentName} model`,
         placeholder: "Choose a model…",
-        choices: o.models.map((m) => ({ value: m.key, label: m.name, current: (o.model ?? "") === m.key })),
+        choices: o.models.map((m) => ({ value: m.key, label: m.name, hint: m.key === "" && m.name === "Default" && o.defaultModel ? nameOf(o.defaultModel) : undefined, current: (o.model ?? "") === m.key })),
         pick: o.onModel,
       },
       {
