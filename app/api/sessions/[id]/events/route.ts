@@ -10,7 +10,7 @@ import { metaTitle, readHistory } from "@/lib/server/transcript";
 import { parseSessionKey } from "@/lib/server/agents";
 import { agentEvents } from "@/lib/server/agents/routes";
 import { onSessionEvent } from "@/lib/server/fallback";
-import { pickProfile } from "@/lib/server/profiles";
+import { getSessionMeta, pickProfile } from "@/lib/server/profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -146,7 +146,7 @@ async function stream(req: NextRequest, id: string, fromParam: string | null) {
         cursor: history.cursor,
         terminal: firstTerminal,
         run: watchedRun ? watchedRun.state : null,
-        title: (ctx && metaTitle(ctx.meta)) ?? "New session",
+        title: getSessionMeta(id).title ?? (ctx && metaTitle(ctx.meta)) ?? "New session",
         cwd: cwd ?? "",
         permissionMode: parseMode(ctx?.meta.permissionMode),
         profile: (watchedRun?.profile ?? pickProfile("claude", null, id)).id,

@@ -14,6 +14,9 @@ import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./Messag
 import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
 
+/** Dispatched on the thread's scroll box to stop following new content before jumping to an earlier spot. */
+export const RELEASE_PIN_EVENT = "cui:release-pin";
+
 type Block =
   | { type: "user"; key: string; entry: Extract<Entry, { kind: "user" }> }
   | { type: "text"; key: string; entry: Extract<Entry, { kind: "text" }> }
@@ -307,12 +310,19 @@ export function Thread({
         el.scrollTop = el.scrollHeight;
       });
     };
+    /* a jump to an earlier spot (find) must win over a resize that lands before its scroll event */
+    const release = () => {
+      stickRef.current = false;
+      cancelAnimationFrame(raf);
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener(RELEASE_PIN_EVENT, release);
     const ro = new ResizeObserver(pin);
     ro.observe(content);
     pin();
     return () => {
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener(RELEASE_PIN_EVENT, release);
       ro.disconnect();
       cancelAnimationFrame(raf);
     };
