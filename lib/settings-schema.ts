@@ -357,6 +357,16 @@ export const SETTINGS = {
     control: "slider",
     dom: { attr: "data-code-size", cssVar: "--code-size", unit: "px" },
   }),
+  codeLigatures: boolean({
+    section: "appearance",
+    group: "Text",
+    label: "Code ligatures",
+    description: "Joins pairs like != and => into one glyph. Off shows exactly what was typed.",
+    keywords: ["font", "monospace", "glyphs", "arrows"],
+    scope: "device",
+    default: false,
+    dom: { attr: "data-ligatures" },
+  }),
 
   /* appearance: layout */
   density: choice({

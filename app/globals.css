@@ -513,6 +513,11 @@ a:focus-visible .animated-underline::after {
   }
 }
 
+/* Code ligatures (Settings > Appearance): off unless asked for, so code reads exactly as typed */
+html:not([data-ligatures]) :is(code, pre, kbd, samp, .font-mono) {
+  font-variant-ligatures: none;
+}
+
 /* Reduce motion: "System" follows the OS, "On" always reduces, "Off" keeps motion even when the OS asks for less */
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="off"]) *,

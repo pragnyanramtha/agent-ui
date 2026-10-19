@@ -241,6 +241,11 @@ describe("appearance on <html>", () => {
     expect(s.vars).toEqual({ "--ui-scale": "1.1", "--code-size": "14px" });
   });
 
+  it("turns code ligatures on only when asked, and search finds the setting", () => {
+    expect(domState({ ...DEFAULTS, codeLigatures: true }, true).attrs).toEqual({ "data-ligatures": "on" });
+    expect(searchSettings("ligatures")).toEqual([{ section: "appearance", settings: ["codeLigatures"], items: [] }]);
+  });
+
   it("keeps the custom color off unless the accent is custom", () => {
     expect(domState({ ...DEFAULTS, accent: "violet", accentColor: "#ff0000" }, true).vars).toEqual({});
     const s = domState({ ...DEFAULTS, accent: "custom", accentColor: "#ffd60a" }, true);
