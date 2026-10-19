@@ -6,7 +6,8 @@ import { parseMode, str } from "../http";
 import { InputRefused, inputTarget, typeIntoTerminal } from "../input";
 import { terminalOf, toRunState } from "./bridge";
 import { onDelta, onTurn } from "./cli-run";
-import { adapterFor, sessionKey } from "./index";
+import { adapterFor, parseSessionKey, sessionKey } from "./index";
+import { modeOf, queueStore, saveQueues, setMode, type Queued } from "./queue-store";
 import { handoffTitle } from "@/lib/handoff-text";
 import { guardTurn, onSessionEvent, postNotice, postToSession, sameStore } from "../fallback";
 import { getSessionMeta, pickProfile, setSessionProfile, withProfile } from "../profiles";
@@ -15,20 +16,24 @@ import { getSessionMeta, pickProfile, setSessionProfile, withProfile } from "../
  * Same wire shapes as the Claude routes, so the client doesn't care which agent it is. */
 
 const notFound = () => NextResponse.json({ error: "Session not found." }, { status: 404 });
-const modes = new Map<string, PermissionMode>();
 /** their print modes can't ask for approval on the web, so unattended turns may act (the UI shows Bypass) */
 const DEFAULT_MODE: PermissionMode = "bypassPermissions";
 
 /* Messages sent while a web-driven turn runs wait here and go out, in order, when it ends
  * (or is stopped): the CLIs take one prompt per turn. Keyed by session key; the item id is
- * the client's message id, so the client can take one back. */
-type Queued = { id: string; text: string; model?: string; mode: PermissionMode; profile: unknown };
-const g = globalThis as { __agentuQueues?: Map<string, Queued[]>; __agentuDrains?: Map<string, () => void> };
-const queues: Map<string, Queued[]> = (g.__agentuQueues ??= new Map());
+ * the client's message id, so the client can take one back. Kept on disk (queue-store), so a restart sends them. */
+const g = globalThis as { __agentuDrains?: Map<string, () => void>; __agentuResumed?: boolean };
+const queues = () => queueStore().queues;
 const drains: Map<string, () => void> = (g.__agentuDrains ??= new Map());
+/** queued longer than this before a restart: likely stale, so reported instead of sent */
+const STALE_MS = 6 * 60 * 60_000;
 
-const queueEvent = (key: string): ServerEvent => ({ type: "queue", items: (queues.get(key) ?? []).map(({ id, text }) => ({ id, text })) });
-const announce = (key: string) => postToSession(key, queueEvent(key));
+const queueEvent = (key: string): ServerEvent => ({ type: "queue", items: (queues().get(key) ?? []).map(({ id, text }) => ({ id, text })) });
+/** every change to a queue is announced, so this is also where it is saved */
+const announce = (key: string) => {
+  saveQueues();
+  postToSession(key, queueEvent(key));
+};
 
 /* Some CLIs (Cursor) only save a prompt after the turn's first step, so a turn stopped before that leaves no
  * trace and the agent never read the message. Turns the user stopped are checked once they end; prompts that
@@ -78,20 +83,58 @@ async function checkLanding(agent: AgentId, native: string, id: string, text: st
 const sending: Set<string> = ((g as { __agentuSending?: Set<string> }).__agentuSending ??= new Set());
 const busy = (a: { runState(n: string): { status: string } | null }, native: string, key: string) => sending.has(key) || a.runState(native)?.status === "running";
 
+const watchQueue = (agent: AgentId, native: string, key: string) => {
+  if (!drains.has(key)) drains.set(key, onTurn(key, (s) => s.status !== "running" && void drain(agent, native)));
+};
+
 function enqueue(agent: AgentId, native: string, item: Queued) {
   const key = sessionKey(agent, native);
-  const list = queues.get(key) ?? [];
+  const list = queues().get(key) ?? [];
   if (!list.some((q) => q.id === item.id)) list.push(item);
-  queues.set(key, list);
+  queues().set(key, list);
   announce(key);
-  if (!drains.has(key)) drains.set(key, onTurn(key, (s) => s.status !== "running" && void drain(agent, native)));
+  watchQueue(agent, native, key);
 }
 
 function forget(key: string) {
-  if (queues.get(key)?.length) return;
-  queues.delete(key);
+  if (queues().get(key)?.length) return;
+  if (queues().delete(key)) saveQueues();
   drains.get(key)?.();
   drains.delete(key);
+}
+
+function reportUnsent(key: string, items: { id: string; text: string }[], error: string) {
+  const ids = new Set(items.map((q) => q.id));
+  unsent.set(key, [...(unsent.get(key) ?? []).filter((u) => !ids.has(u.id)), ...items.map(({ id, text }) => ({ id, text, error }))].slice(-20));
+  postToSession(key, unsentEvent(key));
+}
+
+/** At boot: queues saved before a restart go out again, except messages that waited too long, which are reported. */
+export async function resumeQueues() {
+  if (g.__agentuResumed) return;
+  g.__agentuResumed = true;
+  for (const [key, list] of [...queues()]) {
+    try {
+      const k = parseSessionKey(key);
+      if (!k || k.agent === "claude") continue;
+      const fresh = list.filter((q) => Date.now() - q.at < STALE_MS);
+      if (fresh.length < list.length) {
+        queues().set(key, fresh);
+        announce(key);
+        reportUnsent(key, list.filter((q) => !fresh.includes(q)), "Queued message not sent after restart.");
+      }
+      if (!fresh.length) {
+        forget(key);
+        continue;
+      }
+      const a = await adapterFor(k.agent);
+      if (!a) continue;
+      watchQueue(k.agent, k.native, key);
+      if (!busy(a, k.native, key)) void drain(k.agent, k.native);
+    } catch (err) {
+      console.error(`queue: couldn't resume ${key}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 }
 
 /** Sends the next queued message once nothing runs; one that fails to start is reported and the next one tried. */
@@ -103,12 +146,13 @@ async function drain(agent: AgentId, native: string) {
     const a = await adapterFor(agent);
     if (!a || a.runState(native)?.status === "running") return;
     for (;;) {
-      const next = queues.get(key)?.shift();
+      const next = queues().get(key)?.shift();
       announce(key);
       if (!next) break;
       const res = await sendNow(agent, native, next.text, next);
       if (res.ok) break;
       postNotice(key, `Queued message not sent ("${next.text.slice(0, 60)}"): ${res.error}`, "warn");
+      reportUnsent(key, [next], `Not sent: ${res.error}`);
     }
   } finally {
     sending.delete(key);
@@ -120,14 +164,14 @@ async function drain(agent: AgentId, native: string) {
 /* a turn that ended while a send was in flight left its end-of-turn drain unanswered */
 async function settle(agent: AgentId, native: string) {
   const key = sessionKey(agent, native);
-  if (!queues.get(key)?.length) return;
+  if (!queues().get(key)?.length) return;
   const a = await adapterFor(agent);
   if (a && !busy(a, native, key)) void drain(agent, native);
 }
 
 export function unqueue(agent: AgentId, native: string, id: string) {
   const key = sessionKey(agent, native);
-  queues.set(key, (queues.get(key) ?? []).filter((q) => q.id !== id));
+  queues().set(key, (queues().get(key) ?? []).filter((q) => q.id !== id));
   forget(key);
   announce(key);
 }
@@ -135,7 +179,7 @@ export function unqueue(agent: AgentId, native: string, id: string) {
 /** Puts one queued message first and stops the running turn, so it goes out next. */
 async function sendQueuedNow(agent: AgentId, native: string, id: string) {
   const key = sessionKey(agent, native);
-  const list = queues.get(key) ?? [];
+  const list = queues().get(key) ?? [];
   const i = list.findIndex((q) => q.id === id);
   if (i > 0) list.unshift(...list.splice(i, 1));
   announce(key);
@@ -180,10 +224,10 @@ export async function agentHistory(agent: AgentId, native: string, before: strin
     cursor: page.cursor,
     end: page.end,
     terminal,
-    run: toRunState(key, a.runState(native), modes.get(key) ?? DEFAULT_MODE, session?.model ?? null),
+    run: toRunState(key, a.runState(native), modeOf(key) ?? DEFAULT_MODE, session?.model ?? null),
     title: handoffTitle(session?.title ?? "") || `New ${a.label} session`,
     cwd: session?.cwd ?? "",
-    permissionMode: modes.get(key) ?? null,
+    permissionMode: modeOf(key) ?? null,
     profile: pickProfile(agent, null, key).id,
     agent,
   });
@@ -214,8 +258,8 @@ export async function agentEvents(req: NextRequest, agent: AgentId, native: stri
           cleanup();
         }
       };
-      const runOf = () => toRunState(key, a.runState(native), modes.get(key) ?? DEFAULT_MODE, session?.model ?? null);
-      send({ type: "history", entries: [], cursor: null, terminal, run: runOf(), title: getSessionMeta(key).title ?? (handoffTitle(session?.title ?? "") || `New ${a.label} session`), cwd: session?.cwd ?? "", permissionMode: modes.get(key) ?? null, profile: pickProfile(agent, null, key).id });
+      const runOf = () => toRunState(key, a.runState(native), modeOf(key) ?? DEFAULT_MODE, session?.model ?? null);
+      send({ type: "history", entries: [], cursor: null, terminal, run: runOf(), title: getSessionMeta(key).title ?? (handoffTitle(session?.title ?? "") || `New ${a.label} session`), cwd: session?.cwd ?? "", permissionMode: modeOf(key) ?? null, profile: pickProfile(agent, null, key).id });
       /* always: a queue lost to a restart must clear what the client still shows */
       send(queueEvent(key));
       if (unsent.get(key)?.length) send(unsentEvent(key));
@@ -274,8 +318,8 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
   const text = str(body.text)?.trim();
   if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   const key = sessionKey(agent, native);
-  const mode = parseMode(body.permissionMode) ?? modes.get(key) ?? DEFAULT_MODE;
-  modes.set(key, mode);
+  const mode = parseMode(body.permissionMode) ?? modeOf(key) ?? DEFAULT_MODE;
+  setMode(key, mode);
 
   const terminal = await terminalOf(a, native);
   if (terminal) {
@@ -291,13 +335,13 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
     }
   }
   const model = str(body.model) || undefined;
-  if (busy(a, native, key) || queues.get(key)?.length) {
+  if (busy(a, native, key) || queues().get(key)?.length) {
     const before = pickProfile(agent, null, key);
     const next = pickProfile(agent, body.profile, key);
     if (!sameStore(before, next)) {
       return NextResponse.json({ error: `Can't switch this session to ${next.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
     }
-    enqueue(agent, native, { id: str(body.clientId) || `q${Date.now().toString(36)}`, text, model, mode, profile: body.profile });
+    enqueue(agent, native, { id: str(body.clientId) || `q${Date.now().toString(36)}`, text, model, mode, profile: body.profile, at: Date.now() });
     /* the turn may have ended while this was queued */
     void settle(agent, native);
     return NextResponse.json({ id: key, via: "queued" });
@@ -329,7 +373,7 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${a.label} didn't start in time.`)), 90_000)),
     ]);
     const key = sessionKey(agent, id);
-    modes.set(key, mode);
+    setMode(key, mode);
     setSessionProfile(key, profile.id);
     guardTurn({ key, text, mode, model, profile });
     return NextResponse.json({ id: key });
@@ -348,7 +392,13 @@ export async function agentControl(agent: AgentId, native: string, body: Record<
   else if (body.action === "mode") {
     const mode = parseMode(body.value);
     if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
-    modes.set(key, mode);
+    setMode(key, mode);
+    /* queued messages go out under the mode chosen now, not the one they were queued with */
+    const waiting = queues().get(key);
+    if (waiting?.length) {
+      for (const q of waiting) q.mode = mode;
+      saveQueues();
+    }
   } else if (body.action !== "model") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

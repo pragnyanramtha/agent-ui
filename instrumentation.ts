@@ -5,5 +5,7 @@ export async function register() {
     installShutdown();
     const { startNotify } = await import("./lib/server/notify");
     startNotify();
+    /* messages queued behind a running turn when the server went down */
+    void import("./lib/server/agents/routes").then((m) => m.resumeQueues()).catch((err) => console.error("queue: resume failed", err));
   }
 }

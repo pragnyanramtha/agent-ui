@@ -115,7 +115,18 @@ export type Action =
   | { type: "pending"; pending: Pending }
   | { type: "updatePending"; localId: string; patch: Partial<Pending> }
   | { type: "restorePending"; pending: Pending[] }
-  | { type: "dropPending"; localId: string };
+  | { type: "dropPending"; localId: string }
+  | { type: "expireQueued"; localIds: string[] };
+
+/** how long a queued message the server no longer holds may take to show up once the agent is idle */
+export const QUEUE_GRACE_MS = 10_000;
+const LOST_QUEUED = "Queued message not sent.";
+
+/** Queued messages the server no longer holds (a restart lost them, or they failed to start) while nothing runs. */
+export function lostQueued(v: SessionView): Pending[] {
+  if (v.status !== "open" || v.run?.status === "running" || v.run?.status === "starting") return [];
+  return v.pending.filter((p) => p.state === "sent" && p.via === "queued" && !v.queue.includes(serverId(p)));
+}
 
 export const initial = (): SessionView => ({
   status: "connecting",
@@ -273,6 +284,12 @@ export function reducer(state: SessionView, action: Action): SessionView {
     }
     case "dropPending":
       return { ...state, pending: state.pending.filter((p) => p.localId !== action.localId) };
+    case "expireQueued": {
+      /* checked again: the message may have landed or the agent started since the timer was set */
+      const lost = new Set(lostQueued(state).map((p) => p.localId).filter((id) => action.localIds.includes(id)));
+      if (!lost.size) return state;
+      return { ...state, pending: state.pending.map((p) => (lost.has(p.localId) ? { ...p, state: "failed" as const, resend: true, error: LOST_QUEUED } : p)) };
+    }
   }
 }
 
@@ -423,6 +440,13 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     if (!id || !restored.current) return;
     save(pendingKey(id), view.pending.length ? JSON.stringify(view.pending) : null);
   }, [id, view.pending]);
+
+  const lost = lostQueued(view).map((p) => p.localId).join(" ");
+  useEffect(() => {
+    if (!lost) return;
+    const t = setTimeout(() => dispatch({ type: "expireQueued", localIds: lost.split(" ") }), QUEUE_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [lost]);
 
   const addPending = useCallback((text: string) => {
     const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

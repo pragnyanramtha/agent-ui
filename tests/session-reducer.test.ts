@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initial, reducer, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
+import { initial, lostQueued, reducer, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
 import type { Entry, RunState, ServerEvent } from "@/lib/types";
 
 const now = Date.parse("2026-10-15T10:00:00Z");
@@ -134,6 +134,37 @@ describe("unsent events", () => {
     const p = pending("p1", "a", { sentAs: "p1-abc" });
     expect(serverId(p)).toBe("p1-abc");
     expect(serverId(pending("p2", "b"))).toBe("p2");
+  });
+});
+
+describe("queued bubbles the server lost", () => {
+  const queued = (localId: string, text: string, patch: Partial<Pending> = {}) => pending(localId, text, { via: "queued", ...patch });
+  const open = (p: Pending[], queue: string[], status: RunState["status"] = "idle") => {
+    const s = ev(withPending(...p), history([], run(status)), true);
+    return ev(s, { type: "queue", items: queue.map((id) => ({ id, text: "" })) });
+  };
+  const ids = (s: SessionView) => lostQueued(s).map((p) => p.localId);
+
+  it("are the queued ones the server no longer holds while nothing runs", () => {
+    const s = open([queued("q1", "held"), queued("q2", "lost"), pending("w1", "web"), queued("q3", "failed", { state: "failed" })], ["q1"]);
+    expect(ids(s)).toEqual(["q2"]);
+    expect(ids(open([queued("q2", "lost")], [], "running"))).toEqual([]);
+    expect(ids({ ...open([queued("q2", "lost")], []), status: "reconnecting" })).toEqual([]);
+  });
+
+  it("turn into Retry with a fresh send once the grace period ends", () => {
+    const s = reducer(open([queued("q1", "lost"), queued("q2", "lost too")], []), { type: "expireQueued", localIds: ["q1"] });
+    expect(s.pending.find((p) => p.localId === "q1")).toMatchObject({ state: "failed", resend: true, error: "Queued message not sent." });
+    expect(s.pending.find((p) => p.localId === "q2")!.state).toBe("sent");
+  });
+
+  it("are left alone when the agent started or the message landed before the timer fired", () => {
+    const base = open([queued("q1", "on its way")], []);
+    const running = ev(base, { type: "run", run: run("running") });
+    expect(reducer(running, { type: "expireQueued", localIds: ["q1"] })).toBe(running);
+    const landed = ev(base, { type: "entries", entries: [user("u1", "on its way")] });
+    expect(landed.pending).toEqual([]);
+    expect(reducer(landed, { type: "expireQueued", localIds: ["q1"] })).toBe(landed);
   });
 });
 
