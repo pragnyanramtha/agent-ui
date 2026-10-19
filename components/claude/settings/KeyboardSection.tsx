@@ -2,7 +2,8 @@
 
 import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Search, Undo, Xmark } from "iconoir-react";
-import { setSetting } from "@/lib/client/settings";
+import { setSetting, useSetting } from "@/lib/client/settings";
+import { sendChords, sendNote, type SendShortcut } from "@/lib/client/composer-keys";
 import { comboFor, isMac, setRecording, useBindings } from "@/lib/client/shortcuts";
 import {
   allConflicts,
@@ -38,9 +39,12 @@ function Caps({ chord, mac }: { chord: string; mac: boolean }) {
   );
 }
 
-function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { cmd: Command; bindings: Bindings; mac: boolean; conflicts: CommandId[]; recording: boolean; onRecord: (on: boolean) => void }) {
+/** A command's keys as shown; Send message follows Settings > Composer > Send with. */
+const shownKeys = (id: CommandId | string, bindings: Bindings, send: SendShortcut) => (id === "send" ? sendChords(send) : keysFor(id, bindings));
+
+function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord, send }: { cmd: Command; bindings: Bindings; mac: boolean; conflicts: CommandId[]; recording: boolean; onRecord: (on: boolean) => void; send: SendShortcut }) {
   const id = cmd.id as CommandId;
-  const keys = keysFor(id, bindings);
+  const keys = shownKeys(id, bindings, send);
   const custom = isCustom(id, bindings);
   const [warn, setWarn] = useState<string | null>(null);
   useEffect(() => {
@@ -72,7 +76,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
   };
 
   const others = conflicts.map((o) => commandById(o)!.label);
-  const note = cmd.fixed ?? warn ?? (others.length ? `Same keys as ${others.join(", ")}.` : null);
+  const note = (id === "send" ? sendNote(send) : cmd.fixed) ?? warn ?? (others.length ? `Same keys as ${others.join(", ")}.` : null);
   const tone = !cmd.fixed && (warn || others.length) ? "text-orange-ink" : "text-ink-3";
   return (
     <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1.5 px-3.5 py-2">
@@ -140,6 +144,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
 /** Settings > Keyboard: every command with its shortcuts; click one and press new keys to change it. */
 export function KeyboardSection() {
   const bindings = useBindings();
+  const [send] = useSetting("sendShortcut");
   const [mac, setMac] = useState(false);
   useEffect(() => setMac(isMac()), []);
   const [query, setQuery] = useState("");
@@ -152,7 +157,7 @@ export function KeyboardSection() {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = COMMANDS.filter((c) => {
     if (!words.length) return true;
-    const hay = [c.label, c.group, ...(((c as Command).keywords) ?? []), ...keysFor(c.id, bindings).map((k) => `${k} ${chordLabel(k, mac)}`)].join(" ").toLowerCase();
+    const hay = [c.label, c.group, ...(((c as Command).keywords) ?? []), ...shownKeys(c.id, bindings, send).map((k) => `${k} ${chordLabel(k, mac)}`)].join(" ").toLowerCase();
     return words.every((w) => hay.includes(w));
   });
   const changed = COMMANDS.filter((c) => isCustom(c.id, bindings)).length;
@@ -192,6 +197,7 @@ export function KeyboardSection() {
                 conflicts={conflicts.get(c.id) ?? []}
                 recording={recording === c.id}
                 onRecord={(on) => setRecordingId(on ? c.id : null)}
+                send={send}
               />
             ))}
           </Card>

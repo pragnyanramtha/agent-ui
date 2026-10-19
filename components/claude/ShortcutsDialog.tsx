@@ -6,12 +6,15 @@ import { OPEN_SHORTCUTS_EVENT } from "./CommandPalette";
 import { Kbd } from "@/components/atoms/Kbd";
 import { COMMAND_GROUPS, COMMANDS, isCustom, keysFor, type CommandId } from "@/lib/keybindings";
 import { isCommand, isTyping, useBindings } from "@/lib/client/shortcuts";
+import { useSetting } from "@/lib/client/settings";
+import { sendChords } from "@/lib/client/composer-keys";
 
 const TABS = ["tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8"] as const satisfies readonly CommandId[];
 
 /** Every command and its current keys, read-only. */
 export function ShortcutList() {
   const bindings = useBindings();
+  const [send] = useSetting("sendShortcut");
   /* "Go to tab 1" to "8" read as one row while they're the defaults */
   const tabsFolded = TABS.every((id) => !isCustom(id, bindings));
   return (
@@ -21,7 +24,7 @@ export function ShortcutList() {
           <h3 className="mb-1 text-xs font-medium text-ink-3">{g}</h3>
           <ul className="divide-y divide-line">
             {COMMANDS.filter((c) => c.group === g && !(tabsFolded && TABS.includes(c.id as (typeof TABS)[number]) && c.id !== "tab1")).map((c) => {
-              const keys = keysFor(c.id, bindings);
+              const keys = c.id === "send" ? sendChords(send) : keysFor(c.id, bindings);
               const folded = tabsFolded && c.id === "tab1";
               return (
                 <li key={c.id} className="flex min-h-9 items-center justify-between gap-3 py-1.5 text-sm text-ink">

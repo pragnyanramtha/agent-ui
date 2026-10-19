@@ -38,3 +38,9 @@ export function sendHint(mode: SendShortcut, touch: boolean, mac: boolean): stri
   if (touch) return mode === "enter-always" ? "Return sends" : null;
   return enterSends(mode, touch) ? "Enter to send, Shift+Enter for a new line" : `${mod} to send`;
 }
+
+/** The keys that send with a keyboard, as chords for the shortcut lists ("Mod+Enter" is Ctrl+Enter, or ⌘Enter on a Mac). */
+export const sendChords = (mode: SendShortcut): string[] => (enterSends(mode, false) ? ["Enter", "Mod+Enter"] : ["Mod+Enter"]);
+
+/** The line under Send message in the shortcut lists. */
+export const sendNote = (mode: SendShortcut): string => `${enterSends(mode, false) ? "Shift+Enter" : "Enter"} adds a new line. Change it under Composer > Send with.`;
