@@ -15,6 +15,13 @@ const gone = new Set<string>();
 const hooks = new Set<{ bump: () => void; refresh: (fresh?: boolean) => Promise<void> }>();
 const bumpAll = () => hooks.forEach((h) => h.bump());
 
+const pollListeners = new Set<(sessions: SessionSummary[]) => void>();
+/** Called with the server's list after every successful poll, changed or not (the list on screen only re-renders on a change). */
+export function onSessionsPoll(cb: (sessions: SessionSummary[]) => void) {
+  pollListeners.add(cb);
+  return () => void pollListeners.delete(cb);
+}
+
 const chains = new Map<string, Promise<unknown>>();
 /** Runs `task` once the previous task queued under `key` has settled (either way), so they land in order. */
 export function inOrder<T>(key: string, task: () => Promise<T>, queues: Map<string, Promise<unknown>> = chains): Promise<T> {
@@ -94,8 +101,9 @@ export async function deleteSession(id: string, transcript: boolean): Promise<vo
   }
 }
 
-/** Session list, refreshed every few seconds while the tab is visible. */
-export function useSessions(intervalMs = 5000) {
+/** Session list, refreshed every few seconds while the tab is visible, and more slowly behind other tabs so the tab
+ * badge and alerts still notice finished turns. */
+export function useSessions(intervalMs = 5000, hiddenMs = 15_000) {
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -116,6 +124,7 @@ export function useSessions(intervalMs = 5000) {
       setError(null);
       fails.current = 0;
       loaded.current = true;
+      for (const cb of pollListeners) cb(next.sessions);
     } catch (err) {
       /* a list on screen outlives short drops; the offline banner covers no network at all */
       fails.current += 1;
@@ -150,13 +159,12 @@ export function useSessions(intervalMs = 5000) {
   useEffect(() => {
     const tick = () => void refresh();
     tick();
-    let timer = setInterval(tick, intervalMs);
+    const every = () => (document.visibilityState === "visible" ? intervalMs : hiddenMs);
+    let timer = setInterval(tick, every());
     const onVisibility = () => {
       clearInterval(timer);
-      if (document.visibilityState === "visible") {
-        tick();
-        timer = setInterval(tick, intervalMs);
-      }
+      if (document.visibilityState === "visible") tick();
+      timer = setInterval(tick, every());
     };
     const onOnline = () => void refresh();
     document.addEventListener("visibilitychange", onVisibility);
@@ -166,7 +174,7 @@ export function useSessions(intervalMs = 5000) {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
-  }, [refresh, intervalMs]);
+  }, [refresh, intervalMs, hiddenMs]);
 
   const sessions = useMemo(() => {
     if (!data) return null;

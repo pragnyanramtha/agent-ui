@@ -59,6 +59,13 @@ export async function enablePush() {
   await api("/api/push", { subscription: sub.toJSON(), test: true });
 }
 
+/** Has the server send this browser a test notification (push already on). */
+export async function testPush() {
+  const { publicKey } = await api<{ publicKey: string }>("/api/push");
+  const sub = await subscription(publicKey);
+  await api("/api/push", { subscription: sub.toJSON(), test: true });
+}
+
 export async function disablePush() {
   const { sub } = await current();
   if (!sub) return;

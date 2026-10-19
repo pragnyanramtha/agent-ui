@@ -20,7 +20,8 @@ import { AgentsScreen } from "./AgentsScreen";
 import { FilesScreen, OPEN_FILES_EVENT } from "./FilesScreen";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
-import { setAttention, setBaseTitle } from "@/lib/client/attention";
+import { setBaseTitle } from "@/lib/client/attention";
+import { useLooking, useNotifications } from "@/lib/client/useNotifications";
 import { Toaster } from "./Toaster";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
@@ -104,7 +105,9 @@ export function App() {
   }, [sessions, byId, syncTitles]);
   const infos = useMemo(() => openTabs.map((t) => describeTab(t, byId.get(t.id), sessions !== null)), [openTabs, byId, sessions]);
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
-  const { finished, dismiss, unread } = useFinished(sessions, sessionId);
+  const looking = useLooking();
+  /* behind another window the open session can finish unread too */
+  const { finished, dismiss, unread } = useFinished(sessions, looking ? sessionId : null);
   const setUnread = useCallback((s: SessionSummary, on: boolean) => (on ? unread(s.id, s.mtime || Date.now()) : dismiss(s.id)), [unread, dismiss]);
   const inbox = inboxCount(sessions, finished);
 
@@ -112,9 +115,6 @@ export function App() {
     if (active === NEW_TAB) setBaseTitle("New session · agent-u");
     else if (active && VIEW_TABS[active]) setBaseTitle(`${VIEW_TABS[active]} · agent-u`);
   }, [active]);
-  useEffect(() => {
-    if (sessions) setAttention(sessions.filter((s) => s.web?.pending.length).length);
-  }, [sessions]);
 
   /* "Browse files here" from a session: the Files tab, at that folder */
   const [filesStart, setFilesStart] = useState<{ path: string | null; n: number }>({ path: null, n: 0 });
@@ -138,6 +138,7 @@ export function App() {
     },
     [open, refresh],
   );
+  useNotifications({ sessions, activeId: sessionId, looking, finished, onOpen: openSession });
   /* the service worker: a tapped notification opens its session, a push means the list just changed */
   useEffect(() => {
     registerWorker();
