@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forgetSeen } from "@/lib/notify-events";
+import { GONE_MS, forgetSeen } from "@/lib/notify-events";
 import { SETTLE_MS, phaseOf, step, type Seen } from "@/lib/server/notify";
 import type { PendingAsk, RunState, SessionSummary } from "@/lib/types";
 
@@ -92,11 +92,27 @@ describe("step", () => {
     expect(out).toEqual([expect.objectContaining({ kind: "failed", title: "Cursor failed", body: "Fix the login: Not logged in" })]);
   });
 
-  it("forgets sessions that left the list", () => {
+  it("forgets sessions that left the list a while ago", () => {
     const seen = new Map<string, Seen>();
     step(seen, [row(run("running"))], 0);
     step(seen, [], 1000);
+    expect(seen.size).toBe(1);
+    step(seen, [], 1000 + GONE_MS);
     expect(seen.size).toBe(0);
+  });
+
+  it("a failed or waiting session that misses a poll doesn't notify again", () => {
+    const seen = new Map<string, Seen>();
+    step(seen, [row(run("running"))], 0);
+    const failed = row(run("error", [], "Not logged in"));
+    expect(step(seen, [failed], 3000).map((m) => m.kind)).toEqual(["failed"]);
+    /* the agent's list timed out once */
+    expect(step(seen, [], 6000)).toEqual([]);
+    expect(step(seen, [failed], 9000)).toEqual([]);
+    const needs = row(run("running", [ask]), { id: "s2", mtime: 9000 });
+    expect(step(seen, [failed, needs], 12_000).map((m) => m.kind)).toEqual(["needs"]);
+    step(seen, [failed], 15_000);
+    expect(step(seen, [failed, needs], 18_000)).toEqual([]);
   });
 
   it("a session that appears after the first poll notifies like any other", () => {

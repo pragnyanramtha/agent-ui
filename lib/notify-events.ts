@@ -8,7 +8,7 @@ export type NotifyKind = "done" | "needs" | "failed";
 export type NotifyMessage = { title: string; body: string; tag: string; url: string; kind: NotifyKind | "test"; session?: string };
 
 export type Phase = "busy" | "needs" | "failed" | "idle";
-export type Seen = { phase: Phase; idleSince?: number; doneSent?: boolean };
+export type Seen = { phase: Phase; idleSince?: number; doneSent?: boolean; goneAt?: number };
 
 /** how long a session has to stay idle before it counts as done (a queued message starts the next turn sooner) */
 export const SETTLE_MS = 4000;
@@ -32,6 +32,9 @@ function detail(s: SessionSummary): string {
 /** a row that shows up idle counts as a turn that just finished only if its transcript changed this recently
  * (rows also reappear when a slow agent's list times out once) */
 const FRESH_MS = 60_000;
+
+/** how long a session that left the list is still remembered (an agent's list can time out for a poll or two) */
+export const GONE_MS = 120_000;
 
 /** the maps that have had their first poll (an empty map can be a watcher that has simply seen no sessions yet) */
 const seeded = new WeakSet<Map<string, Seen>>();
@@ -87,6 +90,10 @@ export function step(seen: Map<string, Seen>, rows: SessionSummary[], now: numbe
     }
     seen.set(s.id, next);
   }
-  for (const id of seen.keys()) if (!live.has(id)) seen.delete(id);
+  for (const [id, prev] of seen) {
+    if (live.has(id)) continue;
+    if (prev.goneAt === undefined) seen.set(id, { ...prev, goneAt: now });
+    else if (now - prev.goneAt >= GONE_MS) seen.delete(id);
+  }
   return out;
 }
