@@ -77,3 +77,15 @@ export async function launchAgent(l: Launch) {
     rows: l.rows,
   });
 }
+
+/** The user's shell and its argv for one command line: the line is a single argument, never pasted into another. */
+export function commandArgv(command: string, shell = process.env.SHELL): [string, string[]] {
+  return [shell && shell.startsWith("/") ? shell : "/bin/sh", ["-c", command]];
+}
+
+/** Runs a command line (a project's Run action) in a kept terminal in `cwd`; resolves with the terminal id.
+ * The terminal service starts it from a login shell, so PATH and the profile match an ssh session. */
+export async function launchCommand(o: { cwd: string; command: string; label: string; cols?: number; rows?: number }) {
+  const [cmd, args] = commandArgv(o.command);
+  return call<{ id: string; backing: "tmux" | "pty" }>("POST", "/internal/launch", { cmd, args, env: {}, cwd: o.cwd, label: o.label, profile: null, session: null, cols: o.cols, rows: o.rows });
+}

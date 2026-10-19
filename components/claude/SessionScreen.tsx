@@ -28,6 +28,7 @@ import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
+import { RunMenu } from "./RunMenu";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
 
@@ -486,6 +487,7 @@ export function SessionScreen({
                 <span className="max-sm:sr-only @max-[44rem]:sr-only">{launching ? "Opening…" : "Terminal"}</span>
               </button>
             )}
+            {view.cwd && <RunMenu cwd={view.cwd} className={SEGMENT} />}
             {view.cwd && (
               <button
                 type="button"
