@@ -772,7 +772,7 @@ export async function suggestCommitMessage(cwd: string, opts: { timeoutMs?: numb
   let stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
   const staged = stats.length > 0;
   if (!staged) {
-    range = [base, await snapshotTree(root)];
+    range = [base, (await snapshotTree(root)).tree];
     stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
   }
   if (!stats.length) throw new GitError("No changes to describe.");
