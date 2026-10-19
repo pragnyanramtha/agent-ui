@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Entry, PermissionMode } from "@/lib/types";
-import { liveStream, startTurn, stopTurn, turnState, type Run } from "./cli-run";
+import { failTurn, liveStream, startTurn, stopTurn, turnState, type Run } from "./cli-run";
 import { activeProfile, allProfiles, profileBin, resolveBin } from "../profiles";
 import { chatFiles, chatSummary, geminiEntries, geminiRoot, readChat, type ChatFile } from "./gemini-store";
 import { pageOf, pollEntries } from "./poll-watch";
@@ -19,14 +19,9 @@ import type { AgentAdapter, AgentSession, CliRunState, HistoryPage } from "./typ
 const KEY = (id: string) => `gemini:${id}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const g = globalThis as typeof globalThis & {
-  __geminiCwds?: Map<string, string>;
-  __geminiErrors?: Map<string, { startedAt: number; message: string; fatal: boolean }>;
-};
+const g = globalThis as typeof globalThis & { __geminiCwds?: Map<string, string> };
 /* folders of sessions started from the web, until the CLI has written their chat */
 const startedCwds = (g.__geminiCwds ??= new Map());
-/* the turn's own error report (stream-json), clearer than its stderr */
-const turnErrors = (g.__geminiErrors ??= new Map());
 
 /* ── binary ────────────────────────────────────────────────── */
 
@@ -208,17 +203,19 @@ export function geminiArgs(o: { mode: PermissionMode; model?: string; id: string
 
 function onLine(run: Run, onInit?: () => void) {
   const live = liveStream(run);
-  const note = (message: string, fatal: boolean) => {
-    const prev = turnErrors.get(run.key);
-    if (prev?.fatal && prev.startedAt === run.state.startedAt && !fatal) return;
-    turnErrors.set(run.key, { startedAt: run.state.startedAt, message, fatal });
-  };
+  /* an error event the turn recovers from explains nothing; it's the reason only if the CLI then fails */
+  let lastError: string | null = null;
+  run.child.on("exit", (code, signal) => {
+    if (lastError && !run.failure && code !== 0 && signal !== "SIGTERM" && signal !== "SIGKILL") failTurn(run, lastError);
+  });
   return geminiStreamParser({
     text: (seg, t) => live.push(seg, "text", t),
     init: () => onInit?.(),
-    error: (m) => note(m, false),
+    error: (m) => {
+      lastError = m;
+    },
     result: (r) => {
-      if (!r.ok) note(r.error ?? "Gemini CLI reported an error.", true);
+      if (!r.ok) failTurn(run, r.error ?? "Gemini CLI reported an error.");
     },
   });
 }
@@ -262,8 +259,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
       setTimeout(() => {
         if (settled) return;
         if (code === 0 || findChat(id)) return done();
-        const own = turnErrors.get(key);
-        done(new Error(friendlyGeminiError(own?.message ?? turnState(key)?.error ?? lastStderr(run.stderr)) || `Gemini CLI exited before starting (code ${code}).`));
+        done(new Error(friendlyGeminiError(run.failure ?? turnState(key)?.error ?? lastStderr(run.stderr)) || `Gemini CLI exited before starting (code ${code}).`));
       }, 300);
     });
     run.child.on("error", (err) => done(err));
@@ -284,12 +280,7 @@ async function send(id: string, text: string, opts: { model?: string; mode: Perm
 
 function runState(id: string): CliRunState | null {
   const st = turnState(KEY(id));
-  if (!st) return null;
-  const own = turnErrors.get(KEY(id));
-  if (own && own.startedAt === st.startedAt && st.status !== "running" && (own.fatal || st.status === "error")) {
-    return { ...st, status: "error", error: friendlyGeminiError(own.message) };
-  }
-  return st.error ? { ...st, error: friendlyGeminiError(st.error) } : st;
+  return st?.error ? { ...st, error: friendlyGeminiError(st.error) } : st;
 }
 
 const adapter: AgentAdapter = {
