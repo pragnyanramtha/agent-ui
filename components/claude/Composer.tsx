@@ -1130,7 +1130,7 @@ export function Composer({
               title={files.uploading ? "Uploading…" : files.failed ? "Fix the failed upload first" : `Send (${sendWithEnter ? "Enter" : comboFor("send")})`}
               disabled={!canSend}
               onClick={() => void send()}
-              className="composer-send tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,color,transform] duration-200 enabled:hover:bg-primary-hover enabled:active:scale-[0.92] disabled:bg-field disabled:text-ink-3"
+              className="composer-send tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,opacity,transform] duration-200 enabled:hover:bg-primary-hover enabled:active:scale-[0.92] disabled:opacity-35"
             >
               {sending ? <span aria-hidden className="composer-spinner size-4 rounded-full border-2 border-current border-r-transparent" /> : <ArrowUp width={18} height={18} strokeWidth={2.2} />}
             </button>

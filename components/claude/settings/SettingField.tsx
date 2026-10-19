@@ -4,7 +4,7 @@ import { useId, type ReactNode } from "react";
 import { useSetting, useSettings } from "@/lib/client/settings";
 import { ACCENTS, PALETTES, settingDef, type EnumSetting, type NumberSetting, type SettingKey, type Settings } from "@/lib/settings-schema";
 import { Row, Segmented, Select, Slider, Swatches, Switch } from "./controls";
-import { PalettePicker, useDarkClass } from "./PalettePicker";
+import { PalettePicker, useCustomColors, useDarkClass } from "./PalettePicker";
 import { ColorField, CustomThemeField } from "./ThemeFields";
 
 const fmt = (d: NumberSetting) => (v: number) => `${v}${d.unit ?? ""}`;
@@ -67,16 +67,20 @@ const RAINBOW = "conic-gradient(from 0deg, oklch(0.65 0.17 0), oklch(0.65 0.17 6
 
 function AccentSwatches({ value, onChange }: { value: Settings["accent"]; onChange: (v: Settings["accent"]) => void }) {
   const [palette] = useSetting("palette");
+  const [lightPalette] = useSetting("lightPalette");
   const [custom] = useSetting("accentColor");
   const dark = useDarkClass();
-  const pal = PALETTES.find((p) => p.id === palette) ?? PALETTES[0];
+  const customColors = useCustomColors(dark);
+  const id = !dark && lightPalette !== "same" ? lightPalette : palette;
+  const pal = PALETTES.find((p) => p.id === id) ?? PALETTES[0];
+  const own = id === "custom" && customColors ? customColors.accent : null;
   const def = settingDef("accent") as EnumSetting;
   const options = def.options.map((o) => ({
     value: o.value as Settings["accent"],
-    label: o.value === "auto" ? `${pal.label} palette` : o.label,
+    label: o.value === "auto" ? (id === "custom" ? "Custom theme" : `${pal.label} palette`) : o.label,
     color:
       o.value === "auto"
-        ? (dark ? pal.dark : pal.light).accent
+        ? (own ?? (dark ? pal.dark : pal.light).accent)
         : o.value === "custom"
           ? `radial-gradient(circle, ${custom} 0 42%, transparent 46%), ${RAINBOW}`
           : accentColor(o.value, dark),
