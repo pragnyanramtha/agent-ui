@@ -1,49 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@/lib/types";
+import { fakes, init } from "./fake-claude-sdk";
 
 /* Claude web runs driven by a fake Agent SDK: the test pushes the SDK messages a real `claude` would send. */
 
-type Msg = Record<string, unknown>;
-const fakes: Fake[] = [];
-class Fake {
-  queue: Msg[] = [];
-  wake: (() => void) | null = null;
-  done = false;
-  fail: Error | null = null;
-  opts: Record<string, any>;
-  closed = 0;
-  constructor(a: { prompt: AsyncIterable<unknown>; options: Record<string, any> }) {
-    this.opts = a.options;
-    fakes.push(this);
-  }
-  push(m: Msg) {
-    this.queue.push(m);
-    this.wake?.();
-  }
-  end(err?: Error) {
-    this.done = true;
-    this.fail = err ?? null;
-    this.wake?.();
-  }
-  async *[Symbol.asyncIterator]() {
-    for (;;) {
-      while (this.queue.length) yield this.queue.shift()!;
-      if (this.done) {
-        if (this.fail) throw this.fail;
-        return;
-      }
-      await new Promise<void>((r) => (this.wake = r));
-    }
-  }
-  async interrupt() {}
-  close() {
-    this.closed++;
-    this.end();
-  }
-  async setModel() {}
-  async setPermissionMode() {}
-}
-vi.mock("@anthropic-ai/claude-agent-sdk", () => ({ query: (a: any) => new Fake(a) }));
+vi.mock("@anthropic-ai/claude-agent-sdk", async () => ({ query: (await import("./fake-claude-sdk")).query }));
 
 const listed: Omit<SessionSummary, "web">[] = [];
 vi.mock("@/lib/server/sessions", () => ({ listSessions: async () => listed }));
@@ -54,7 +15,6 @@ const { phaseOf, step } = await import("@/lib/server/notify");
 const { sessionRows } = await import("@/lib/server/rows");
 const { LIMIT_ERROR } = await import("@/lib/server/profiles");
 const tick = () => new Promise((r) => setTimeout(r, 10));
-const init = (id: string, extra: Msg = {}) => ({ type: "system", subtype: "init", session_id: id, model: "m", permissionMode: "default", slash_commands: [], ...extra });
 let n = 0;
 const newId = () => `00000000-0000-4000-8000-${String(++n).padStart(12, "0")}`;
 

@@ -43,6 +43,9 @@ export type RunEvent =
   /* output the transcript doesn't carry (slash command output, notices), replayed to late viewers */
   | { type: "entries"; entries: Entry[] };
 
+/** an approval or question nobody is watching keeps a claude process waiting; after this long it's declined and the run closed */
+const ASK_MAX_MS = 24 * 60 * 60_000;
+
 /** the modes the web UI can show; others the CLI may report (e.g. "dontAsk") leave the current one */
 const MODES: string[] = ["default", "acceptEdits", "bypassPermissions", "plan"] satisfies PermissionMode[];
 
@@ -101,7 +104,7 @@ export class Run {
   readonly profile: ResolvedProfile | null;
   /** the last message sent, so a failed turn can be retried elsewhere */
   lastText = "";
-  private decisions = new Map<string, { resolve: (d: Decision) => void; ask: PendingAsk; input: Record<string, unknown>; suggestions?: unknown[] }>();
+  private decisions = new Map<string, { at: number; resolve: (d: Decision) => void; ask: PendingAsk; input: Record<string, unknown>; suggestions?: unknown[] }>();
   private blockKinds = new Map<number, "text" | "thinking">();
   private msgId = "";
   private reaper: NodeJS.Timeout | null = null;
@@ -259,7 +262,12 @@ export class Run {
     this.reaper = null;
     if (this.ended || this.listeners.size > 0) return;
     this.reaper = setTimeout(() => {
-      if (this.state.status !== "running" && this.state.pending.length === 0 && this.listeners.size === 0) this.close();
+      if (this.listeners.size > 0) return;
+      const oldestAsk = Math.min(...[...this.decisions.values()].map((d) => d.at));
+      if (Date.now() - oldestAsk >= ASK_MAX_MS) {
+        this.decisions.forEach(({ resolve }) => resolve({ allow: false, message: "Nobody answered this in time." }));
+        this.end({ status: "closed", error: "Stopped after a day waiting for your answer." });
+      } else if (this.state.status !== "running" && this.state.pending.length === 0) this.close();
       else this.scheduleReap();
     }, IDLE_REAP_MS);
   }
@@ -286,6 +294,7 @@ export class Run {
         resolve(result);
       };
       this.decisions.set(requestId, {
+        at: Date.now(),
         ask,
         input,
         suggestions: options.suggestions,
