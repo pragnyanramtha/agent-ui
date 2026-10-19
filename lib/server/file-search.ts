@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { childEnv } from "./child-env";
 
 /* Files under a session's folder for the composer's @ picker: what git tracks plus untracked files it
  * doesn't ignore, or a bounded walk outside a repo. Lists are cached per folder for a few seconds, so
@@ -21,7 +22,7 @@ function gitFiles(root: string): Promise<FileList | null> {
     execFile(
       "git",
       ["-c", "core.quotepath=off", "ls-files", "-co", "--exclude-standard", "-z"],
-      { cwd: root, timeout: SCAN_MS, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } },
+      { cwd: root, timeout: SCAN_MS, maxBuffer: 64 * 1024 * 1024, env: childEnv({ GIT_OPTIONAL_LOCKS: "0" }) },
       (err, stdout) => {
         if (err) return resolve(null);
         /* deleted-but-tracked files are still listed; a picker can't tell, which is fine */

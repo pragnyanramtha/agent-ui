@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline";
 import type { AgentId, Entry } from "@/lib/types";
+import { childEnv } from "./child-env";
 import { HIDDEN_PROJECTS, PROJECTS_DIR } from "./config";
 import { isSessionId, sessionMeta } from "./sessions";
 import { metaTitle, parseRecord as claudeRecord, safeParse as claudeParse } from "./transcript";
@@ -198,7 +199,7 @@ function firstMatch(src: Source, line: string, re: RegExp): Found | null {
 
 let rgCheck: Promise<boolean> | null = null;
 /** Whether `rg` runs from PATH (checked once per process). */
-export const hasRipgrep = () => (rgCheck ??= new Promise((resolve) => execFile("rg", ["--version"], { timeout: 3000 }, (err) => resolve(!err))));
+export const hasRipgrep = () => (rgCheck ??= new Promise((resolve) => execFile("rg", ["--version"], { timeout: 3000, env: childEnv() }, (err) => resolve(!err))));
 
 type OnLine = (file: string, line: string) => void;
 
@@ -206,7 +207,7 @@ type OnLine = (file: string, line: string) => void;
 function rgBatch(needle: string, files: string[], onLine: OnLine, deadline: number, signal?: AbortSignal): Promise<boolean> {
   return new Promise((resolve) => {
     let cut = false;
-    const child = spawn("rg", ["--json", "--no-config", "--no-messages", "-a", "-F", "-i", "-m", String(LINES_PER_FILE), "--", needle, ...files], { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn("rg", ["--json", "--no-config", "--no-messages", "-a", "-F", "-i", "-m", String(LINES_PER_FILE), "--", needle, ...files], { stdio: ["ignore", "pipe", "ignore"], env: childEnv() });
     const stop = () => {
       cut = true;
       child.kill("SIGKILL");

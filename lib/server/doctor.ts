@@ -5,6 +5,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { AGENT_IDS, type AgentId } from "@/lib/types";
+import { childEnv } from "./child-env";
 import { WORKTREE_ROOT } from "./git";
 import { allProfiles, type ResolvedProfile } from "./profiles";
 import { PUSH_PATH } from "./push";
@@ -48,7 +49,7 @@ export function run(bin: string, args: string[], o: { env?: NodeJS.ProcessEnv; t
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: o.env ?? process.env, cwd: o.cwd ?? os.homedir(), detached: true });
+      child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"], env: o.env ?? childEnv(), cwd: o.cwd ?? os.homedir(), detached: true });
     } catch {
       return resolve({ code: null, out, err, timedOut: false, missing: true });
     }
@@ -192,7 +193,7 @@ export async function checkProfile(p: ResolvedProfile, timeoutMs = 2000): Promis
   const secrets = Object.entries(p.env)
     .filter(([k]) => SECRET_KEY.test(k))
     .map(([, v]) => v);
-  const env = { ...process.env, ...p.env };
+  const env = childEnv(p.env);
   if (!bin) {
     const name = p.bin || DEFAULT_BIN[p.agent];
     const install = p.bin && path.isAbsolute(p.bin) ? undefined : INSTALL[p.agent];
