@@ -58,6 +58,10 @@ function ActionBar({
   const needsMessage = main.steps.includes("commit") && !hasMessage;
   const busy = working || step !== null;
   const hint = main.disabled ?? (needsMessage ? "Write a commit message first." : undefined);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (menu) menuRef.current?.querySelector<HTMLButtonElement>("[role=menuitem]:not(:disabled)")?.focus({ preventScroll: true });
+  }, [menu]);
   return (
     <div data-git-menu className="relative">
       <div className="flex items-center">
@@ -89,10 +93,13 @@ function ActionBar({
         <div
           role="menu"
           aria-label="Git actions"
+          ref={menuRef}
           onKeyDown={(e) => {
-            if (e.key !== "Escape") return;
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
             e.preventDefault();
-            setMenu(false);
+            const items = [...(menuRef.current?.querySelectorAll<HTMLElement>("[role=menuitem]:not(:disabled)") ?? [])];
+            const i = items.indexOf(document.activeElement as HTMLElement);
+            items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
           }}
           className="absolute top-10 left-0 z-30 w-72 max-w-[calc(100vw-2rem)] rounded-[12px] bg-surface p-1 shadow-overlay"
         >
@@ -178,8 +185,18 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   useEffect(() => {
     if (!menu) return;
     const away = (e: PointerEvent) => !(e.target as Element).closest?.("[data-git-menu]") && setMenu(false);
+    /* capture, so Escape closes the menu before the panel's own Escape closes the panel */
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setMenu(false);
+    };
     document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc, true);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc, true);
+    };
   }, [menu]);
 
   const act = async (action: string, extra: Record<string, unknown> = {}) => {
