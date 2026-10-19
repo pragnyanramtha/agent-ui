@@ -7,7 +7,8 @@ import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
-import { carryOver } from "@/lib/client/storage";
+import { carryOver, loadEffort, saveEffort } from "@/lib/client/storage";
+import { effortFromCommand, effortOptions } from "@/lib/agent-traits";
 import { serverId, useSession } from "@/lib/client/useSession";
 import { postReliably, transient } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
@@ -72,6 +73,9 @@ export function SessionScreen({
   const [localMode, setLocalMode] = useState<PermissionMode | null>(null);
   const [localModel, setLocalModel] = useState<string | null>(null);
   const [localProfile, setLocalProfile] = useState<string | null>(null);
+  /* the effort picked for this session ("" for the default), remembered on this device */
+  const [localEffort, setLocalEffort] = useState("");
+  useEffect(() => setLocalEffort(loadEffort(id) ?? ""), [id]);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
   const { profiles } = useProfiles();
@@ -135,6 +139,7 @@ export function SessionScreen({
   const profileId = localProfile ?? view.profile ?? agent;
   const profileInfo = profiles?.find((p) => p.id === profileId);
   const agentModels = useAgentModels(agent, profileId);
+  const effort = localEffort || profileInfo?.defaultEffort || "";
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
@@ -195,6 +200,8 @@ export function SessionScreen({
   /* read at send time, so a mode switched right before a send goes with it */
   const localModeRef = useRef(localMode);
   localModeRef.current = localMode;
+  const effortRef = useRef(effort);
+  effortRef.current = effort;
   /* the bubble stays until the message shows up in the transcript; failures stay visible with Retry.
    * A retry reuses the id the server last saw, so it can't send twice, unless that id was spent on a send that never ran (`fresh`) */
   const deliver = useCallback(
@@ -204,7 +211,7 @@ export function SessionScreen({
       try {
         const res = await postReliably<{ id: string; via?: "terminal" | "web" | "queued"; cleared?: string | null }>(
           `/api/sessions/${id}/message`,
-          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined },
+          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined, effort: effortRef.current },
           clientId,
         );
         updatePending(localId, { state: "sent", via: res.via, at: Date.now() });
@@ -300,6 +307,14 @@ export function SessionScreen({
     </span>
   ) : null;
 
+  /* sent with every message; a running Claude switches right away */
+  const pickEffort = (e: string) => {
+    setLocalEffort(e);
+    saveEffort(id, e);
+    effortRef.current = e || profileInfo?.defaultEffort || "";
+    if (live) void control("effort", effortRef.current);
+  };
+
   const closeMenu = () => {
     setMenuOpen(false);
     menuButtonRef.current?.focus();
@@ -330,7 +345,7 @@ export function SessionScreen({
     }
     setLaunching(true);
     try {
-      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { session: id, profile: profileId });
+      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { session: id, profile: profileId, effort });
       openServerTerminal(t, `${t.label}: ${view.title || "session"}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't open the terminal.");
@@ -678,6 +693,9 @@ export function SessionScreen({
                 setLocalProfile(p);
                 setLocalModel(null);
               }}
+              effort={localEffort}
+              defaultEffort={profileInfo?.defaultEffort ?? null}
+              onEffortChange={pickEffort}
               usage={usage}
               suggestion={run?.suggestion ?? null}
               cost={cost}
@@ -697,6 +715,11 @@ export function SessionScreen({
                   if (!m) return setError("Use /mode ask, edits, plan, or bypass."), true;
                   setLocalMode(m);
                   if (live) void control("mode", m);
+                } else if (name === "effort") {
+                  const e = effortFromCommand(agent, arg);
+                  const levels = effortOptions(agent).map((o) => o.key);
+                  if (e === null) return setError(levels.length ? `Use /effort ${levels.join(", ")}, or default.` : `${agentName} has no effort levels.`), true;
+                  pickEffort(e);
                 } else if (name === "stop") {
                   if (live) void control("interrupt");
                   else if (terminal) void pressKey("Escape");

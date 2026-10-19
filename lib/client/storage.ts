@@ -27,4 +27,26 @@ export function carryOver(from: string, to: string, pending?: unknown[]) {
   if (draft && !load(`draft:${to}`)) save(`draft:${to}`, draft);
   save(`pending:${from}`, null);
   save(`draft:${from}`, null);
+  const effort = loadEffort(from);
+  if (effort && !loadEffort(to)) saveEffort(to, effort);
+}
+
+/* The reasoning effort picked for a session, kept across reloads (localStorage); null when it uses the default. */
+const EFFORT_KEY = (id: string) => `cui:effort:${id}`;
+
+export function loadEffort(id: string): string | null {
+  try {
+    return localStorage.getItem(EFFORT_KEY(id));
+  } catch {
+    return null;
+  }
+}
+
+export function saveEffort(id: string, effort: string | null) {
+  try {
+    if (!effort) localStorage.removeItem(EFFORT_KEY(id));
+    else localStorage.setItem(EFFORT_KEY(id), effort);
+  } catch {
+    /* storage disabled: the pick lasts until the page reloads */
+  }
 }

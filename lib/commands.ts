@@ -6,6 +6,7 @@ export type SlashItem = { name: string; description: string; kind: SlashKind; hi
 export const APP_COMMANDS: SlashItem[] = [
   { name: "model", description: "Switch model: opus, sonnet, haiku, or default", kind: "app", hint: "opus" },
   { name: "mode", description: "Approval mode: ask, edits, plan, or bypass", kind: "app", hint: "plan" },
+  { name: "effort", description: "Reasoning effort: low, medium, high, or default", kind: "app", hint: "high" },
   { name: "stop", description: "Stop the current turn", kind: "app" },
   { name: "new", description: "Start a new session", kind: "app" },
   { name: "end", description: "End the session. History stays.", kind: "app" },

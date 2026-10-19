@@ -37,7 +37,7 @@ All machine-specific values live in gitignored env files; `.env.example` documen
  ```
  Fields: `id` (lowercase, `.`, `_`, `-`), `label`, `agent` (claude, codex, opencode, cursor, devin, kimi, gemini, antigravity), `bin` (name on PATH
  or absolute path), `args` (before the agent's own), `env` (`${VAR}` reads the server environment, so keys stay in
- `.env.local`), `models` (offered in the composer; first is default unless `defaultModel`), `fallback` (profile ids tried in
+ `.env.local`), `models` (offered in the composer; first is default unless `defaultModel`), `defaultEffort` (reasoning effort when a session hasn't picked one; Claude and Codex only, levels in `lib/agent-traits.ts`), `fallback` (profile ids tried in
  order when a turn hits a usage limit), `launchArgs` (interactive launches only), `hidden`, `notes`.
 - Never commit hostnames, IPs, ports, tunnel ids, passwords or keys.
 

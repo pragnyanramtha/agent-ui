@@ -9,7 +9,7 @@ import { errorText } from "./codex-parse";
  *   -> initialize {clientInfo}            <- result
  *   -> initialized (notification)
  *   -> thread/start {cwd, sandbox, approvalPolicy, model} | thread/resume {threadId, ...}
- *   -> turn/start {threadId, input: [{type: "text", text}]}
+ *   -> turn/start {threadId, input: [{type: "text", text}], effort?}
  *   <- item/agentMessage/delta {itemId, delta}            live text
  *   <- item/reasoning/summaryTextDelta {itemId, delta, summaryIndex}, item/reasoning/textDelta   live thinking
  *   <- error {error, willRetry}, turn/completed {turn: {status, error}}
@@ -26,6 +26,8 @@ export type AppTurnOptions = {
   cwd: string;
   text: string;
   model?: string;
+  /** reasoning effort for this turn and the ones after it */
+  effort?: string;
   mode: PermissionMode;
   /** resume this thread; omitted starts a new one */
   threadId?: string;
@@ -41,6 +43,10 @@ export function threadSettings(mode: PermissionMode, model?: string) {
   const sandbox = mode === "bypassPermissions" ? "danger-full-access" : mode === "plan" ? "read-only" : "workspace-write";
   const approvalPolicy = mode === "default" ? "untrusted" : mode === "acceptEdits" ? "on-request" : "never";
   return { approvalPolicy, sandbox, ...(model ? { model } : {}) };
+}
+
+export function turnParams(threadId: string, text: string, effort?: string) {
+  return { threadId, input: [{ type: "text", text, text_elements: [] }], ...(effort ? { effort } : {}) };
 }
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -170,7 +176,7 @@ export function appServerTurn(o: AppTurnOptions): Run {
       if (!threadId) return finish("Codex didn't start a session.");
       o.onThread?.(threadId);
       const turn = () =>
-        request("turn/start", { threadId, input: [{ type: "text", text: o.text, text_elements: [] }] }, (t) => {
+        request("turn/start", turnParams(threadId!, o.text, o.effort), (t) => {
           if (t.error) fail(t, "Couldn't start the turn.");
         });
       if (o.inject?.length && !o.threadId) request("thread/inject_items", { threadId, items: o.inject }, (r) => (r.error ? fail(r, "Couldn't import history.") : turn()));

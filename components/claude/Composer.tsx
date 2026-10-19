@@ -4,7 +4,7 @@ import { useSetting } from "@/lib/client/settings";
 import { comboFor, modalOpen } from "@/lib/client/shortcuts";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
+import { ArrowUp, Attachment, Brain, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { promptAsk } from "./Ask";
@@ -14,6 +14,7 @@ import { load, save } from "@/lib/client/storage";
 import { AGENT_LABEL, type AgentId, type PermissionMode, type ProfileInfo } from "@/lib/types";
 import { withAttachments } from "@/lib/attachments";
 import { AttachmentChips, useAttachments } from "./Attachments";
+import { effortLabel, effortOptions } from "@/lib/agent-traits";
 
 /* The composer pill: one calm surface with a "+" menu on the left, the text
  * in the middle, and one quiet agent/model/approvals picker plus send on the
@@ -47,11 +48,11 @@ export function modelLabel(model: string | null) {
 
 export type AgentOption = { id: AgentId; label: string; installed: boolean };
 
-type Menu = "slash" | "pick" | "plus" | null;
+type Menu = "slash" | "pick" | "plus" | "effort" | null;
 
 const KIND_LABEL: Record<SlashItem["kind"], string> = { app: "This app", builtin: "Claude Code", command: "Your commands", skill: "Skills" };
 
-const MENU_W = { pick: 272, plus: 232 };
+const MENU_W = { pick: 272, plus: 232, effort: 280 };
 
 function MenuShell({
   children,
@@ -140,6 +141,9 @@ export function Composer({
   profile,
   onProfileChange,
   history,
+  effort = "",
+  onEffortChange,
+  defaultEffort = null,
 }: {
   draftKey: string;
   placeholder: string;
@@ -183,6 +187,12 @@ export function Composer({
   onProfileChange?: (id: string) => void;
   /** messages already sent in this session, oldest first; Arrow Up in an empty box brings them back */
   history?: string[];
+  /** reasoning effort picked for this session, "" for the default (the profile's, else the agent's own);
+   * the chip shows when the agent has levels and this is handled */
+  effort?: string;
+  onEffortChange?: (effort: string) => void;
+  /** the profile's default level, named on the Default row */
+  defaultEffort?: string | null;
 }) {
   const [draft, setDraft] = useState("");
   const [sendWithEnter] = useSetting("sendWithEnter");
@@ -201,6 +211,7 @@ export function Composer({
   const rootRef = useRef<HTMLDivElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const effortRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const [catalog, setCatalog] = useState<SlashItem[]>([]);
@@ -268,7 +279,8 @@ export function Composer({
     const disk = agent === "claude" ? catalog : [];
     const known = new Set(disk.map((c) => c.name));
     const live = slashCommands.filter((n) => !known.has(n)).map((name): SlashItem => ({ name, description: "", kind: "command" }));
-    return [...(onAppCommand ? APP_COMMANDS : []), ...disk, ...live];
+    const app = APP_COMMANDS.filter((c) => c.name !== "effort" || effortOptions(agent).length > 0);
+    return [...(onAppCommand ? app : []), ...disk, ...live];
   }, [catalog, slashCommands, onAppCommand, agent]);
   /* "Commands" in the + menu opens the list without touching the text; picking one prefixes it */
   const forcedSlash = menu === "slash";
@@ -296,7 +308,7 @@ export function Composer({
 
   const closeMenu = useCallback(
     (refocus: boolean) => {
-      const trigger = menu === "pick" ? pickRef.current : menu === "plus" ? plusRef.current : inputRef.current;
+      const trigger = menu === "pick" ? pickRef.current : menu === "plus" ? plusRef.current : menu === "effort" ? effortRef.current : inputRef.current;
       setMenu(null);
       setSlashHidden(true);
       if (refocus) trigger?.focus();
@@ -329,20 +341,20 @@ export function Composer({
 
   /* the picker takes focus on the checked item (the + menu on its first) so arrows work right away */
   useEffect(() => {
-    if (menu !== "pick" && menu !== "plus") return;
+    if (menu !== "pick" && menu !== "plus" && menu !== "effort") return;
     const root = menuRef.current;
-    const el = (menu === "pick" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
+    const el = (menu !== "plus" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
     el?.focus({ preventScroll: true });
   }, [menu]);
 
-  const toggleMenu = (which: "pick" | "plus") => {
+  const toggleMenu = (which: "pick" | "plus" | "effort") => {
     if (menu === which) return closeMenu(false);
     const root = rootRef.current?.getBoundingClientRect();
-    const trigger = (which === "pick" ? pickRef.current : plusRef.current)?.getBoundingClientRect();
+    const trigger = (which === "pick" ? pickRef.current : which === "effort" ? effortRef.current : plusRef.current)?.getBoundingClientRect();
     if (root && trigger) {
       const w = Math.min(MENU_W[which], root.width);
       setMenuPos(
-        which === "pick"
+        which !== "plus"
           ? { right: Math.max(0, Math.min(root.right - trigger.right - 4, root.width - w)) }
           : { left: Math.max(0, Math.min(trigger.left - root.left - 4, root.width - w)) },
       );
@@ -378,6 +390,8 @@ export function Composer({
   };
 
   const currentMode = MODES.find((m) => m.key === mode) ?? MODES[0];
+  const efforts = onEffortChange ? effortOptions(agent) : [];
+  const effortName = effortLabel(agent, effort || defaultEffort);
   const slashOpen = openMenu === "slash";
   /* with `agents` (even while it loads) the agent is choosable; the Claude section is always there */
   const pickable = agents && onAgentChange;
@@ -551,6 +565,34 @@ export function Composer({
               <span>Commands</span>
               <span className="ml-auto text-[12px] text-ink-3">Type /</span>
             </button>
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "effort" && efforts.length > 0 && (
+        <MenuShell placement={placement} maxHeight={menuMax} right={menuPos.right} width={MENU_W.effort}>
+          <div ref={menuRef} role="menu" id={`${uid}-effort`} aria-label="Reasoning effort" onKeyDown={moveFocus}>
+            <MenuLabel>Reasoning effort</MenuLabel>
+            {[{ key: "", name: "Default", desc: defaultEffort ? `Profile default: ${effortLabel(agent, defaultEffort) ?? defaultEffort}` : `${agentLabel} decides` }, ...efforts].map((o) => {
+              const on = o.key === effort;
+              return (
+                <button
+                  key={o.key || "default"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    onEffortChange?.(o.key);
+                    closeMenu(true);
+                  }}
+                  className={menuRow}
+                >
+                  <span className="shrink-0">{o.name}</span>
+                  <span className="ml-auto min-w-0 truncate text-[12px] text-ink-3">{o.desc}</span>
+                  <Check width={15} height={15} strokeWidth={2.2} className={`shrink-0 text-ink ${on ? "" : "invisible"}`} aria-hidden />
+                </button>
+              );
+            })}
           </div>
         </MenuShell>
       )}
@@ -868,6 +910,30 @@ export function Composer({
             <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
             <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
           </button>
+          {efforts.length > 0 && (
+            <button
+              ref={effortRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "effort"}
+              aria-controls={openMenu === "effort" ? `${uid}-effort` : undefined}
+              aria-label={`Reasoning effort: ${effortName ?? "Default"}`}
+              title={`Reasoning effort: ${effortName ?? "Default"}`}
+              onClick={() => toggleMenu("effort")}
+              onKeyDown={(e) => {
+                if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "effort") {
+                  e.preventDefault();
+                  toggleMenu("effort");
+                }
+              }}
+              className={`tap relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2 text-[13px] transition-[background-color,color] duration-150 ${
+                openMenu === "effort" ? "bg-hover text-ink" : effortName ? "text-ink-2 hover:bg-hover hover:text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
+              }`}
+            >
+              <Brain width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              {effortName && <span className="whitespace-nowrap">{effortName}</span>}
+            </button>
+          )}
           <ContextRing usage={usage} costUsd={costUsd} cost={cost} />
           {/* with nothing to send, Stop takes Send's place; next to Send it keeps its distance so a near miss doesn't interrupt */}
           {running && onStop && (
