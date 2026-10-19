@@ -1,7 +1,7 @@
 "use client";
 
 import { AskHost } from "./Ask";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useSessions } from "@/lib/client/useSessions";
 import { CommandPalette, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "./CommandPalette";
 import type { TerminalTarget } from "./WebTerminal";
@@ -71,7 +71,7 @@ export function App() {
   const sidebar = useSidebar();
   const [sheet, setSheet] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const { sessions, projects, error, refresh } = useSessions();
+  const { sessions, projects, error, refresh, loadMore } = useSessions();
   useKeyboardInset();
   const [terminal, setTerminal] = useState<TerminalTarget | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -291,6 +291,14 @@ export function App() {
   const dismissSheet = useCallback(() => setSheet(false), []);
   const closeDrawer = useCallback(() => setDrawer(false), []);
   const openDrawer = useCallback(() => setDrawer(true), []);
+  /* a session list scrolled near its end asks for older sessions; its own Show more then has rows to reveal */
+  const nearListEnd = useCallback(
+    (e: UIEvent<HTMLElement>) => {
+      const el = e.target as HTMLElement;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 400) loadMore();
+    },
+    [loadMore],
+  );
   const navigate = useCallback(
     (next: string) => {
       if (sessionId) replace(sessionId, next);
@@ -315,7 +323,9 @@ export function App() {
       >
         {/* phones never show the sidebar, so its list isn't mounted there (nor the drawer's on a desktop) */}
         <div className="shell-face absolute inset-0 overflow-hidden" data-hidden={sidebar.collapsed || undefined} inert={sidebar.collapsed}>
-          <div className="h-full w-[260px]">{wide !== false && list(sidebar.toggle)}</div>
+          <div className="h-full w-[260px]" onScrollCapture={nearListEnd}>
+            {wide !== false && list(sidebar.toggle)}
+          </div>
         </div>
         <div className="shell-face absolute inset-y-0 left-0 w-[52px]" data-hidden={!sidebar.collapsed || undefined} inert={!sidebar.collapsed}>
           {wide !== false && <SessionRail sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onExpand={sidebar.toggle} onView={openView} inbox={inbox} />}
@@ -345,6 +355,7 @@ export function App() {
             transition: `transform 300ms cubic-bezier(0.23, 1, 0.32, 1)${drawer ? "" : ", visibility 0s linear 300ms"}`,
           }}
           inert={!drawer}
+          onScrollCapture={nearListEnd}
         >
           {wide !== true && list(closeDrawer)}
         </div>

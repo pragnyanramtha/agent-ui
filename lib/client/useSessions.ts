@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummary } from "@/lib/types";
 import { api, ApiError } from "./api";
 
-type Listing = { sessions: SessionSummary[]; projects: string[] };
+type Listing = { sessions: SessionSummary[]; projects: string[]; more?: boolean };
+
+/** rows per page; the list asks for another when it is scrolled to its end */
+export const SESSIONS_PAGE = 120;
 
 export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null };
 
@@ -89,15 +92,18 @@ export function useSessions(intervalMs = 5000) {
   const inflight = useRef<Promise<void> | null>(null);
   const fails = useRef(0);
   const loaded = useRef(false);
+  const limit = useRef(SESSIONS_PAGE);
+  const growing = useRef(false);
 
   const load = useCallback(async () => {
     try {
-      const next = await api<Listing>("/api/sessions");
+      const next = await api<Listing>(`/api/sessions?limit=${limit.current}`);
       /* the poll mostly returns what's on screen: unchanged rows keep their objects, an unchanged list keeps the state */
       setData((prev) => {
         const sessions = shareRows(prev?.sessions, next.sessions);
         const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
-        return prev && sessions === prev.sessions && projects === prev.projects ? prev : { sessions, projects };
+        const more = Boolean(next.more);
+        return prev && sessions === prev.sessions && projects === prev.projects && more === prev.more ? prev : { sessions, projects, more };
       });
       setError(null);
       fails.current = 0;
@@ -165,5 +171,13 @@ export function useSessions(intervalMs = 5000) {
   }, [data, version]);
 
   const refreshNow = useCallback(() => refresh(), [refresh]);
-  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow };
+  const more = Boolean(data?.more);
+  /** Asks for the next page of older sessions (once at a time; nothing when the server has no more). */
+  const loadMore = useCallback(() => {
+    if (!more || growing.current) return;
+    growing.current = true;
+    limit.current += SESSIONS_PAGE;
+    void refresh(true).finally(() => (growing.current = false));
+  }, [more, refresh]);
+  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow, more, loadMore };
 }
