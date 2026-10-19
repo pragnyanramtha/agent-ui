@@ -8,7 +8,7 @@ import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/c
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { saveEffort } from "@/lib/client/storage";
-import { useDefaultEffort } from "@/lib/client/settings";
+import { useDefaultEffort, useSetting } from "@/lib/client/settings";
 import { Composer, MODELS, type AgentOption } from "./Composer";
 import { FolderPicker } from "./FolderPicker";
 import { Pulse } from "./Pulse";
@@ -132,12 +132,7 @@ export function NewSession({
   const all = sessions ?? [];
   const rows = [...all.filter(isLive), ...all.filter((s) => !isLive(s))].slice(0, 3);
 
-  const [worktree, setWorktree] = useState(false);
-  useEffect(() => {
-    try {
-      setWorktree(localStorage.getItem("cui:worktree") === "1");
-    } catch {}
-  }, []);
+  const [worktree, setWorktree] = useSetting("newSessionWorktree");
 
   const start = async (text: string) => {
     setError(null);
@@ -235,12 +230,7 @@ export function NewSession({
                 <button
                   type="button"
                   aria-pressed={worktree}
-                  onClick={() => {
-                    setWorktree((v) => !v);
-                    try {
-                      localStorage.setItem("cui:worktree", worktree ? "0" : "1");
-                    } catch {}
-                  }}
+                  onClick={() => setWorktree(!worktree)}
                   title="New branch in a separate folder"
                   className={`tap relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1 transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
                 >
