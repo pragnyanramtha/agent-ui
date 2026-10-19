@@ -29,7 +29,7 @@ type Rec = {
     content?: string | Block[];
     usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; output_tokens?: number };
   };
-  attachment?: { type?: string; prompt?: string; origin?: { kind?: string } };
+  attachment?: { type?: string; prompt?: string | Block[]; origin?: { kind?: string } };
   aiTitle?: string;
   customTitle?: string;
   summary?: string;
@@ -86,6 +86,15 @@ function userString(rec: Rec, text: string, id: string, ts: string): Entry[] {
   return clean ? [{ kind: "user", id, ts, text: clean, images: 0 }] : [];
 }
 
+/** A user message given as text blocks and images. */
+function userBlocks(rec: Rec, texts: string[], images: number, id: string, ts: string): Entry[] {
+  if (!texts.length && !images) return [];
+  const parsed = userString(rec, texts.join("\n\n"), id, ts);
+  if (parsed.length && parsed[0].kind === "user") parsed[0] = { ...parsed[0], images };
+  else if (images) parsed.push({ kind: "user", id, ts, text: "", images });
+  return parsed;
+}
+
 export function parseRecord(rec: Rec): Entry[] {
   if (rec.isSidechain || !rec.uuid) return [];
   const ts = rec.timestamp ?? "";
@@ -100,8 +109,12 @@ export function parseRecord(rec: Rec): Entry[] {
   /* a message sent while claude was mid-turn is stored as a queued command, not a user record */
   if (rec.type === "attachment") {
     const a = rec.attachment;
-    if (a?.type !== "queued_command" || typeof a.prompt !== "string" || (a.origin?.kind && a.origin.kind !== "human")) return [];
-    return userString(rec, a.prompt, base, ts);
+    if (a?.type !== "queued_command" || (a.origin?.kind && a.origin.kind !== "human")) return [];
+    if (typeof a.prompt === "string") return userString(rec, a.prompt, base, ts);
+    /* a queued message with a pasted image is stored as content blocks */
+    if (!Array.isArray(a.prompt)) return [];
+    const texts = a.prompt.flatMap((b) => (b.type === "text" && b.text ? [b.text] : []));
+    return userBlocks(rec, texts, a.prompt.filter((b) => b.type === "image").length, base, ts);
   }
 
   const content = rec.message?.content;
@@ -119,13 +132,7 @@ export function parseRecord(rec: Rec): Entry[] {
       } else if (block.type === "text" && block.text && !rec.isMeta) texts.push(block.text);
       else if (block.type === "image" && !rec.isMeta) images += 1;
     });
-    if (texts.length || images) {
-      const joined = texts.join("\n\n");
-      const parsed = userString(rec, joined, base, ts);
-      if (parsed.length && parsed[0].kind === "user") parsed[0] = { ...parsed[0], images };
-      else if (images) parsed.push({ kind: "user", id: base, ts, text: "", images });
-      out.unshift(...parsed);
-    }
+    out.unshift(...userBlocks(rec, texts, images, base, ts));
     return out;
   }
 
