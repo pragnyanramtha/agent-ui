@@ -9,7 +9,7 @@ import { onDelta, onTurn } from "./cli-run";
 import { adapterFor, sessionKey } from "./index";
 import { handoffTitle } from "@/lib/handoff-text";
 import { guardTurn, onSessionEvent, postNotice, postToSession, sameStore } from "../fallback";
-import { pickProfile, setSessionProfile, withProfile } from "../profiles";
+import { getSessionMeta, pickProfile, setSessionProfile, withProfile } from "../profiles";
 
 /* Route handlers for non-Claude sessions (ids "<agent>:<nativeId>").
  * Same wire shapes as the Claude routes, so the client doesn't care which agent it is. */
@@ -215,7 +215,7 @@ export async function agentEvents(req: NextRequest, agent: AgentId, native: stri
         }
       };
       const runOf = () => toRunState(key, a.runState(native), modes.get(key) ?? DEFAULT_MODE, session?.model ?? null);
-      send({ type: "history", entries: [], cursor: null, terminal, run: runOf(), title: handoffTitle(session?.title ?? "") || `New ${a.label} session`, cwd: session?.cwd ?? "", permissionMode: modes.get(key) ?? null, profile: pickProfile(agent, null, key).id });
+      send({ type: "history", entries: [], cursor: null, terminal, run: runOf(), title: getSessionMeta(key).title ?? (handoffTitle(session?.title ?? "") || `New ${a.label} session`), cwd: session?.cwd ?? "", permissionMode: modes.get(key) ?? null, profile: pickProfile(agent, null, key).id });
       /* always: a queue lost to a restart must clear what the client still shows */
       send(queueEvent(key));
       if (unsent.get(key)?.length) send(unsentEvent(key));
@@ -236,7 +236,7 @@ export async function agentEvents(req: NextRequest, agent: AgentId, native: stri
         /* new sessions get their title from the agent a little after the first turn */
         if (s?.title && handoffTitle(s.title) !== title) {
           title = handoffTitle(s.title);
-          send({ type: "title", title });
+          if (!getSessionMeta(key).title) send({ type: "title", title });
         }
       }, 3000);
       const ping = setInterval(() => send({ type: "ping" }), 15_000);

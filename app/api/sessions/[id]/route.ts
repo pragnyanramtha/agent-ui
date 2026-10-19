@@ -3,8 +3,11 @@ import { parseMode, sessionContext } from "@/lib/server/http";
 import { getRun } from "@/lib/server/runner";
 import { terminalFor } from "@/lib/server/sessions";
 import { metaTitle, readHistory } from "@/lib/server/transcript";
-import { parseSessionKey, sessionKey } from "@/lib/server/agents";
+import type { AgentId } from "@/lib/types";
+import { handoffTitle } from "@/lib/handoff-text";
+import { adapterFor, parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { agentHistory } from "@/lib/server/agents/routes";
+import { postToSession } from "@/lib/server/fallback";
 import { getSessionMeta, parseSessionMetaPatch, pickProfile, setSessionMeta } from "@/lib/server/profiles";
 
 export const dynamic = "force-dynamic";
@@ -61,9 +64,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const patch = parseSessionMetaPatch(await req.json().catch(() => null));
   if (typeof patch === "string") return NextResponse.json({ error: patch }, { status: 400 });
   try {
-    const meta = setSessionMeta(sessionKey(key.agent, key.native), patch);
+    const k = sessionKey(key.agent, key.native);
+    const meta = setSessionMeta(k, patch);
+    if (patch.title !== undefined) {
+      void shownTitle(key.agent, key.native, meta.title).then((title) => postToSession(k, { type: "title", title }), () => undefined);
+    }
     return NextResponse.json({ ok: true, pinned: Boolean(meta.pinned), archived: Boolean(meta.archived), title: meta.title ?? null });
   } catch (err) {
     return NextResponse.json({ error: `Couldn't save: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
+}
+
+/** What open streams should show after a rename: the custom title, else the one from the transcript. */
+async function shownTitle(agent: AgentId, native: string, custom: string | undefined) {
+  if (custom) return custom;
+  if (agent === "claude") {
+    const ctx = await sessionContext(native);
+    return (ctx && metaTitle(ctx.meta)) ?? "New session";
+  }
+  const a = await adapterFor(agent);
+  const session = await a?.get(native).catch(() => null);
+  return handoffTitle(session?.title ?? "") || `New ${a?.label ?? agent} session`;
 }

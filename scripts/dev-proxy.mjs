@@ -19,6 +19,8 @@ const server = http.createServer((req, res) => {
     if (!res.headersSent) res.writeHead(502);
     res.end();
   });
+  /* a closed tab must end the upstream request too, or SSE streams pile up in the app */
+  res.on("close", () => up.destroy());
   req.pipe(up);
 });
 
@@ -36,6 +38,8 @@ server.on("upgrade", (req, socket, head) => {
   };
   up.on("error", end);
   socket.on("error", end);
+  up.on("close", end);
+  socket.on("close", end);
 });
 
 server.listen(port, "127.0.0.1", () => console.log(`dev proxy on http://127.0.0.1:${port} (app ${app}, /pty ${pty})`));

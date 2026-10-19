@@ -29,6 +29,7 @@ import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
+import { hasMod, isMac, isTyping } from "@/lib/client/shortcuts";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -89,10 +90,15 @@ export function SessionScreen({
     window.addEventListener(OPEN_USAGE_EVENT, open);
     return () => window.removeEventListener(OPEN_USAGE_EVENT, open);
   }, []);
+  /* which panels have something to show; read at key time */
+  const available = useRef({ changes: false, git: false });
   /* Ctrl/Cmd+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
   useEffect(() => {
+    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
+      if (!hasMod(e, mac) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
+      /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts, so it's text there */
+      if (e.getModifierState?.("AltGraph") || (!mac && isTyping(e.target))) return;
       e.preventDefault();
       setPanel((cur) => {
         if (cur) return null;
@@ -100,7 +106,8 @@ export function SessionScreen({
         try {
           last = localStorage.getItem(PANEL_KEY);
         } catch {}
-        return last === "git" || last === "usage" ? last : "changes";
+        const ok = (p: string | null): p is Panel => p === "usage" || (p === "changes" && available.current.changes) || (p === "git" && available.current.git);
+        return ok(last) ? last : ok("changes") ? "changes" : "usage";
       });
     };
     window.addEventListener("keydown", onKey);
@@ -130,6 +137,7 @@ export function SessionScreen({
   const agentModels = useAgentModels(agent, profileId);
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
+  available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
   const usage = useMemo(() => {
     for (let i = view.entries.length - 1; i >= 0; i--) {
