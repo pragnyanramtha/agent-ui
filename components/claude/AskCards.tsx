@@ -5,9 +5,11 @@ import ApprovalCard from "@/components/primitives/ApprovalCard";
 import { Button } from "@/components/atoms/Button";
 import type { PendingAsk } from "@/lib/types";
 import { summarizeTool } from "@/lib/client/tools";
+import { failureText, type Answer } from "@/lib/client/send";
 import { DiffBlock } from "./DiffBlock";
 
-type Respond = (body: { requestId: string; allow: boolean; always?: boolean; answers?: Record<string, string> }) => Promise<void>;
+/** rejects when the answer didn't get through; the card then offers it again */
+type Respond = (body: Answer) => Promise<unknown>;
 
 function Preview({ toolName, input }: { toolName: string; input: Record<string, unknown> }) {
   const s = (k: string) => (typeof input[k] === "string" ? (input[k] as string) : "");
@@ -25,9 +27,14 @@ function Preview({ toolName, input }: { toolName: string; input: Record<string, 
 /** A tool waiting for approval, in the card grammar of Beautiful UI's RecommendationCard. */
 function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "permission" }>; respond: Respond }) {
   const [busy, setBusy] = useState<"deny" | "allow" | "always" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const act = async (choice: "deny" | "allow" | "always") => {
     setBusy(choice);
-    await respond({ requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" }).catch(() => setBusy(null));
+    setError(null);
+    await respond({ requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" }).catch((err: unknown) => {
+      setBusy(null);
+      setError(failureText(err));
+    });
   };
   const summary = summarizeTool(ask.toolName, ask.input);
 
@@ -39,6 +46,11 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
           {ask.description && <p className="mt-1 text-[13px] leading-relaxed text-ink-2">{ask.description}</p>}
         </div>
         <Preview toolName={ask.toolName} input={ask.input} />
+        {error && (
+          <p role="alert" className="text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+            {error}
+          </p>
+        )}
       </div>
       {/* Phones: the tool label sits on its own line and the three actions share the row
        * evenly at full tap height. From sm up it is one compact Beautiful UI footer. */}
@@ -66,24 +78,38 @@ function PermissionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "pe
 
 /** AskUserQuestion, answered through Beautiful UI's ApprovalCard. */
 function QuestionCard({ ask, respond }: { ask: Extract<PendingAsk, { kind: "question" }>; respond: Respond }) {
+  const [error, setError] = useState<string | null>(null);
   return (
-    <ApprovalCard
-      className="max-w-none sm:max-w-[420px]"
-      resettable={false}
-      labels={{ skip: "Skip", send: "Send answers", sentMessage: "Answers sent" }}
-      questions={ask.questions.map((q) => ({ q: q.question, type: q.multiSelect ? "check" : "radio", options: q.options.map((o) => o.label) }))}
-      onDismiss={() => void respond({ requestId: ask.requestId, allow: false }).catch(() => {})}
-      onSubmitted={(picked, custom) => {
-        const answers = Object.fromEntries(
-          ask.questions.map((q, i) => {
-            const chosen = (picked[i] ?? []).map((idx) => q.options[idx]?.label).filter(Boolean);
-            if (custom[i]?.trim()) chosen.push(custom[i].trim());
-            return [q.question, chosen.join(", ")];
-          }),
-        );
-        void respond({ requestId: ask.requestId, allow: true, answers }).catch(() => {});
-      }}
-    />
+    <div className="flex flex-col gap-1.5">
+      <ApprovalCard
+        className="max-w-none sm:max-w-[420px]"
+        resettable={false}
+        labels={{ skip: "Skip", send: "Send answers", sentMessage: "Answers sent" }}
+        questions={ask.questions.map((q) => ({ q: q.question, type: q.multiSelect ? "check" : "radio", options: q.options.map((o) => o.label) }))}
+        onDismiss={() => {
+          setError(null);
+          respond({ requestId: ask.requestId, allow: false }).catch((err: unknown) => setError(failureText(err)));
+        }}
+        onSubmitted={(picked, custom) => {
+          setError(null);
+          const answers = Object.fromEntries(
+            ask.questions.map((q, i) => {
+              const chosen = (picked[i] ?? []).map((idx) => q.options[idx]?.label).filter(Boolean);
+              if (custom[i]?.trim()) chosen.push(custom[i].trim());
+              return [q.question, chosen.join(", ")];
+            }),
+          );
+          return respond({ requestId: ask.requestId, allow: true, answers }).catch((err: unknown) => {
+            throw new Error(failureText(err));
+          });
+        }}
+      />
+      {error && (
+        <p role="alert" className="px-1 text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

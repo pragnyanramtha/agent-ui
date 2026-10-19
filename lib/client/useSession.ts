@@ -10,7 +10,10 @@ type Stream = { msgId: string; index: number; kind: StreamDelta["kind"]; text: s
 export type Pending = {
   localId: string;
   text: string;
+  /** when the first attempt went out; retries keep it, so a transcript entry from that attempt still matches */
   at: number;
+  /** when the server confirmed it */
+  sentAt?: number;
   state: "sending" | "sent" | "failed";
   via?: "terminal" | "web" | "queued";
   error?: string;
@@ -24,7 +27,7 @@ export const serverId = (p: Pending) => p.sentAs ?? p.localId;
 
 /* the terminal path flattens newlines, and Claude Code trims; compare on collapsed whitespace */
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().replace(/^!\s+/, "!");
-/** a user entry can only be the bubble's message if it landed after the bubble was made (clock skew allowed) */
+/** restoring a saved bubble: an older entry with the same text is an earlier message, not this one (clock skew allowed) */
 const landedAfter = (e: Entry, p: Pending) => !e.ts || Date.parse(e.ts) >= p.at - 60_000;
 const pendingKey = (id: string) => `pending:${id}`;
 
@@ -138,7 +141,7 @@ export const initial = (): SessionView => ({
 
 /* Folds a batch into the view: tool results attach by id, everything else is
  * de-duplicated by entry id (reconnects and overlapping reads both resend). */
-function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"): SessionView {
+function merge(state: SessionView, batch: Entry[], where: "append" | "prepend", live = true): SessionView {
   const ids = new Set(state.ids);
   let results = state.results;
   let streams = state.streams;
@@ -175,7 +178,8 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"):
       }
     }
     if (e.kind === "user" && pending.length && where === "append") {
-      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && landedAfter(e, p));
+      /* an entry arriving live is new, whatever its timestamp says; a full history load holds old ones too */
+      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && (live || landedAfter(e, p)));
       if (i !== -1) pending = pending.filter((_, j) => j !== i);
     }
   }
@@ -191,6 +195,12 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"):
   };
 }
 
+/** a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
+function failDelivered(pending: Pending[], run: RunState | null): Pending[] {
+  if (run?.status !== "error" || !pending.some((p) => p.state === "sent" && p.via === "web")) return pending;
+  return pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: run.error ?? "Not delivered. The turn ended first." } : p));
+}
+
 export function reducer(state: SessionView, action: Action): SessionView {
   switch (action.type) {
     case "event": {
@@ -198,11 +208,14 @@ export function reducer(state: SessionView, action: Action): SessionView {
       if (e.type === "history") {
         /* the first load (by GET) replaces everything; later history events (stream reconnects) only add */
         const first = action.initial === true;
-        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append");
+        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append", !first);
         return {
           ...merged,
-          /* the server replays a running turn's live text after every history event */
-          streams: merged.streams.some((s) => isLive(s.msgId)) ? merged.streams.filter((s) => !isLive(s.msgId)) : merged.streams,
+          /* deltas sent while disconnected are gone, so text on screen can't be continued; other agents' servers
+           * replay a running turn's live text after every history event, and a finished block lands as an entry */
+          streams: merged.streams.length ? [] : merged.streams,
+          /* the run may have ended (or crashed) while the stream was down */
+          pending: failDelivered(merged.pending, e.run),
           status: "open",
           cursor: first ? e.cursor : state.cursor,
           terminal: e.terminal,
@@ -224,12 +237,7 @@ export function reducer(state: SessionView, action: Action): SessionView {
       }
       if (e.type === "run") {
         const ended = !e.run || e.run.status === "idle" || e.run.status === "closed" || e.run.status === "error";
-        /* a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
-        const failed = e.run?.status === "error";
-        const pending = failed
-          ? state.pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: e.run?.error ?? "Not delivered. The turn ended first." } : p))
-          : state.pending;
-        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending };
+        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending: failDelivered(state.pending, e.run) };
       }
       if (e.type === "delta") {
         const d = e.delta;
@@ -276,6 +284,22 @@ export function reducer(state: SessionView, action: Action): SessionView {
   }
 }
 
+/** the server can't continue the stream from where it was (the transcript was rewritten, say): load it afresh */
+export const RESET = Symbol("reset");
+const RESET_TYPES = new Set(["reset", "gap"]);
+
+/** one SSE frame's data; malformed frames come back null, so they can't drop the connection */
+export function parseEvent(data: string): ServerEvent | typeof RESET | null {
+  let event: unknown;
+  try {
+    event = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (!event || typeof event !== "object" || typeof (event as { type?: unknown }).type !== "string") return null;
+  return RESET_TYPES.has((event as { type: string }).type) ? RESET : (event as ServerEvent);
+}
+
 export function useSession(id: string | null, onRedirect: (id: string) => void) {
   const [view, dispatch] = useReducer(reducer, undefined, initial);
   const redirectRef = useRef(onRedirect);
@@ -302,25 +326,30 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
      * read with fetch (not EventSource): some tunnels buffer GET event streams until they close. */
     (async () => {
       let from: string | number = 0;
-      /* only a 404 means the session is gone; anything else is the network, so keep trying */
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
-          if (abort.signal.aborted) return;
-          dispatch({ type: "event", event: first, initial: true });
-          from = first.end;
-          break;
-        } catch (err) {
-          if (abort.signal.aborted) return;
-          if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-            dispatch({ type: "status", status: "missing" });
-            return;
+      /* false when there is nothing to stream: the session is gone, or the view closed */
+      const loadHistory = async () => {
+        /* only a 404 means the session is gone; anything else is the network, so keep trying */
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
+            if (abort.signal.aborted) return false;
+            dispatch({ type: "event", event: first, initial: true });
+            from = first.end;
+            return true;
+          } catch (err) {
+            if (abort.signal.aborted) return false;
+            if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+              dispatch({ type: "status", status: "missing" });
+              return false;
+            }
+            if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
+            await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
           }
-          if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
-          await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
         }
-      }
+      };
+      if (!(await loadHistory())) return;
       for (let attempt = 0; !abort.signal.aborted; attempt++) {
+        let reset = false;
         try {
           const res = await fetch(`/api/sessions/${id}/events`, {
             method: "POST",
@@ -357,7 +386,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
             if (done) break;
             buf += value;
             let cut;
-            while ((cut = buf.indexOf("\n\n")) !== -1) {
+            while (!reset && (cut = buf.indexOf("\n\n")) !== -1) {
               const frame = buf.slice(0, cut);
               buf = buf.slice(cut + 2);
               let data = "";
@@ -367,16 +396,27 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
               }
               if (!data) continue;
               attempt = 0;
-              const event = JSON.parse(data) as ServerEvent;
-              if (event.type === "redirect") {
+              const event = parseEvent(data);
+              if (!event) continue;
+              if (event === RESET) reset = true;
+              else if (event.type === "redirect") {
                 carryOver(id, event.sessionId, pendingNow.current);
                 redirectRef.current(event.sessionId);
               }
               else if (event.type !== "ping") dispatch({ type: "event", event });
             }
+            if (reset) {
+              void reader.cancel().catch(() => undefined);
+              break;
+            }
           }
         } catch {
           if (abort.signal.aborted) return;
+        }
+        if (reset) {
+          if (!(await loadHistory())) return;
+          attempt = -1;
+          continue;
         }
         dispatch({ type: "status", status: "reconnecting" });
         await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);

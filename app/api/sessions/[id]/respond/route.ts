@@ -3,6 +3,7 @@ import { readJson, str } from "@/lib/server/http";
 import { getRun } from "@/lib/server/runner";
 import { parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { answerTurn } from "@/lib/server/agents/cli-run";
+import { once } from "@/lib/server/dedupe";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await readJson(req);
+  /* a retry after a lost reply gets the first answer instead of "already closed" */
+  return once(body.clientId, async () => answer(id, body));
+}
+
+async function answer(id: string, body: Record<string, unknown>) {
   const requestId = str(body.requestId);
   if (!requestId) return NextResponse.json({ error: "Nothing is waiting for an answer." }, { status: 404 });
   const key = parseSessionKey(decodeURIComponent(id));

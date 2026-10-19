@@ -9,12 +9,12 @@ import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
 import { carryOver } from "@/lib/client/storage";
 import { serverId, useSession } from "@/lib/client/useSession";
-import { postReliably, transient } from "@/lib/client/send";
+import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { HandoffDialog } from "./HandoffDialog";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
-import { terminalBusy } from "@/lib/status";
+import { runFailed, terminalBusy } from "@/lib/status";
 import { AskCards } from "./AskCards";
 import { Composer, MODELS } from "./Composer";
 import { MODE_ALIASES } from "@/lib/commands";
@@ -182,7 +182,7 @@ export function SessionScreen({
     !run?.pending.length &&
     !view.pending.length &&
     lastSaid(view.entries) === "text";
-  const failed = run?.status === "error" && run.error && run.error !== dismissedError ? run.error : null;
+  const failed = runFailed(run) && run?.error && run.error !== dismissedError ? run.error : null;
   const sentTexts = useMemo(() => view.entries.flatMap((e) => (e.kind === "user" && e.text.trim() ? [e.text] : [])).slice(-50), [view.entries]);
   const lastUserText = sentTexts.at(-1) ?? null;
 
@@ -200,18 +200,18 @@ export function SessionScreen({
   const deliver = useCallback(
     async (localId: string, text: string, fresh = false, sentAs?: string) => {
       const clientId = fresh ? `${localId}-${Date.now().toString(36)}` : (sentAs ?? localId);
-      updatePending(localId, { state: "sending", error: undefined, resend: undefined, at: Date.now(), sentAs: clientId });
+      updatePending(localId, { state: "sending", error: undefined, resend: undefined, sentAs: clientId });
       try {
         const res = await postReliably<{ id: string; via?: "terminal" | "web" | "queued"; cleared?: string | null }>(
           `/api/sessions/${id}/message`,
           { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined },
           clientId,
         );
-        updatePending(localId, { state: "sent", via: res.via, at: Date.now() });
+        updatePending(localId, { state: "sent", via: res.via, sentAt: Date.now() });
         /* a greyed suggestion or half-typed text was in the terminal's prompt; say what was cleared */
         if (res.cleared && !/^Try "/.test(res.cleared)) setError(`Cleared unsent text: "${res.cleared.slice(0, 80)}"`);
         if (res.id !== id) {
-          carryOver(id, res.id, pendingRef.current.map((p) => (p.localId === localId ? { ...p, state: "sent", via: res.via, at: Date.now(), sentAs: clientId, error: undefined, resend: undefined } : p)));
+          carryOver(id, res.id, pendingRef.current.map((p) => (p.localId === localId ? { ...p, state: "sent", via: res.via, sentAt: Date.now(), sentAs: clientId, error: undefined, resend: undefined } : p)));
           onNavigate(res.id);
         }
       } catch (err) {
@@ -259,24 +259,15 @@ export function SessionScreen({
     [id],
   );
 
-  const respond = useCallback(
-    async (body: { requestId: string; allow: boolean; always?: boolean; answers?: Record<string, string> }) => {
-      try {
-        await api(`/api/sessions/${id}/respond`, body);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        throw err;
-      }
-    },
-    [id],
-  );
+  /* the cards show a failure themselves and offer the answer again */
+  const respond = useCallback((body: Answer) => answerAsk(id, body), [id]);
 
   /* status as a quiet mark + word; below 480px only the mark shows for calm states, states that need you keep the word */
   const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
   const chipLabel = "max-w-[9rem] truncate max-[479px]:sr-only";
   const loudLabel = "max-w-[9rem] truncate";
-  const runFailed = run?.status === "error";
-  const runLabel = run ? (run.pending.length ? "Needs you" : busy ? "Working…" : runFailed ? "Failed" : "Ready") : "";
+  const turnFailed = runFailed(run);
+  const runLabel = run ? (run.pending.length ? "Needs you" : busy ? "Working…" : turnFailed ? "Failed" : "Ready") : "";
   const status = view.status === "reconnecting" ? (
     <span role="status" className={`${chip} text-orange-ink`} title="Reconnecting…">
       <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden />
@@ -288,15 +279,15 @@ export function SessionScreen({
       <span className={chipLabel}>Terminal</span>
     </span>
   ) : run ? (
-    <span role="status" className={`${chip} ${run.pending.length ? "font-medium text-orange-ink" : runFailed && !busy ? "font-medium text-red-ink" : "text-ink-3"}`} title={run.error && runFailed ? run.error : runLabel}>
+    <span role="status" className={`${chip} ${run.pending.length ? "font-medium text-orange-ink" : turnFailed && !busy ? "font-medium text-red-ink" : "text-ink-3"}`} title={run.error && turnFailed ? run.error : runLabel}>
       {run.pending.length ? (
         <span className="size-1.5 shrink-0 rounded-full bg-orange" aria-hidden />
-      ) : runFailed && !busy ? (
+      ) : turnFailed && !busy ? (
         <span className="size-1.5 shrink-0 rounded-full bg-red" aria-hidden />
       ) : (
         <Pulse busy={busy} size={2.5} cellClass={AGENT_TONE[agent]} />
       )}
-      <span className={run.pending.length || (runFailed && !busy) ? loudLabel : chipLabel}>{runLabel}</span>
+      <span className={run.pending.length || (turnFailed && !busy) ? loudLabel : chipLabel}>{runLabel}</span>
     </span>
   ) : null;
 
