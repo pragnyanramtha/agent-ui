@@ -6,6 +6,7 @@ import { api, timeAgo } from "@/lib/client/api";
 import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/lib/client/diff";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { useSetting } from "@/lib/client/settings";
+import { fileStartsOpen } from "@/lib/client/diff-prefs";
 import { PathLabel } from "./PathLabel";
 import { scrollBehavior } from "@/lib/client/motion";
 import "./diff.css";
@@ -17,7 +18,6 @@ type CheckpointOption = { id: string; at: number; label: string };
 
 const HATCH = "repeating-linear-gradient(45deg, var(--red) 0, var(--red) 1.5px, transparent 1.5px, transparent 3px)";
 const SPLIT_MIN_WIDTH = 680;
-const BIG_FILE_LINES = 400;
 const HIGHLIGHT_MAX_LINES = 3000;
 const POLL_MS = 8000;
 
@@ -75,6 +75,7 @@ export function DiffView({
   const [layout, setLayout] = useSetting("diffLayout");
   const [ws, setWs] = useSetting("diffIgnoreWhitespace");
   const [wrap, setWrap] = useSetting("diffWrap");
+  const [fileState] = useSetting("diffFileState");
   const [data, setData] = useState<GitDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -166,7 +167,7 @@ export function DiffView({
   }, [busy, load]);
 
   const files = data?.files ?? [];
-  const isOpen = (f: PatchFile) => open[f.path] ?? lineCount(f) <= BIG_FILE_LINES;
+  const isOpen = (f: PatchFile) => open[f.path] ?? fileStartsOpen(fileState, lineCount(f));
   const split = layout === "split" && wide;
 
   const jump = (path: string) => {
@@ -176,7 +177,7 @@ export function DiffView({
   const allOpen = files.length > 0 && files.every(isOpen);
   const noneOpen = !files.some(isOpen);
   const setAll = (v: boolean) => setOpen(Object.fromEntries(files.map((f) => [f.path, v])));
-  const toggleFile = useCallback((f: PatchFile) => setOpen((o) => ({ ...o, [f.path]: !(o[f.path] ?? lineCount(f) <= BIG_FILE_LINES) })), []);
+  const toggleFile = useCallback((f: PatchFile) => setOpen((o) => ({ ...o, [f.path]: !(o[f.path] ?? fileStartsOpen(fileState, lineCount(f))) })), [fileState]);
   const fileRef = useCallback((path: string, el: HTMLElement | null) => {
     if (el) fileRefs.current.set(path, el);
     else fileRefs.current.delete(path);

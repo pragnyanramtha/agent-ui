@@ -230,7 +230,7 @@ export function applyAppearance(values: Settings = snapshot(), { preview = false
   const recolor =
     root.classList.contains("dark") !== next.dark ||
     COLOR_ATTRS.some((a) => root.getAttribute(a) !== (next.attrs[a] ?? null)) ||
-    DOM_VARS.some((name) => name !== "--ui-scale" && name !== "--code-size" && root.style.getPropertyValue(name) !== (next.vars[name] ?? ""));
+    DOM_VARS.some((name) => name !== "--ui-scale" && name !== "--code-size" && name !== "--sidebar-w" && root.style.getPropertyValue(name) !== (next.vars[name] ?? ""));
   if (recolor) root.classList.add("theme-switching");
   root.classList.toggle("dark", next.dark);
   for (const attr of DOM_ATTRS) {

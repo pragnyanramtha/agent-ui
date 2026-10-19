@@ -15,10 +15,12 @@ import type { AgentId } from "./types";
 import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
 import { TERMINAL_SCHEMES } from "./client/terminal-theme";
 import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, type Bases } from "./theme";
+import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "./sidebar-width";
+import { SSH_HOST } from "./editor-links";
 
 export type Scope = "device" | "synced";
 
-export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "projects";
+export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "storage" | "projects";
 
 export type SectionInfo = {
   id: SectionId;
@@ -70,6 +72,15 @@ export const SECTIONS: readonly SectionInfo[] = [
     ],
   },
   { id: "about", label: "About", description: "Version and links.", items: [{ id: "version", label: "Version", keywords: ["build", "commit", "release", "server"] }] },
+  {
+    id: "storage",
+    label: "Storage",
+    description: "Disk used by worktrees, attachments and checkpoints.",
+    items: [
+      { id: "usage", label: "Disk usage", description: "Worktrees, attachments and checkpoints on the server.", keywords: ["space", "size", "disk", "bytes", "full"] },
+      { id: "clean-now", label: "Clean up now", description: "Lists what would go, then deletes it.", keywords: ["delete", "remove", "free space", "prune", "dry run"] },
+    ],
+  },
   {
     id: "projects",
     label: "Projects",
@@ -1203,6 +1214,149 @@ export const SETTINGS = {
       { value: "repo", label: "Match the repository" },
       { value: "conventional", label: "Conventional commits" },
       { value: "plain", label: "Plain sentence" },
+    ],
+  }),
+
+  /* sidebar: size */
+  sidebarWidth: number({
+    section: "sidebar",
+    group: "Size",
+    label: "Sidebar width",
+    description: "On desktop, drag the sidebar's edge to change it. Double-click the edge to reset.",
+    keywords: ["resize", "wide", "narrow", "drag", "panel"],
+    scope: "device",
+    default: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    step: 1,
+    unit: "px",
+    control: "slider",
+    dom: { cssVar: "--sidebar-w", unit: "px" },
+  }),
+
+  /* workflow */
+  autoOpenDiff: boolean({
+    section: "git",
+    group: "Diffs",
+    label: "Open changes after a turn",
+    description: "When a turn sent from here edits files, the Changes panel opens on its own.",
+    keywords: ["diff", "panel", "auto open", "proactive", "review", "files changed", "last turn"],
+    scope: "synced",
+    default: false,
+  }),
+  diffFileState: choice({
+    section: "git",
+    group: "Diffs",
+    label: "Files in a diff",
+    description: "How each file starts out. Large files are over 400 lines.",
+    keywords: ["collapse", "expand", "fold", "large files", "diff"],
+    scope: "device",
+    default: "large",
+    control: "select",
+    options: [
+      { value: "large", label: "Collapse large files" },
+      { value: "expanded", label: "Expanded" },
+      { value: "collapsed", label: "Collapsed" },
+    ],
+  }),
+  limitAction: choice({
+    section: "agents",
+    group: "Usage limits",
+    label: "When a turn hits a usage limit",
+    description: "Waiting needs the agent to say when the limit resets; when it doesn't, the fallback profile takes over. Fallbacks are set per profile.",
+    keywords: ["rate limit", "quota", "fallback", "resume", "retry", "wait", "resets", "429"],
+    scope: "synced",
+    default: "fallback",
+    control: "select",
+    options: [
+      { value: "fallback", label: "Switch to the fallback profile" },
+      { value: "wait", label: "Wait and resend when the limit resets" },
+      { value: "stop", label: "Stop" },
+    ],
+  }),
+  favoriteModels: text({
+    section: "agents",
+    group: "Models",
+    label: "Favorite models",
+    description: "Listed first in the model picker. Star them there, or type model ids here, separated by commas.",
+    keywords: ["star", "pin", "model picker", "favourite", "models"],
+    scope: "synced",
+    default: "",
+    maxLength: 4000,
+    placeholder: "gpt-5.5, opus",
+  }),
+  hiddenModels: text({
+    section: "agents",
+    group: "Models",
+    label: "Hidden models",
+    description: "Left out of the model picker unless you filter for them or show hidden ones.",
+    keywords: ["hide", "model picker", "declutter", "models"],
+    scope: "synced",
+    default: "",
+    maxLength: 4000,
+    placeholder: "haiku",
+  }),
+  editorLink: choice({
+    section: "general",
+    group: "Open in editor",
+    label: "Open files in",
+    description: "Adds Open in links to the session menu and file paths. Your editor connects to this server over SSH.",
+    keywords: ["vs code", "vscode", "cursor", "zed", "ssh", "remote", "ide", "editor"],
+    scope: "synced",
+    default: "none",
+    control: "select",
+    options: [
+      { value: "none", label: "Nowhere" },
+      { value: "vscode", label: "VS Code" },
+      { value: "cursor", label: "Cursor" },
+      { value: "zed", label: "Zed" },
+    ],
+  }),
+  editorHost: text({
+    section: "general",
+    group: "Open in editor",
+    label: "SSH host",
+    description: "How your computer reaches this server: a Host from ~/.ssh/config, or user@host.",
+    keywords: ["ssh", "remote", "hostname", "server", "editor"],
+    scope: "synced",
+    default: "",
+    maxLength: 255,
+    placeholder: "my-server",
+    pattern: SSH_HOST,
+    showIf: ["editorLink", ["vscode", "cursor", "zed"]],
+  }),
+
+  /* storage */
+  worktreeCleanupDays: choice({
+    section: "storage",
+    group: "Cleanup",
+    label: "Remove worktrees",
+    description: "Once idle that long, or as soon as their branch is merged. Never ones with uncommitted changes or a running session. Unmerged branches stay.",
+    keywords: ["worktree", "delete", "prune", "idle", "merged", "disk"],
+    scope: "synced",
+    default: "off",
+    control: "select",
+    options: [
+      { value: "off", label: "Never" },
+      { value: "7", label: "After 7 days" },
+      { value: "14", label: "After 14 days" },
+      { value: "30", label: "After 30 days" },
+    ],
+  }),
+  attachmentCleanupDays: choice({
+    section: "storage",
+    group: "Cleanup",
+    label: "Remove attachments",
+    description: "Files uploaded with messages. Older messages show them as missing once they're gone.",
+    keywords: ["attachments", "uploads", "images", "delete", "prune", "disk"],
+    scope: "synced",
+    default: "14",
+    control: "select",
+    options: [
+      { value: "off", label: "Never" },
+      { value: "14", label: "After 14 days" },
+      { value: "30", label: "After 30 days" },
+      { value: "90", label: "After 90 days" },
     ],
   }),
 } as const satisfies Record<string, SettingDef>;

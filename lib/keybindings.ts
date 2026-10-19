@@ -47,6 +47,20 @@ export const COMMANDS = [
   { id: "recall", label: "Edit last message", group: "Composer", keys: ["ArrowUp"], scope: "composer", fixed: "In an empty composer." },
   { id: "stash", label: "Stash the draft", group: "Composer", keys: ["Mod+S"], scope: "composer", keywords: ["save", "later"] },
   { id: "stop", label: "Stop the turn", group: "Composer", keys: ["Escape"], scope: "composer", keywords: ["interrupt", "cancel"] },
+  { id: "gitPanel", label: "Toggle Git panel", group: "Panels", keys: ["Mod+Shift+G"], keywords: ["checkpoints", "branch", "commit"] },
+  { id: "changesPanel", label: "Toggle changes", group: "Panels", keys: ["Mod+Shift+D"], keywords: ["diff", "files", "edits"] },
+  /* Cmd+Shift+[ and ] switch browser tabs on a Mac, so the arrows are there too */
+  { id: "prevSession", label: "Previous session", group: "Sessions", keys: ["Mod+Shift+[", "Alt+Shift+ArrowUp"], keywords: ["sidebar", "up"] },
+  { id: "nextSession", label: "Next session", group: "Sessions", keys: ["Mod+Shift+]", "Alt+Shift+ArrowDown"], keywords: ["sidebar", "down"] },
+  /* Option+N is a dead key on a Mac, so plain Alt+N never arrives there */
+  { id: "nextNeedsYou", label: "Next session that needs you", group: "Sessions", keys: ["Alt+Shift+N"], keywords: ["approval", "waiting", "inbox", "unread", "finished"] },
+  { id: "pin", label: "Pin or unpin session", group: "Sessions", keys: ["Alt+Shift+P"], keywords: ["favorite"] },
+  { id: "archive", label: "Archive session", group: "Sessions", keys: ["Alt+Shift+A"], keywords: ["hide"] },
+  { id: "back", label: "Go back", group: "Sessions", keys: ["Mod+["], keywords: ["history", "previous"] },
+  { id: "forward", label: "Go forward", group: "Sessions", keys: ["Mod+]"], keywords: ["history"] },
+  { id: "modelPicker", label: "Switch model", group: "Composer", keys: ["Mod+Shift+M"], keywords: ["opus", "sonnet"] },
+  { id: "modePicker", label: "Switch approval mode", group: "Composer", keys: ["Mod+Shift+A"], keywords: ["permissions", "plan", "bypass", "accept edits"] },
+  { id: "effortPicker", label: "Switch reasoning effort", group: "Composer", keys: ["Mod+Shift+E"], keywords: ["thinking", "reasoning"] },
 ] as const satisfies readonly Command[];
 
 export type CommandId = (typeof COMMANDS)[number]["id"];

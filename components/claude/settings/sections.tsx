@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { Bell, ChatLines, Cpu, Database, EditPencil, Folder, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
+import { Bell, ChatLines, Cpu, Database, EditPencil, Folder, GitBranch, HardDrive, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
 import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@/lib/client/push";
 import { toast } from "@/lib/client/toast";
 import { sendTestNotification } from "@/lib/client/useNotifications";
@@ -12,6 +12,7 @@ import { SettingField } from "./SettingField";
 import { Preview } from "./Preview";
 import { DataSection } from "./DataSection";
 import { AboutSection } from "./AboutSection";
+import { StorageSection } from "./StorageSection";
 import { ProjectsSection } from "./ProjectsSection";
 
 /* What each section shows. A section without an entry here lists its registry settings (lib/settings-schema.ts),
@@ -32,6 +33,7 @@ export const SECTION_ICONS: Record<SectionId, ComponentType<{ width?: number; he
   git: GitBranch,
   data: Database,
   about: InfoCircle,
+  storage: HardDrive,
   projects: Folder,
 };
 
@@ -161,11 +163,14 @@ function Notifications() {
 
 function Agents({ onAgents }: SectionProps) {
   return (
-    <Card>
-      <Row label="Profiles and terminals" note="Accounts, proxies, models and running agents.">
-        <SmallButton onClick={onAgents}>Open</SmallButton>
-      </Row>
-    </Card>
+    <>
+      <Card>
+        <Row label="Profiles and terminals" note="Accounts, proxies, models and running agents.">
+          <SmallButton onClick={onAgents}>Open</SmallButton>
+        </Row>
+      </Card>
+      <RegistryCards section="agents" />
+    </>
   );
 }
 
@@ -189,6 +194,7 @@ export const SECTION_VIEWS: Partial<Record<SectionId, ComponentType<SectionProps
   git: Git,
   data: DataSection,
   about: AboutSection,
+  storage: StorageSection,
   projects: ProjectsSection,
 };
 

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { pushTab, replaceTab } from "@/lib/client/tab-history";
+
 
 /** The tab id for the new-session screen. There is at most one. */
 export const NEW_TAB = "new";
@@ -85,8 +87,8 @@ export function useTabs() {
     const want = active === NEW_TAB ? null : active;
     if (how === "none" || readUrl() === want) return;
     const url = want ? `/?s=${want}` : "/";
-    if (how === "replace") window.history.replaceState(null, "", url);
-    else window.history.pushState(null, "", url);
+    if (how === "replace") replaceTab(url);
+    else pushTab(url);
   }, [active]);
 
   useEffect(() => {

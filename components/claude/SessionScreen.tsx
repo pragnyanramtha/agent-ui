@@ -11,7 +11,7 @@ import { appendToDraft, fillTextarea, INSERT_INTO_COMPOSER_EVENT, type InsertInt
 import { carryOver, loadEffort, saveEffort } from "@/lib/client/storage";
 import { effortFromCommand, effortOptions } from "@/lib/agent-traits";
 import { serverId, useSession } from "@/lib/client/useSession";
-import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
+import { answerAsk, failureText, postReliably, transient, type Answer } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { useGitInfo } from "@/lib/client/useGitInfo";
@@ -31,6 +31,15 @@ import { FindBar } from "./FindBar";
 import { RunMenu } from "./RunMenu";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { TaskPill } from "./TaskPill";
+import { latestTasks, showTasks } from "@/lib/client/tasks";
+import { summarizeTool } from "@/lib/client/tools";
+import type { PendingAsk } from "@/lib/types";
+import { useSessionPalette } from "./useSessionCommands";
+import { chipModel } from "@/lib/model-chip";
+import { useAutoOpenDiff } from "@/lib/client/useAutoOpenDiff";
+import { useEditorLink } from "@/lib/client/useEditorLink";
+import { OpenNewWindow } from "iconoir-react";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -50,6 +59,12 @@ const SEGMENT =
   "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
 type Panel = "changes" | "git" | "usage";
 const PANEL_KEY = "cui:panel";
+
+/** the composer chip while a denial note is written: "Denying Bash · npm test" */
+function noteLabel(ask: Extract<PendingAsk, { kind: "permission" }>) {
+  const s = summarizeTool(ask.toolName, ask.input ?? {});
+  return `Denying ${ask.toolName}${s.verb === ask.toolName || !s.chip ? "" : ` · ${s.chip}`}`;
+}
 
 /** the kind of the last thing said in the thread (usage and notices aside) */
 function lastSaid(entries: Entry[]) {
@@ -158,6 +173,8 @@ export function SessionScreen({
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
+  useAutoOpenDiff(id, Boolean(busy && run), changes, () => setPanel((p) => p ?? "changes"));
+  const editorLink = useEditorLink();
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
   const turns = useMemo(() => view.entries.filter((e) => e.kind === "user").length, [view.entries]);
   const [gitRev, setGitRev] = useState(0);
@@ -308,6 +325,32 @@ export function SessionScreen({
   /* the cards show a failure themselves and offer the answer again */
   const respond = useCallback((body: Answer) => answerAsk(id, body), [id]);
 
+  /* "Deny with note…": the composer takes the reason. Claude hears it with the denial; the other agents'
+   * approvals carry no reason, so there it follows the denial as a message */
+  const [noteFor, setNoteFor] = useState<Extract<PendingAsk, { kind: "permission" }> | null>(null);
+  useEffect(() => setNoteFor(null), [id]);
+  const noteAsk = noteFor && run?.pending.some((p) => p.requestId === noteFor.requestId) ? noteFor : null;
+  useEffect(() => {
+    if (noteFor && !noteAsk) setNoteFor(null);
+  }, [noteFor, noteAsk]);
+  const sendNote = useCallback(
+    async (text: string) => {
+      if (!noteAsk) return false;
+      const message = text.trim();
+      try {
+        await respond({ requestId: noteAsk.requestId, allow: false, ...(agent === "claude" ? { message } : {}) });
+      } catch (err) {
+        setError(failureText(err));
+        return false;
+      }
+      setNoteFor(null);
+      if (agent !== "claude") void send(message);
+      return true;
+    },
+    [noteAsk, respond, agent, send],
+  );
+  const tasks = useMemo(() => latestTasks(view.entries), [view.entries]);
+
   /* status as a quiet mark + word; below 480px only the mark shows for calm states, states that need you keep the word */
   const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
   const chipLabel = "max-w-[9rem] truncate max-[479px]:sr-only";
@@ -384,6 +427,34 @@ export function SessionScreen({
     effortRef.current = e || fallbackEffort;
     if (live) void control("effort", effortRef.current);
   };
+
+  useSessionPalette({
+    id,
+    agent,
+    agentName,
+    openPanel: setPanel,
+    togglePanel,
+    changes: changes.length,
+    hasFolder: Boolean(view.cwd),
+    exportable: view.entries.length > 0,
+    onHandoff: view.status === "open" ? () => setHandoffOpen(true) : null,
+    onStop: busy && (run || terminal) ? () => (live ? void control("interrupt") : void pressKey("Escape")) : null,
+    models: profileModels(profileInfo, agent === "claude" ? MODELS : agentModels),
+    model,
+    defaultModel: chipModel(null, profileInfo, usage?.model).model,
+    onModel: (m) => {
+      setLocalModel(m || null);
+      if (live) void control("model", m);
+    },
+    mode,
+    onMode: (m) => {
+      setLocalMode(m);
+      if (live) void control("mode", m);
+    },
+    effort: localEffort,
+    defaultEffort: fallbackEffort || null,
+    onEffort: pickEffort,
+  });
 
   const closeMenu = () => {
     setMenuOpen(false);
@@ -616,6 +687,12 @@ export function SessionScreen({
                     Browse files here
                   </button>
                 )}
+                {view.cwd && editorLink?.href(view.cwd) && (
+                  <a role="menuitem" href={editorLink.href(view.cwd)!} onClick={() => setTimeout(closeMenu)} className="menu-item pointer-coarse:hidden">
+                    <OpenNewWindow width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                    {editorLink.label}
+                  </a>
+                )}
                 {view.status === "open" && (
                   <button
                     type="button"
@@ -698,7 +775,7 @@ export function SessionScreen({
         )}
         bottomPad={composerH}
         changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
-        footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} /> : null}
+        footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} onNote={setNoteFor} noting={noteAsk?.requestId ?? null} /> : null}
         empty={
           view.status === "missing" ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
@@ -761,13 +838,15 @@ export function SessionScreen({
                 {error}
               </p>
             )}
+            {showTasks(tasks, Boolean(busy)) && <TaskPill key={id} progress={tasks} live={Boolean(busy)} />}
             <Composer
               draftKey={id}
               agent={agent}
               placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
               history={sentTexts}
               onSend={send}
-              running={Boolean(busy && (run || terminal))}
+              note={noteAsk ? { label: noteLabel(noteAsk), placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : null}
+              running={Boolean(busy && (run || terminal) && !noteAsk)}
               onStop={() => (live ? void control("interrupt") : void pressKey("Escape"))}
               slashCommands={run?.slashCommands ?? []}
               mode={mode}
@@ -795,7 +874,7 @@ export function SessionScreen({
               defaultEffort={profileInfo?.defaultEffort ?? null}
               onEffortChange={pickEffort}
               usage={usage}
-              suggestion={run?.suggestion ?? null}
+              suggestion={noteAsk ? null : (run?.suggestion ?? null)}
               cost={cost}
               costUsd={run?.costUsd ?? null}
               onAppCommand={(name, arg) => {

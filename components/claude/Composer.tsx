@@ -6,11 +6,12 @@ import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { composing, enterAction, enterSends, sendHint, type KeyLike } from "@/lib/client/composer-keys";
 import { lineCount, pasteAction, pasteFile } from "@/lib/client/composer-paste";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, NavArrowDown, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Trash } from "iconoir-react";
+import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, NavArrowDown, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Trash, Xmark } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { confirmAsk, promptAsk } from "./Ask";
-import { AgentMark } from "./SessionList";
+import { AgentIcon } from "./AgentIcon";
+import { chipModel } from "@/lib/model-chip";
 import { useMediaQuery } from "./settings/controls";
 import type { SessionCost } from "@/lib/client/usage";
 import { shortPath, timeAgo } from "@/lib/client/api";
@@ -21,6 +22,8 @@ import { AttachmentChips, useAttachments } from "./Attachments";
 import { effortLabel, effortOptions } from "@/lib/agent-traits";
 import { insertMention, mentionAt } from "@/lib/client/mentions";
 import { useFileSearch } from "@/lib/client/useFileSearch";
+import { arrangeModels } from "@/lib/model-prefs";
+import { ModelMarks } from "./ModelMarks";
 import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
 
 /* The composer: a two-row card. The text on top; under it a footer with the "+" menu, the agent and model,
@@ -163,6 +166,7 @@ export function Composer({
   root,
   context,
   contextEnd,
+  note = null,
 }: {
   draftKey: string;
   placeholder: string;
@@ -218,6 +222,8 @@ export function Composer({
   context?: React.ReactNode;
   /** the strip's right end, before the send shortcut hint */
   contextEnd?: React.ReactNode;
+  /** the box takes a note instead of a message (a reason for denying); the draft waits until it's done */
+  note?: { label: string; placeholder: string; onSend: (text: string) => Promise<boolean>; onCancel: () => void } | null;
 }) {
   const [draft, setDraft] = useState("");
   const [caret, setCaret] = useState(0);
@@ -290,9 +296,23 @@ export function Composer({
     pastedLong.current = false;
   }, [draftKey]);
   useEffect(() => {
-    save(`draft:${draftKey}`, rememberDrafts ? draft || null : null);
+    if (!note) save(`draft:${draftKey}`, rememberDrafts ? draft || null : null);
     if (!draft) pastedLong.current = false;
-  }, [draft, draftKey, rememberDrafts]);
+  }, [draft, draftKey, rememberDrafts, note]);
+  /* a note gets an empty box; the message draft comes back when it's sent or cancelled */
+  const noting = Boolean(note);
+  const heldDraft = useRef<string | null>(null);
+  useEffect(() => {
+    if (noting) {
+      heldDraft.current = draft;
+      setDraft("");
+      inputRef.current?.focus();
+    } else if (heldDraft.current !== null) {
+      setDraft(heldDraft.current);
+      heldDraft.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noting]);
 
   useEffect(() => {
     if (autoFocus && window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
@@ -347,6 +367,9 @@ export function Composer({
 
   /* close on Escape, outside taps, or focus leaving the composer; return focus to the trigger */
   const [modelQ, setModelQ] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const [favoriteModels] = useSetting("favoriteModels");
+  const [hiddenModels] = useSetting("hiddenModels");
   useEffect(() => {
     if (openMenu !== "pick") setModelQ("");
   }, [openMenu]);
@@ -415,7 +438,7 @@ export function Composer({
     const typed = draft.trim();
     const text = withAttachments(typed, files.paths);
     const app = /^\/(\w+)(?:\s+([\s\S]*))?$/.exec(text);
-    if (app && !hasFiles && onAppCommand && APP_COMMANDS.some((c) => c.name === app[1]) && onAppCommand(app[1], (app[2] ?? "").trim())) {
+    if (app && !note && !hasFiles && onAppCommand && APP_COMMANDS.some((c) => c.name === app[1]) && onAppCommand(app[1], (app[2] ?? "").trim())) {
       setDraft("");
       return;
     }
@@ -426,7 +449,7 @@ export function Composer({
     }
     setSending(true);
     setDraft("");
-    const ok = await onSend(text).catch(() => false);
+    const ok = await (note ? note.onSend : onSend)(text).catch(() => false);
     if (!ok) setDraft(typed);
     else {
       files.clear();
@@ -497,10 +520,11 @@ export function Composer({
   const busy = sending && busyLabel;
   const profileChoices = onProfileChange ? (profiles ?? []).filter((p) => p.agent === agent && !p.hidden) : [];
   const profileOn = profileChoices.find((p) => p.id === profile);
-  /* "Default" is never the label: name the model the server will pick (the profile's), else the agent */
+  /* "Default" is never the label: name the model the server will pick (the profile's), else the one the session last
+   * reported using, else the agent */
   const activeProfile = (profiles ?? []).find((p) => p.id === (profile ?? agent));
   const defaultModel = activeProfile?.defaultModel || activeProfile?.models[0] || null;
-  const shownModel = model || defaultModel;
+  const shownModel = chipModel(model, activeProfile, usage?.model).model;
   const profilePrefix = profileOn && profileChoices.length > 1 && profileOn.id !== agent ? profileOn.label : null;
   const pickText = profilePrefix ? (shownModel ? `${profilePrefix} · ${modelName(shownModel)}` : profilePrefix) : shownModel ? modelName(shownModel) : agentLabel;
   const ModeIcon = MODE_ICON[mode];
@@ -509,18 +533,31 @@ export function Composer({
   const modelRow = (m: { key: string; name: string }, list: { key: string }[], on: boolean, onPick: () => void) => {
     /* the Default row says what it resolves to */
     const hint = m.key !== "" ? null : model && !list.some((x) => x.key === model) ? modelName(model) : m.name === "Default" ? (defaultModel ? modelName(defaultModel) : null) : null;
-    return (
+    const row = (
       <button key={m.key || "default"} type="button" role="menuitemradio" aria-checked={on} onClick={onPick} className={menuRow}>
         <span className="min-w-0 truncate">{m.name}</span>
         {hint && <span className="truncate text-xs text-ink-3">{hint}</span>}
         {on && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
       </button>
     );
+    return m.key === "" ? row : (
+      <div key={m.key} className="group/model flex min-w-0 items-center">
+        {row}
+        <ModelMarks id={m.key} name={m.name} />
+      </div>
+    );
   };
 
   /* long CLI lists (Cursor has hundreds) get a filter; Default and the current model stay visible */
   const q = modelQ.trim().toLowerCase();
-  const shownModels = q ? models.filter((m) => m.key === "" || m.key === model || `${m.key} ${m.name}`.toLowerCase().includes(q)) : models;
+  const modelPrefs = { favorites: favoriteModels, hidden: hiddenModels };
+  const arranged = arrangeModels(models, modelPrefs, { current: model, query: q, showHidden });
+  const shownModels = arranged.rows;
+  const showHiddenRow = arranged.hiddenCount > 0 && !q && (
+    <button type="button" role="menuitem" onClick={() => setShowHidden((v) => !v)} className={`${menuRow} text-ink-3`}>
+      {showHidden ? "Leave out hidden models" : `Show ${arranged.hiddenCount} hidden`}
+    </button>
+  );
   const modelList = (
     <>
       {models.length > 12 && (
@@ -549,6 +586,7 @@ export function Composer({
           }),
         )}
         {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-sm text-ink-3">No models match.</p>}
+        {showHiddenRow}
       </div>
     </>
   );
@@ -801,7 +839,7 @@ export function Composer({
               <>
                 <div role="group" aria-label="Claude">
                   <MenuLabel>Claude</MenuLabel>
-                  {(agent === "claude" ? models : MODELS).map((m, _i, list) =>
+                  {arrangeModels(agent === "claude" ? models : MODELS, modelPrefs, { current: agent === "claude" ? model : null, showHidden: true }).rows.map((m, _i, list) =>
                     modelRow(m, list, agent === "claude" && modelOn(m.key, list), () => {
                       if (agent !== "claude") onAgentChange("claude");
                       onModelChange(m.key);
@@ -938,9 +976,17 @@ export function Composer({
             e.target.value = "";
           }}
         />
-        {(notice || (suggestion && !draft) || hasFiles || fileNote) && (
+        {(notice || note || (suggestion && !draft) || hasFiles || fileNote) && (
           <div className="flex min-w-0 flex-col gap-1 px-3 pt-2.5">
             {notice}
+            {note && (
+              <span className="flex max-w-full min-w-0 items-center gap-1 self-start rounded-full bg-red-tint py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-red-ink">
+                <span className="min-w-0 truncate">{note.label}</span>
+                <button type="button" onClick={note.onCancel} aria-label="Cancel note" title="Cancel (Esc)" className="tap relative grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-red/15">
+                  <Xmark width={12} height={12} strokeWidth={2.2} />
+                </button>
+              </span>
+            )}
             <AttachmentChips items={files.items} onRemove={files.remove} onRetry={(id) => void files.retry(id)} />
             {fileNote && (
               <p role="status" className="px-1 text-xs text-ink-3">
@@ -1044,6 +1090,11 @@ export function Composer({
               void send();
               return;
             }
+            if (note && e.key === "Escape" && !openMenu && !e.defaultPrevented) {
+              e.preventDefault();
+              note.onCancel();
+              return;
+            }
             /* Esc stops a running turn when there's nothing typed */
             if (isCommand(e.nativeEvent, "stop") && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
               e.preventDefault();
@@ -1072,7 +1123,7 @@ export function Composer({
               }
             }
           }}
-          placeholder={busy ? busyLabel : placeholder}
+          placeholder={busy ? busyLabel : (note?.placeholder ?? placeholder)}
           aria-label="Message"
           aria-busy={Boolean(busy) || undefined}
           aria-controls={slashOpen ? `${uid}-slash` : mentionOpen ? `${uid}-files` : undefined}
@@ -1119,7 +1170,7 @@ export function Composer({
               }}
               className={`${chip} shrink ${openMenu === "pick" ? chipOn : chipOff}`}
             >
-              <AgentMark agent={agent} className="size-2" />
+              <AgentIcon agent={agent} size={14} />
               <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
               <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
             </button>
