@@ -10,7 +10,7 @@ import { forgetProject, listProjects, saveProject, scriptsIn } from "@/lib/clien
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { useSetting } from "@/lib/client/settings";
 import { toast } from "@/lib/client/toast";
-import { MODELS, MODES } from "../Composer";
+import { MODELS, MODES } from "@/lib/composer-options";
 import { FolderPicker } from "../lazy";
 import { ACTION_ICON, ACTION_ICON_LABEL } from "../RunMenu";
 import { Card, Row, Segmented, Select, SmallButton, useMediaQuery } from "./controls";

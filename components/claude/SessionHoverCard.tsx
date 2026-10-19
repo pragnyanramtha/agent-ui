@@ -11,7 +11,7 @@ import { useSetting } from "@/lib/client/settings";
 import { dayStamp, fullDateTime } from "@/lib/time-format";
 import type { Finished } from "@/lib/client/useFinished";
 import { AgentIcon } from "./AgentIcon";
-import { modelLabel } from "./Composer";
+import { modelLabel } from "@/lib/composer-options";
 import { useBranch } from "./ProjectIcon";
 
 /* A card beside a sidebar row with what the one line can't hold: the full title, folder, branch, agent and model, last

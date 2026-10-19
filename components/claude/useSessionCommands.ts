@@ -13,7 +13,7 @@ import { patchSession } from "@/lib/client/useSessions";
 import type { Finished } from "@/lib/client/useFinished";
 import { toast } from "@/lib/client/toast";
 import { confirmAsk, promptAsk } from "./Ask";
-import { MODES, modelLabel } from "./Composer";
+import { MODES, modelLabel } from "@/lib/composer-options";
 import { isAsleep } from "./SessionList";
 import { canGoBack } from "@/lib/client/tab-history";
 
