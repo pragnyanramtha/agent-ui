@@ -23,13 +23,14 @@ import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
-import { hasMod, isMac } from "@/lib/client/shortcuts";
+import { commandFor, isCommand, isMac, terminalOwns } from "@/lib/client/shortcuts";
 import type { SessionSummary } from "@/lib/types";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
 
 const SIDEBAR_KEY = "cui:sidebar";
+const TAB_COMMANDS = ["nextTab", "prevTab", "newSession", "reopenTab", "closeTab", "tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8", "lastTab"] as const;
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState(false);
   useEffect(() => {
@@ -170,56 +171,39 @@ export function App() {
    * Alt+T (Alt+Shift+T reopens) and Alt+W otherwise, so the browser's own Ctrl+T/W keep working.
    * On a Mac, Option+arrows in a text field stay word jumps. */
   useEffect(() => {
-    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || drawer || sheet) return;
-      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === "Tab") {
-        e.preventDefault();
-        cycle(e.shiftKey ? -1 : 1);
-        return;
-      }
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && !e.shiftKey) {
-        if (mac && isEditable(e.target)) return;
-        e.preventDefault();
-        cycle(e.key === "ArrowRight" ? 1 : -1);
-      } else if (e.code === "KeyT") {
-        e.preventDefault();
-        if (e.shiftKey) reopen();
-        else newTab();
-      } else if (e.code === "KeyW" && !e.shiftKey) {
-        e.preventDefault();
+      const id = commandFor(e, TAB_COMMANDS, mac);
+      if (!id) return;
+      if (mac && e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft") && isEditable(e.target)) return;
+      e.preventDefault();
+      if (id === "nextTab" || id === "prevTab") cycle(id === "nextTab" ? 1 : -1);
+      else if (id === "newSession") newTab();
+      else if (id === "reopenTab") reopen();
+      else if (id === "closeTab") {
         if (active) close(active);
-      } else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) {
-        e.preventDefault();
-        const n = Number(e.code.slice(5));
-        select(n === 9 ? -1 : n - 1);
-      }
+      } else select(id === "lastTab" ? -1 : Number(id.slice(3)) - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [cycle, reopen, close, select, active, newTab, drawer, sheet]);
 
-  /* Mod+J or Ctrl+`: open a shell in the current session's folder, or show/hide the terminal. Ctrl+Shift+` adds a terminal tab.
-   * Capture phase, so a focused terminal can't swallow Ctrl+`. Ctrl+J inside a terminal is a line feed
-   * (newline in Claude Code, accept-line in bash), so off a Mac it's left to the terminal. */
+  /* Toggle terminal (Mod+J or Ctrl+`): open a shell in the current session's folder, or show/hide the terminal.
+   * New terminal tab (Ctrl+Shift+`) adds one. Capture phase, so a focused terminal can't swallow Ctrl+`.
+   * Ctrl+letter inside a terminal is a control character (Ctrl+J is a line feed), so it's left to the terminal. */
   const activeCwd = sessionId ? byId.get(sessionId)?.cwd || undefined : undefined;
   useEffect(() => {
-    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey || e.isComposing) return;
-      if (e.shiftKey) {
-        if (e.code !== "Backquote" || !(e.ctrlKey || e.metaKey)) return;
+      if (e.isComposing || terminalOwns(e)) return;
+      if (isCommand(e, "newTerminal")) {
         e.preventDefault();
         e.stopPropagation();
         setTermHidden(false);
         window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `Shell: ${shortPath(activeCwd)}` : "Shell", newTab: true } }));
         return;
       }
-      const inTerm = e.target instanceof Element && Boolean(e.target.closest(".xterm"));
-      const backquote = e.code === "Backquote" && e.ctrlKey && !e.metaKey;
-      const modJ = e.code === "KeyJ" && hasMod(e, mac) && (mac || !inTerm);
-      if (!backquote && !modJ) return;
+      if (!isCommand(e, "terminal")) return;
       e.preventDefault();
       e.stopPropagation();
       if (!terminal) {
@@ -230,10 +214,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [terminal, activeCwd]);
 
-  /* Ctrl/Cmd+, opens Settings */
+  /* Mod+, opens Settings */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key !== ",") return;
+      if (!isCommand(e, "settings")) return;
       e.preventDefault();
       openView(SETTINGS_TAB);
     };
@@ -241,7 +225,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openView]);
 
-  /* Ctrl/Cmd+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
+  /* Mod+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
   const toggleSidebar = sidebar.toggle;
   useEffect(() => {
     const flip = () => {
@@ -249,9 +233,8 @@ export function App() {
       else setDrawer((d) => !d);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing || e.altKey) return;
-      const mod = e.ctrlKey || e.metaKey;
-      if ((mod && !e.shiftKey && e.code === "KeyB") || (e.ctrlKey && e.shiftKey && e.code === "KeyS")) {
+      if (e.defaultPrevented || e.isComposing) return;
+      if (isCommand(e, "sidebar")) {
         e.preventDefault();
         flip();
       }

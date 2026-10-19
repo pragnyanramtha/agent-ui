@@ -1,7 +1,7 @@
 "use client";
 
 import { useSetting } from "@/lib/client/settings";
-import { comboFor, hasMod, modalOpen } from "@/lib/client/shortcuts";
+import { comboFor, isCommand, modalOpen } from "@/lib/client/shortcuts";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArrowUp, Attachment, Brain, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck, Trash } from "iconoir-react";
@@ -971,7 +971,7 @@ export function Composer({
             /* the keys belong to the input method while it composes (Enter picks a candidate) */
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             /* Mod+S puts the draft aside instead of saving the page */
-            if (hasMod(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+            if (isCommand(e.nativeEvent, "stash")) {
               e.preventDefault();
               stashDraft();
               return;
@@ -1021,7 +1021,7 @@ export function Composer({
               }
             }
             /* Esc stops a running turn when there's nothing typed */
-            if (e.key === "Escape" && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
+            if (isCommand(e.nativeEvent, "stop") && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
               e.preventDefault();
               onStop();
               return;

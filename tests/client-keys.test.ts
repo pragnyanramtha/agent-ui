@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
-import { comboFor, hasMod, SHORTCUTS } from "@/lib/client/shortcuts";
+import { comboFor, hasMod } from "@/lib/client/shortcuts";
 import { inOrder } from "@/lib/client/useSessions";
 
 describe("caret lines", () => {
@@ -42,11 +42,11 @@ describe("Mod key", () => {
     expect(hasMod(ev(false, true), false)).toBe(false);
   });
 
-  it("lists the in-terminal toggle in the shortcut sheet", () => {
-    expect(SHORTCUTS.some((s) => s.id === "terminal-anywhere")).toBe(true);
-    expect(comboFor("terminal-anywhere", false)).toBe("Ctrl+`");
-    expect(comboFor("terminal", false)).toBe("Ctrl+J");
-    expect(comboFor("terminal", true)).toBe("⌘J");
+  it("labels the terminal toggle, and the key that still works from inside a terminal", () => {
+    expect(comboFor("terminal", false, { bindings: {} })).toBe("Ctrl+J");
+    expect(comboFor("terminal", true, { bindings: {} })).toBe("⌘J");
+    expect(comboFor("terminal", false, { inTerminal: true, bindings: {} })).toBe("Ctrl+`");
+    expect(comboFor("terminal", true, { inTerminal: true, bindings: {} })).toBe("⌘J");
   });
 });
 
