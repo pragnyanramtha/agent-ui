@@ -30,6 +30,8 @@ import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { useComposerCollapse } from "@/lib/client/useComposerCollapse";
+import { ComposerPill } from "./ComposerPill";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -209,6 +211,7 @@ export function SessionScreen({
   const failed = runFailed(run) && run?.error && run.error !== dismissedError ? run.error : null;
   const sentTexts = useMemo(() => view.entries.flatMap((e) => (e.kind === "user" && e.text.trim() ? [e.text] : [])).slice(-50), [view.entries]);
   const lastUserText = sentTexts.at(-1) ?? null;
+  const fold = useComposerCollapse(sectionRef, composerRef, Boolean(failed || planReady || error));
 
   useEffect(() => {
     setBaseTitle(view.title ? `${view.title} · agent-u` : "agent-u");
@@ -711,7 +714,11 @@ export function SessionScreen({
         }
       />
 
-      <div ref={composerRef} className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10">
+      <div
+        ref={composerRef}
+        className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        style={fold.collapsed ? { transform: "translateY(100%)", opacity: 0 } : undefined}
+      >
         <div className="h-6 bg-gradient-to-t from-page to-transparent" />
         {/* the same column as the thread (its width token and side padding), so the card lines up with the text */}
         <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-0 sm:pb-4">
@@ -829,6 +836,7 @@ export function SessionScreen({
           </div>
         </div>
       </div>
+      <ComposerPill shown={fold.collapsed} composer={composerRef} onOpen={fold.expand} />
     </section>
     {panel && (
       <PanelSlot resetKey={panel} onClose={() => setPanel(null)}>
