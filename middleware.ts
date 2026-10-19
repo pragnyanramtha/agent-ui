@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hostOk, sameOrigin, signedIn } from "@/lib/guard";
+import { readRespondToken, RESPOND_HEADER, RESPOND_PATH } from "@/lib/server/push-token";
 
 const PUBLIC = ["/login", "/api/auth/login", "/manifest.webmanifest", "/icon.svg", "/apple-touch-icon.png", "/sw.js"];
 
@@ -13,6 +14,8 @@ export async function middleware(req: NextRequest) {
   if (api && req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) return NextResponse.json({ error: "Bad origin" }, { status: 403 });
 
   if (PUBLIC.includes(pathname)) return NextResponse.next();
+  /* a notification's Allow or Deny: only this route, only a POST, only with a valid token (the route spends it) */
+  if (pathname === RESPOND_PATH && req.method === "POST" && readRespondToken(req.headers.get(RESPOND_HEADER))) return NextResponse.next();
   if (await signedIn(req)) return NextResponse.next();
 
   if (api) return NextResponse.json({ error: "Sign in first" }, { status: 401 });

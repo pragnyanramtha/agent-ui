@@ -93,7 +93,8 @@ export function unsubscribeAll() {
   write();
 }
 
-export type PushMessage = NotifyMessage;
+/** `respond` makes an approval answerable from the notification (lib/server/push-token.ts) */
+export type PushMessage = NotifyMessage & { respond?: { token: string } };
 
 /** Sends to every subscribed browser; ones the push service says are gone are dropped. */
 export async function pushAll(msg: PushMessage, only?: string) {
