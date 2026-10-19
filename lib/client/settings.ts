@@ -98,12 +98,21 @@ function saveSynced(next: Partial<Settings>) {
 
 /* ── reads and writes ─────────────────────────────────────── */
 
+const coarsePointer = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+
+/** What a setting reads as before anyone picks a value: some device settings default otherwise on touch screens. */
+export function effectiveDefault<K extends SettingKey>(key: K, coarse = coarsePointer()): Settings[K] {
+  const d = def(key);
+  return (d.scope === "device" && coarse && d.touchDefault !== undefined ? d.touchDefault : d.default) as Settings[K];
+}
+
 function read<K extends SettingKey>(key: K): Settings[K] {
   if (isSynced(key)) {
     const v = syncedValues()[key];
     return (v === undefined ? DEFAULTS[key] : v) as Settings[K];
   }
-  return decodeStored(key, lsGet(storageKey(key)));
+  const raw = lsGet(storageKey(key));
+  return raw === null && def(key).touchDefault !== undefined ? effectiveDefault(key) : decodeStored(key, raw);
 }
 
 let snap: Settings | null = null;
@@ -170,7 +179,7 @@ export const resetSection = (section: SectionId) => resetSettings(settingsIn(sec
 export const resetAllSettings = () => resetSettings(SETTING_KEYS);
 
 /** True when every setting the section lists is at its default. */
-export const sectionIsDefault = (values: Settings, section: SectionId) => settingsIn(section).every((d) => values[d.key] === d.default);
+export const sectionIsDefault = (values: Settings, section: SectionId) => settingsIn(section).every((d) => values[d.key] === effectiveDefault(d.key));
 
 /* ── React ────────────────────────────────────────────────── */
 

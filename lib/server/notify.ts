@@ -1,7 +1,9 @@
 import { forgetSeen, step, type Seen } from "@/lib/notify-events";
 import { pushWanted } from "@/lib/notify-prefs";
 import { DEFAULTS } from "@/lib/settings-schema";
+import type { SessionSummary } from "@/lib/types";
 import { pushAll, subscriptionCount, type PushMessage } from "./push";
+import { signRespondToken } from "./push-token";
 import { sessionRows } from "./rows";
 import { readSynced } from "./settings";
 
@@ -15,6 +17,20 @@ export function wanted(messages: PushMessage[], settings = readSynced().settings
   if (!messages.length) return messages;
   const prefs = { ...DEFAULTS, ...settings };
   return messages.filter((m) => pushWanted(m.kind, prefs));
+}
+
+/** "Needs you" for a tool approval gets Allow and Deny: a token for that one request. Questions only open the session. */
+export function withActions(messages: PushMessage[], rows: SessionSummary[], sign = signRespondToken): PushMessage[] {
+  return messages.map((m) => {
+    if (m.kind !== "needs" || !m.session) return m;
+    const ask = rows.find((r) => r.id === m.session)?.web?.pending[0];
+    if (ask?.kind !== "permission") return m;
+    try {
+      return { ...m, respond: { token: sign(m.session, ask.requestId) } };
+    } catch {
+      return m;
+    }
+  });
 }
 
 const POLL_MS = 3000;
@@ -36,7 +52,7 @@ export function startNotify() {
       }
       const rows = await sessionRows();
       /* the state moves on either way, so turning an event back on doesn't replay old ones */
-      for (const m of wanted(step(seen, rows, Date.now()))) await pushAll(m);
+      for (const m of withActions(wanted(step(seen, rows, Date.now())), rows)) await pushAll(m);
     } catch (err) {
       console.warn(`notify: ${(err as Error).message}`);
     } finally {

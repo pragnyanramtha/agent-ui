@@ -25,6 +25,7 @@ import { useFileSearch } from "@/lib/client/useFileSearch";
 import { arrangeModels } from "@/lib/model-prefs";
 import { ModelMarks } from "./ModelMarks";
 import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
+import { useSharedDraft } from "@/lib/client/share";
 
 /* The composer: a two-row card. The text on top; under it a footer with the "+" menu, the agent and model,
  * effort and approvals chips on the left, and context use plus Send (or Stop) on the right. A quiet strip
@@ -317,6 +318,11 @@ export function Composer({
   useEffect(() => {
     if (autoFocus && window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
   }, [autoFocus, draftKey]);
+  /* shared from another app (lib/client/share.ts): a new session starts with it */
+  useSharedDraft(draftKey === "new", (s) => {
+    if (s.text) setDraft((d) => (d.trim() ? `${d.replace(/\s+$/, "")}\n\n${s.text}` : s.text));
+    files.restore(s.files);
+  });
 
   useLayoutEffect(() => {
     const el = inputRef.current;

@@ -39,6 +39,8 @@ import { chipModel } from "@/lib/model-chip";
 import { useAutoOpenDiff } from "@/lib/client/useAutoOpenDiff";
 import { useEditorLink } from "@/lib/client/useEditorLink";
 import { OpenNewWindow } from "iconoir-react";
+import { useComposerCollapse } from "@/lib/client/useComposerCollapse";
+import { ComposerPill } from "./ComposerPill";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -226,6 +228,7 @@ export function SessionScreen({
   const failed = runFailed(run) && run?.error && run.error !== dismissedError ? run.error : null;
   const sentTexts = useMemo(() => view.entries.flatMap((e) => (e.kind === "user" && e.text.trim() ? [e.text] : [])).slice(-50), [view.entries]);
   const lastUserText = sentTexts.at(-1) ?? null;
+  const fold = useComposerCollapse(sectionRef, composerRef, Boolean(failed || planReady || error));
 
   useEffect(() => {
     setBaseTitle(view.title ? `${view.title} · agent-u` : "agent-u");
@@ -497,7 +500,7 @@ export function SessionScreen({
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
     <section ref={sectionRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="on-page safe-top safe-x relative z-20 flex shrink-0 items-center bg-page">
+      <header data-swipe-tabs className="on-page safe-top safe-x relative z-20 flex shrink-0 touch-pan-y touch-pinch-zoom items-center bg-page">
         <div className="@container flex h-14 w-full min-w-0 items-center gap-0.5 px-1.5 sm:px-3 lg:h-[52px]">
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
@@ -788,7 +791,11 @@ export function SessionScreen({
         }
       />
 
-      <div ref={composerRef} className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10">
+      <div
+        ref={composerRef}
+        className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10 transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]"
+        style={fold.collapsed ? { transform: "translateY(100%)", opacity: 0 } : undefined}
+      >
         <div className="h-6 bg-gradient-to-t from-page to-transparent" />
         {/* the same column as the thread (its width token and side padding), so the card lines up with the text */}
         <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-0 sm:pb-4">
@@ -908,6 +915,7 @@ export function SessionScreen({
           </div>
         </div>
       </div>
+      <ComposerPill shown={fold.collapsed} composer={composerRef} onOpen={fold.expand} />
     </section>
     {panel && (
       <PanelSlot resetKey={panel} onClose={() => setPanel(null)}>

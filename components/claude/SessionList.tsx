@@ -27,6 +27,7 @@ import { createFlip } from "@/lib/client/flip";
 import { AgentIcon } from "./AgentIcon";
 import { ProjectIcon, useProjectIcons } from "./ProjectIcon";
 import { SessionHoverCard } from "./SessionHoverCard";
+import { useRowSwipe } from "@/lib/client/gestures";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -188,7 +189,7 @@ const Row = memo(function Row({ id, title, status, time, agent, active, where, m
   const tail = menuOpen ? "invisible" : "pointer-fine:group-hover/item:invisible pointer-fine:group-focus-within/item:invisible";
   return (
     <div
-      className="group/item relative"
+      className="group/item relative touch-pan-y touch-pinch-zoom"
       onContextMenu={(e) => {
         e.preventDefault();
         /* the context-menu key reports no position: anchor to the row */
@@ -984,6 +985,28 @@ export const SessionList = memo(function SessionList({
     say(transcript ? "Session and transcript deleted." : "Session deleted.");
   };
   const requestArchive = (s: SessionSummary) => (confirmFirst === "both" ? setArchiving(s) : archiveNow(s));
+  const [gestures] = useSetting("touchGestures");
+  useRowSwipe(listRef, {
+    enabled: gestures,
+    labels: (id) => {
+      const s = byId.get(id);
+      return { left: s?.archived ? "Unarchive" : "Archive", right: s?.pinned ? "Unpin" : "Pin" };
+    },
+    onLeft: (id) => {
+      const s = byId.get(id);
+      if (!s) return;
+      if (!s.archived) return requestArchive(s);
+      void change(s, { archived: false });
+      say("Unarchived.", () => void change(s, { archived: true }));
+    },
+    onRight: (id) => {
+      const s = byId.get(id);
+      if (!s) return;
+      const was = Boolean(s.pinned);
+      void change(s, { pinned: !was });
+      say(was ? "Unpinned." : "Pinned.", () => void change(s, { pinned: was }));
+    },
+  });
   const requestDelete = (s: SessionSummary) => {
     /* a running session can't go; the dialog says why */
     if (confirmFirst !== "never" || isBusy(s) || s.web?.pending.length) return setDeleting(s);
