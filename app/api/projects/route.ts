@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 /** Adds or replaces one project's settings: `{ project: { path, name?, profile?, ..., actions? } }`. */
 export async function PUT(req: NextRequest) {
   const body = await readJson(req);
-  if (!body.project) return NextResponse.json({ error: "Send { project: {...} }." }, { status: 400 });
+  if (!body.project) return NextResponse.json({ error: "The request needs a project." }, { status: 400 });
   let res: ReturnType<typeof saveProject>;
   try {
     res = saveProject(body.project, known());
