@@ -303,6 +303,23 @@ export function App() {
 
   return (
     <main className="flex h-[calc(100dvh-var(--kb,0px))] bg-page text-ink lg:bg-sidebar lg:py-1.5 lg:pr-1.5">
+      <a
+        href="#session-panel"
+        onClick={(e) => {
+          e.preventDefault();
+          const composer = document.querySelector<HTMLElement>("#session-panel [data-composer] textarea");
+          if (composer) return composer.focus();
+          /* screens without a composer: land on the main area, focusable only for this visit so clicks inside it don't take focus */
+          const panel = document.getElementById("session-panel");
+          if (!panel) return;
+          panel.tabIndex = -1;
+          panel.addEventListener("blur", () => panel.removeAttribute("tabindex"), { once: true });
+          panel.focus();
+        }}
+        className="fixed top-[max(0.5rem,env(safe-area-inset-top))] left-2 z-[60] rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-page shadow-overlay not-focus:sr-only"
+      >
+        Skip to message
+      </a>
       <aside
         className="shell-sidebar relative z-20 hidden shrink-0 bg-sidebar lg:block"
         style={{ width: sidebar.collapsed ? 52 : 260 }}
@@ -369,7 +386,7 @@ export function App() {
             <TabBar tabs={infos} active={active} onSelect={open} onClose={close} onNew={newTab} onMove={move} />
           </div>
         )}
-        <div id="session-panel" role="tabpanel" aria-labelledby={activeIndex >= 0 ? `tab-${activeIndex}` : undefined} className="flex min-h-0 flex-1 flex-col">
+        <div id="session-panel" role="tabpanel" aria-labelledby={activeIndex >= 0 ? `tab-${activeIndex}` : undefined} className="flex min-h-0 flex-1 flex-col outline-none">
           {!ready ? null : active === FILES_TAB ? (
             <FilesScreen onMenu={() => setDrawer(true)} extra={tabsButton} start={filesStart.path} startKey={filesStart.n} />
           ) : active === INBOX_TAB ? (

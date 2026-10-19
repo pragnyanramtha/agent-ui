@@ -170,7 +170,7 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
         placeholder="Find in session"
         aria-label="Find in session"
         autoFocus
-        className="w-44 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-3 sm:w-56"
+        className="w-44 bg-transparent text-[16px] text-ink sm:text-[13px] outline-none placeholder:text-ink-3 sm:w-56"
       />
       <span className="min-w-12 text-right text-[12px] text-ink-3 tabular-nums" aria-live="polite">
         {q.trim() ? (count ? `${index + 1}/${count >= MAX ? `${MAX}+` : count}` : "0/0") : ""}

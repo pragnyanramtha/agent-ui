@@ -4,6 +4,7 @@ import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps,
 import { Check, Copy } from "iconoir-react";
 import type { Components, ExtraProps, MathPlugin, PluginConfig, StreamdownProps } from "streamdown";
 import { CodeCard, copyText } from "./CodeCard";
+import { useOverflow } from "@/lib/client/a11y";
 
 /* ── Streamdown loads as its own chunk ──────────────────────────────────
  * It brings ~100 kB (marked, remend, unified, sanitize, and a rehype-raw we don't use
@@ -126,7 +127,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
     <button
       type="button"
       title={title}
-      aria-label={done ? "Copied" : title}
+      aria-label={done ? "Copied" : `Copy table as ${label}`}
       onClick={() =>
         onCopy().then((ok) => {
           if (!ok) return;
@@ -135,7 +136,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
           timer.current = setTimeout(() => setDone(false), 1500);
         })
       }
-      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-colors duration-100 hover:bg-hover ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
+      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-colors duration-100 hover:bg-hover pointer-coarse:h-10 pointer-coarse:min-w-11 pointer-coarse:justify-center pointer-coarse:px-3 pointer-coarse:text-[12.5px] ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
     >
       {done ? <Check width={12} height={12} strokeWidth={2.2} /> : <Copy width={12} height={12} strokeWidth={1.8} />}
       {label}
@@ -145,6 +146,8 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
 
 function Table({ children }: ComponentProps<"table"> & ExtraProps) {
   const ref = useRef<HTMLTableElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const scrolls = useOverflow(scroller, "both");
   const copy = (format: "md" | "csv") => () => {
     /* tables only render inside Streamdown, so the module is loaded by now */
     if (!ref.current || !sd) return Promise.resolve(false);
@@ -153,11 +156,17 @@ function Table({ children }: ComponentProps<"table"> & ExtraProps) {
   };
   return (
     <div className="md-table group/table relative">
-      {/* the region is focusable, so a tap on touch screens reveals the copy controls */}
-      <div tabIndex={0} role="region" aria-label="Table" className="md-table-scroll focus-visible:[outline-offset:-2px]!">
+      <div
+        ref={scroller}
+        tabIndex={scrolls ? 0 : undefined}
+        role={scrolls ? "group" : undefined}
+        aria-label={scrolls ? "Scrollable table" : undefined}
+        className="md-table-scroll focus-visible:[outline-offset:-2px]!"
+      >
         <table ref={ref}>{children}</table>
       </div>
-      <div className="absolute top-1 right-1 z-10 flex gap-px rounded-[8px] bg-surface p-0.5 opacity-0 shadow-btn transition-opacity duration-150 group-focus-within/table:opacity-100 group-hover/table:opacity-100">
+      {/* on touch there's no hover, so the controls stay visible in a strip under the table */}
+      <div className="absolute top-1 right-1 z-10 flex gap-px rounded-[8px] bg-surface p-0.5 opacity-0 shadow-btn transition-opacity duration-150 group-focus-within/table:opacity-100 group-hover/table:opacity-100 pointer-coarse:static pointer-coarse:justify-end pointer-coarse:rounded-none pointer-coarse:border-t pointer-coarse:border-line pointer-coarse:p-0 pointer-coarse:opacity-100 pointer-coarse:shadow-none">
         <CopyTableButton label="MD" title="Copy table as Markdown" onCopy={copy("md")} />
         <CopyTableButton label="CSV" title="Copy table as CSV" onCopy={copy("csv")} />
       </div>

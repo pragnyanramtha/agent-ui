@@ -182,14 +182,14 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
                 </span>
               </div>
               {t.session && (
-                <button type="button" onClick={() => onOpenSession(t.session!)} className="h-8 shrink-0 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover max-sm:hidden">
+                <button type="button" onClick={() => onOpenSession(t.session!)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-[12.5px] font-medium text-ink-2 hover:bg-hover max-sm:hidden">
                   Session
                 </button>
               )}
-              <button type="button" onClick={() => openServerTerminal(t, t.label)} className="h-8 shrink-0 rounded-full px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => openServerTerminal(t, t.label)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
                 Open
               </button>
-              <button type="button" onClick={() => void stop(t)} aria-label={t.exited ? `Remove ${t.label}` : `Stop ${t.label}`} className="icon-btn shrink-0 text-ink-3">
+              <button type="button" onClick={() => void stop(t)} aria-label={t.exited ? `Remove ${t.label}` : `Stop ${t.label}`} className="icon-btn shrink-0 text-ink-3 pointer-coarse:size-10">
                 <Trash width={15} height={15} strokeWidth={1.8} />
               </button>
             </li>
@@ -394,7 +394,7 @@ function Profiles() {
           <button
             type="button"
             onClick={() => setEdit({ isNew: true, draft: { id: "", label: "", agent: "codex", bin: "", args: "", env: "", models: "", defaultModel: "", defaultEffort: "", fallback: "", launchArgs: "", notes: "", hidden: false } })}
-            className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover"
+            className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 pointer-coarse:h-10 pointer-coarse:px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover"
           >
             <Plus width={14} height={14} strokeWidth={2} /> Add profile
           </button>
@@ -429,11 +429,11 @@ function Profiles() {
                 </span>
               </div>
               {p.custom && (
-                <button type="button" onClick={() => reset(p)} className="h-8 shrink-0 rounded-full px-2.5 text-[12.5px] font-medium text-ink-3 hover:bg-hover hover:text-ink">
+                <button type="button" onClick={() => reset(p)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-[12.5px] font-medium text-ink-3 hover:bg-hover hover:text-ink">
                   {p.builtin ? "Reset" : "Delete"}
                 </button>
               )}
-              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className="h-8 shrink-0 rounded-full px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
                 Edit
               </button>
             </li>
@@ -528,7 +528,7 @@ function ProfileEditor({
         )}
         {row("Terminal arguments", "One per line, terminal only", <textarea rows={2} value={d.launchArgs} onChange={(e) => set({ launchArgs: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}
         {row("Notes", "", <input value={d.notes} onChange={(e) => set({ notes: e.target.value })} className={field} />)}
-        <label className="flex items-center gap-2 self-end pb-2 text-[13px] text-ink-2">
+        <label className="flex items-center gap-2 self-end pb-2 text-[13px] text-ink-2 pointer-coarse:min-h-10 pointer-coarse:pb-0">
           <input type="checkbox" checked={d.hidden} onChange={(e) => set({ hidden: e.target.checked })} />
           Hide from menus
         </label>

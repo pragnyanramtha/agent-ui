@@ -110,7 +110,8 @@ export function TabBar({
   /* keep the active tab in view */
   useEffect(() => {
     const el = scrollRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: still ? "auto" : "smooth" });
   }, [active, tabs.length]);
 
   /* arrows move focus (manual activation: Enter/Space opens, so the composer doesn't steal focus mid-browse) */
@@ -175,6 +176,7 @@ export function TabBar({
                   onClose(t.id);
                 }}
                 data-on={on || undefined}
+                role="presentation"
                 className={`tab-item group/tab relative flex h-8 w-[184px] shrink-0 items-center rounded-control pr-1 text-[13px] transition-[background-color,color,opacity,box-shadow] duration-150 ${dragging === t.id ? "opacity-50" : ""}`}
                 style={{ animation: "tab-in 220ms cubic-bezier(0.23,1,0.32,1) both" }}
               >
@@ -186,6 +188,7 @@ export function TabBar({
                   aria-controls="session-panel"
                   aria-label={`${t.title}${t.agent !== "claude" ? `, ${AGENT_LABEL[t.agent]}` : ""}${stateLabel(t)}`}
                   tabIndex={on ? 0 : -1}
+                  aria-keyshortcuts="Delete"
                   title={t.agent !== "claude" ? `${t.title}\n${AGENT_LABEL[t.agent]}` : t.title}
                   onClick={() => onSelect(t.id)}
                   className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-control pl-2.5 text-left focus-visible:outline-offset-[-2px]"
@@ -195,11 +198,13 @@ export function TabBar({
                   </span>
                   <span className="min-w-0 truncate">{t.title}</span>
                 </button>
+                {/* pointer-only: inside a tablist only tabs may be exposed; keyboards close with Delete or Alt+W */}
                 <button
                   type="button"
-                  aria-label={`Close ${t.title}`}
+                  aria-hidden
                   title="Close (Alt+W)"
                   tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onClose(t.id)}
                   className={`ml-0.5 flex size-5 shrink-0 items-center justify-center rounded-chip text-ink-3 transition-[background-color,color,opacity] duration-100 hover:bg-hover-2 hover:text-ink pointer-coarse:opacity-100 ${
                     on ? "" : "opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
