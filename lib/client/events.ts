@@ -16,3 +16,8 @@ export const OPEN_SHORTCUTS_EVENT = "open-shortcuts";
 
 /** Fired on window with `detail: TerminalTarget` to open the web terminal. */
 export const OPEN_TERMINAL_EVENT = "open-terminal";
+
+/** Fired on window with `detail: { path, line?, endLine? }` (absolute path) to show a file in the open session's
+ * Files panel. */
+export const OPEN_FILE_PANEL_EVENT = "agentu:open-file-panel";
+export type OpenFilePanel = { path: string; line?: number; endLine?: number };

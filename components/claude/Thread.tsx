@@ -16,6 +16,7 @@ import { api } from "@/lib/client/api";
 import { confirmAsk } from "./Ask";
 import { dayStamp, type TimeFormat } from "@/lib/time-format";
 import { Markdown } from "./Markdown";
+import { LinkedText } from "./FileLink";
 import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./MessageActions";
 import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
@@ -174,7 +175,7 @@ function UserText({ text }: { text: string }) {
           </pre>
         ) : (
           <p key={i} className="whitespace-pre-wrap [overflow-wrap:anywhere]">
-            {p.text}
+            <LinkedText text={p.text} />
           </p>
         ),
       )}

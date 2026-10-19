@@ -49,6 +49,7 @@ export const COMMANDS = [
   { id: "stop", label: "Stop the turn", group: "Composer", keys: ["Escape"], scope: "composer", keywords: ["interrupt", "cancel"] },
   { id: "gitPanel", label: "Toggle Git panel", group: "Panels", keys: ["Mod+Shift+G"], keywords: ["checkpoints", "branch", "commit"] },
   { id: "changesPanel", label: "Toggle changes", group: "Panels", keys: ["Mod+Shift+D"], keywords: ["diff", "files", "edits"] },
+  { id: "quickOpen", label: "Go to file", group: "Panels", keys: ["Mod+P"], keywords: ["files", "open", "find file", "fuzzy"] },
   /* Cmd+Shift+[ and ] switch browser tabs on a Mac, so the arrows are there too */
   { id: "prevSession", label: "Previous session", group: "Sessions", keys: ["Mod+Shift+[", "Alt+Shift+ArrowUp"], keywords: ["sidebar", "up"] },
   { id: "nextSession", label: "Next session", group: "Sessions", keys: ["Mod+Shift+]", "Alt+Shift+ArrowDown"], keywords: ["sidebar", "down"] },
