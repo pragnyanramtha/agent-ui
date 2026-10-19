@@ -291,7 +291,7 @@ function FixCommand({ command }: { command: string }) {
     });
   return (
     <div className="mt-1 flex min-w-0 items-center gap-1 rounded-[8px] bg-inset py-0.5 pr-0.5 pl-2.5">
-      <code className="min-w-0 flex-1 overflow-x-auto font-mono text-[11.5px] whitespace-nowrap text-ink-2" translate="no">
+      <code className="no-scrollbar min-w-0 flex-1 overflow-x-auto font-mono text-[11.5px] whitespace-nowrap text-ink-2" translate="no">
         {command}
       </code>
       <button
