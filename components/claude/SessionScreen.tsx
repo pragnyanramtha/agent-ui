@@ -624,7 +624,7 @@ export function SessionScreen({
       <div ref={composerRef} className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10">
         <div className="h-6 bg-gradient-to-t from-page to-transparent" />
         <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-8 sm:pb-5">
-          <div className="mx-auto max-w-[740px]">
+          <div className="mx-auto max-w-(--thread-w)">
             {failed && !busy && (
               <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-[13px] text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
