@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatBubble, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Search, Settings, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
+import { ChatBubble, ChatLines, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Search, Settings, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
@@ -55,7 +55,7 @@ function matchSession(s: SessionSummary, words: string[]) {
 
 type Item = {
   id: string;
-  group: "Sessions" | "Actions";
+  group: "Sessions" | "Messages" | "Actions";
   label: string;
   hint?: ReactNode;
   /** shortcut id from lib/client/shortcuts.ts, shown on the right */
@@ -88,6 +88,7 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [dark, setDark] = useState(true);
+  const messages = useMessageSearch(query, open);
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -321,8 +322,20 @@ export function CommandPalette({
     const typed = words.join(" ");
     const prefix = (a: Item) => (typed && a.label.toLowerCase().startsWith(typed) ? 0 : 1);
     const ranked = [...actionItems].sort((a, b) => prefix(a) - prefix(b));
-    return ranked.length && prefix(ranked[0]) === 0 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
-  }, [query, sessions, activeId, dark, onOpen, onNew, onView, toggleTheme]);
+    const messageItems: Item[] = messages.hits.map((h) => ({
+      id: `m:${h.key}`,
+      group: "Messages",
+      label: all.find((s) => s.id === h.key)?.title || h.title,
+      hint: <Snippet text={h.snippet} match={h.match} />,
+      icon: <ChatLines width={15} height={15} strokeWidth={1.8} />,
+      run: () => {
+        if (h.key !== activeId) navigated.current = true;
+        onOpen(h.key);
+      },
+    }));
+    const head = ranked.length && prefix(ranked[0]) === 0 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
+    return [...head, ...messageItems];
+  }, [query, sessions, activeId, dark, messages.hits, onOpen, onNew, onView, toggleTheme]);
 
   /* a new query starts back at the top */
   useEffect(() => {
@@ -428,8 +441,8 @@ export function CommandPalette({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={current >= 0 ? optId(current) : undefined}
-            aria-label="Search sessions and actions"
-            placeholder="Search sessions and actions…"
+            aria-label="Search sessions, messages and actions"
+            placeholder="Search sessions, messages and actions…"
             enterKeyHint="go"
             autoComplete="off"
             autoCorrect="off"
@@ -493,7 +506,12 @@ export function CommandPalette({
               Loading sessions…
             </p>
           )}
-          {!items.length && (
+          {messages.searching && (
+            <p className="px-2.5 py-2 text-[13px] text-ink-3" role="status">
+              Searching messages…
+            </p>
+          )}
+          {!items.length && !messages.searching && (
             <p className="px-2.5 py-6 text-center text-[13px] text-ink-3" role="status">
               Nothing matches <span className="font-medium text-ink-2">“{query.trim()}”</span>.
             </p>
@@ -514,6 +532,44 @@ export function CommandPalette({
       </div>
     </div>,
     document.body,
+  );
+}
+
+type MessageHit = { key: string; title: string; snippet: string; match: [number, number] };
+const NO_HITS: MessageHit[] = [];
+
+/** Message text matching the query across sessions (/api/search), fetched once typing pauses. */
+function useMessageSearch(query: string, open: boolean) {
+  const q = query.trim();
+  const wanted = open && q.length >= 2 && q.length <= 200;
+  const [found, setFound] = useState<{ q: string; hits: MessageHit[] } | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, { cache: "no-store", signal: ctl.signal })
+        .then((res) => (res.ok ? (res.json() as Promise<{ hits?: MessageHit[] }>) : { hits: NO_HITS }))
+        .then((data) => setFound({ q, hits: data.hits ?? NO_HITS }))
+        .catch(() => {
+          if (!ctl.signal.aborted) setFound({ q, hits: NO_HITS });
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [q, wanted]);
+  if (!wanted) return { hits: NO_HITS, searching: false };
+  return found?.q === q ? { hits: found.hits, searching: false } : { hits: NO_HITS, searching: true };
+}
+
+function Snippet({ text, match: [start, end] }: { text: string; match: [number, number] }) {
+  return (
+    <span className="line-clamp-2 min-w-0 break-words">
+      {text.slice(0, start)}
+      <mark className="rounded-[3px] bg-accent-tint px-px text-ink">{text.slice(start, end)}</mark>
+      {text.slice(end)}
+    </span>
   );
 }
 
