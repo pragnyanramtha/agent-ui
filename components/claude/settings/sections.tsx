@@ -2,8 +2,7 @@
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, Terminal } from "iconoir-react";
-import { api } from "@/lib/client/api";
-import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/client/push";
+import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@/lib/client/push";
 import { settingsIn, type SectionId } from "@/lib/settings-schema";
 import { ShortcutList } from "../ShortcutsDialog";
 import { Card, Row, SmallButton, Switch } from "./controls";
@@ -96,13 +95,7 @@ function SignOutRow({ everywhere = false }: { everywhere?: boolean }) {
     <Row label={label} note={everywhere ? "Ends the session on every device, this one too. Agents keep running." : "Ends this browser's session. Agents keep running."}>
       <SmallButton
         tone="danger"
-        onClick={() =>
-          void api("/api/auth/logout", everywhere ? { everywhere: true } : {})
-            .catch(() => undefined)
-            .then(() => {
-              window.location.href = "/login";
-            })
-        }
+        onClick={() => void signOut(everywhere)}
       >
         {label}
       </SmallButton>

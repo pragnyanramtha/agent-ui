@@ -4,7 +4,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from "react-dom";
 import { ChatBubble, ChatLines, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Search, Settings, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
-import { api, shortPath, timeAgo } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
+import { signOut } from "@/lib/client/push";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
 import { applyTheme } from "@/lib/client/settings";
@@ -289,11 +290,7 @@ export function CommandPalette({
         icon: <LogOut width={15} height={15} strokeWidth={1.8} />,
         run: () => {
           navigated.current = true;
-          void api("/api/auth/logout", {})
-            .catch(() => undefined)
-            .then(() => {
-              window.location.href = "/login";
-            });
+          void signOut();
         },
       },
     ];
