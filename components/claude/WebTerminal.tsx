@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
+import { comboFor } from "@/lib/client/shortcuts";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -100,7 +101,7 @@ export function WebTerminal({
   const [height, setHeight] = useState(DOCK_DEFAULT);
   useEffect(() => {
     const stored = Number(localStorage.getItem(DOCK_KEY));
-    if (stored >= DOCK_MIN) setHeight(stored);
+    if (stored >= DOCK_MIN) setHeight(Math.max(DOCK_MIN, Math.min(stored, Math.round(window.innerHeight * 0.8))));
   }, []);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -363,8 +364,9 @@ export function WebTerminal({
   const startResize = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = height;
     const max = () => Math.max(DOCK_MIN, window.innerHeight * 0.8);
+    /* the CSS cap (80dvh) may be showing less than the stored height after the window shrank */
+    const startH = Math.min(height, max());
     let last = startH;
     const move = (ev: PointerEvent) => {
       last = Math.round(Math.min(max(), Math.max(DOCK_MIN, startH + startY - ev.clientY)));
@@ -413,12 +415,12 @@ export function WebTerminal({
     <div
       className={
         docked
-          ? `relative flex shrink-0 flex-col border-t border-line ${hidden ? "hidden" : ""}`
-          : "fixed inset-x-0 top-0 bottom-[var(--kb,0px)] z-50 flex items-stretch justify-center bg-black/50 lg:items-center lg:p-6"
+          ? `relative flex max-h-[80dvh] shrink-0 flex-col border-t border-line ${hidden ? "hidden" : ""}`
+          : `fixed inset-x-0 top-0 bottom-[var(--kb,0px)] z-50 items-stretch justify-center bg-black/50 lg:items-center lg:p-6 ${hidden ? "hidden" : "flex"}`
       }
       style={docked ? { height } : undefined}
       role={docked ? "region" : "dialog"}
-      aria-modal={docked ? undefined : true}
+      aria-modal={docked || hidden ? undefined : true}
       aria-label={`Terminal: ${label}`}
     >
       {docked && (
@@ -472,7 +474,7 @@ export function WebTerminal({
                 {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
               </button>
             )}
-            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">{docked ? "Ctrl+J to hide" : "Ctrl+Shift+X to close"}</span>
+            <span className="mx-1 hidden text-[11px] text-[#6b7079] lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-[#8b909a] hover:bg-white/10 hover:text-[#e6e8ec] sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />

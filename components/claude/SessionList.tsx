@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
+import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { patchSession, type SessionChange } from "@/lib/client/useSessions";
@@ -11,6 +11,7 @@ import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";
+import { copyText } from "./CodeCard";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -59,23 +60,6 @@ const rowTitle = (s: SessionSummary, now: number) =>
 
 /** The address that opens a session, the same one notifications use. */
 export const sessionLink = (id: string) => `${window.location.origin}/?s=${encodeURIComponent(id)}`;
-
-async function copyText(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    /* plain http has no clipboard API */
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.cssText = "position:fixed;opacity:0";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    ta.remove();
-    return ok;
-  }
-}
 
 /** Ctrl or ⌘, read after mount so the server render matches. */
 export function useModKey() {
@@ -152,10 +136,15 @@ type MenuAt = { x: number; y: number } | HTMLElement;
 /** Which list a row sits in: a session shows in Projects and in Pinned, Active or Recent at once. */
 type RowWhere = "match" | "pinned" | "live" | "project" | "recent" | "archived";
 
-/** What a row needs to open its menu and to rename in place. Both are keyed by `${where}:${id}`. */
+/* Pinned, Active and Recent never list a session twice: a rename follows its row between them when the poll moves it */
+const MAIN_LISTS: RowWhere[] = ["pinned", "live", "recent"];
+
+/** What a row needs to open its menu (keyed by `${where}:${id}`) and to rename in place. */
 type RowControl = {
   menuFor: string | null;
-  renaming: string | null;
+  renaming: { id: string; where: RowWhere } | null;
+  /** the text typed so far, so a field that moved with its row carries on */
+  draft: { current: string | null };
   openMenu: (s: SessionSummary, at: MenuAt, where: RowWhere) => void;
   rename: (s: SessionSummary, where: RowWhere, title: string | null, viaKey: boolean) => void;
 };
@@ -190,7 +179,9 @@ function Row({
 }) {
   const waiting = (s.web?.pending.length ?? 0) > 0;
   const key = `${where}:${s.id}`;
-  if (ctl.renaming === key) return <RenameRow s={s} lead={lead} indent={indent} onDone={(t, viaKey) => ctl.rename(s, where, t, viaKey)} />;
+  const r = ctl.renaming;
+  if (r?.id === s.id && (r.where === where || (MAIN_LISTS.includes(r.where) && MAIN_LISTS.includes(where))))
+    return <RenameRow s={s} lead={lead} indent={indent} draft={ctl.draft} onDone={(t, viaKey) => ctl.rename(s, where, t, viaKey)} />;
   const menuOpen = ctl.menuFor === key;
   /* the "..." button takes the trailing label's place on hover */
   const tail = menuOpen ? "hidden" : "pointer-fine:group-hover/item:hidden pointer-fine:group-focus-within/item:hidden";
@@ -238,9 +229,29 @@ function Row({
 }
 
 /** The row as a text field: Enter saves, Escape cancels, leaving the field saves. Empty brings the original name back. */
-function RenameRow({ s, lead, indent, onDone }: { s: SessionSummary; lead?: ReactNode; indent?: boolean; onDone: (title: string | null, viaKey: boolean) => void }) {
-  const [value, setValue] = useState(s.title);
+function RenameRow({
+  s,
+  lead,
+  indent,
+  draft,
+  onDone,
+}: {
+  s: SessionSummary;
+  lead?: ReactNode;
+  indent?: boolean;
+  draft: { current: string | null };
+  onDone: (title: string | null, viaKey: boolean) => void;
+}) {
+  const [resumed] = useState(() => draft.current !== null);
+  const [value, setValue] = useState(() => draft.current ?? s.title);
   const done = useRef(false);
+  /* a field that unmounts because its row moved must not save what it had (a blur on removal would) */
+  useLayoutEffect(() => {
+    done.current = false;
+    return () => {
+      done.current = true;
+    };
+  }, []);
   const finish = (title: string | null, viaKey: boolean) => {
     if (done.current) return;
     done.current = true;
@@ -253,9 +264,17 @@ function RenameRow({ s, lead, indent, onDone }: { s: SessionSummary; lead?: Reac
         autoFocus
         value={value}
         maxLength={200}
-        onChange={(e) => setValue(e.target.value)}
-        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => {
+          setValue(e.target.value);
+          draft.current = e.target.value;
+        }}
+        onFocus={(e) => {
+          const el = e.currentTarget;
+          if (resumed) el.setSelectionRange(el.value.length, el.value.length);
+          else el.select();
+        }}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter") {
             e.preventDefault();
             finish(value, true);
@@ -608,7 +627,7 @@ export function SessionList({
   collapseLabel?: string;
   error: string | null;
   /** opens the Agents or Files tab */
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
   activeView?: string | null;
   /** approvals, failures and finished turns waiting in the inbox */
   inbox?: number;
@@ -662,7 +681,8 @@ export function SessionList({
   const projects = useMemo(() => groupProjects(shown), [shown]);
 
   const [menu, setMenu] = useState<{ s: SessionSummary; at: MenuAt; where: RowWhere } | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<RowControl["renaming"]>(null);
+  const renameDraft = useRef<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
   useEffect(() => {
@@ -689,7 +709,8 @@ export function SessionList({
     const { s, where } = menu;
     if (action === "rename") {
       setMenu(null);
-      setRenaming(`${where}:${s.id}`);
+      renameDraft.current = null;
+      setRenaming({ id: s.id, where });
       return;
     }
     closeMenu(true);
@@ -706,9 +727,11 @@ export function SessionList({
   const ctl: RowControl = {
     menuFor: menu ? `${menu.where}:${menu.s.id}` : null,
     renaming,
+    draft: renameDraft,
     openMenu: (s, at, where) => setMenu((cur) => (cur?.s.id === s.id && cur.where === where && at instanceof HTMLElement ? null : { s, at, where })),
     rename: (s, where, title, viaKey) => {
       setRenaming(null);
+      renameDraft.current = null;
       if (viaKey) focusRow(s.id, where);
       if (title === null) return;
       const t = title.replace(/\s+/g, " ").trim();
@@ -792,6 +815,7 @@ export function SessionList({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 /* Enter opens the top match; Escape clears, then folds the field away */
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 if (e.key === "Enter" && matches?.[0]) onPick(matches[0].id);
                 if (e.key === "Escape") {
                   e.stopPropagation();
@@ -1018,6 +1042,11 @@ export function SessionList({
         <ThemeToggle />
         <span className="flex items-center gap-1">
           <NotifyButton />
+          {onView && (
+            <IconButton label="Settings" tipPos="bottom-end" onClick={() => onView("@settings")} pressed={activeView === "@settings"}>
+              <Settings width={17} height={17} strokeWidth={1.8} aria-hidden />
+            </IconButton>
+          )}
           <IconButton
             label="Sign out"
             tipPos="bottom-end"
@@ -1053,7 +1082,7 @@ export function SessionRail({
   onPick: (id: string) => void;
   onNew: () => void;
   onExpand: () => void;
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
   inbox?: number;
 }) {
   const mod = useModKey();

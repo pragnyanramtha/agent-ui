@@ -1,7 +1,8 @@
 "use client";
 
 import { useSetting } from "@/lib/client/settings";
-import { comboFor } from "@/lib/client/shortcuts";
+import { comboFor, modalOpen } from "@/lib/client/shortcuts";
+import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
@@ -773,6 +774,8 @@ export function Composer({
             addFiles(pasted);
           }}
           onKeyDown={(e) => {
+            /* the keys belong to the input method while it composes (Enter picks a candidate) */
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
             if (slashOpen && commands.length) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -791,7 +794,7 @@ export function Composer({
               return;
             }
             /* Ctrl/Cmd+Enter sends; plain Enter too when the setting is on, on a desktop keyboard */
-            if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.nativeEvent.isComposing) {
+            if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
               if (e.ctrlKey || e.metaKey || (sendWithEnter && window.matchMedia("(pointer: fine)").matches)) {
                 e.preventDefault();
                 recall.current = null;
@@ -800,7 +803,7 @@ export function Composer({
               }
             }
             /* Esc stops a running turn when there's nothing typed */
-            if (e.key === "Escape" && running && onStop && !draft && !openMenu) {
+            if (e.key === "Escape" && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
               e.preventDefault();
               onStop();
               return;
@@ -809,14 +812,16 @@ export function Composer({
             const el = e.currentTarget;
             if ((e.key === "ArrowUp" || e.key === "ArrowDown") && history?.length && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
               const stepping = recall.current !== null && draft === history[recall.current];
-              if (e.key === "ArrowUp" && (!draft || stepping) && el.selectionStart === el.selectionEnd && (!draft || el.selectionStart === 0 || stepping)) {
+              const collapsed = el.selectionStart === el.selectionEnd;
+              /* in a multi-line message the arrows move the caret until it reaches the first or last line */
+              if (e.key === "ArrowUp" && (!draft || stepping) && collapsed && onFirstLine(draft, el.selectionStart)) {
                 const next = recall.current === null || !stepping ? history.length - 1 : Math.max(0, recall.current - 1);
                 e.preventDefault();
                 recall.current = next;
                 setDraft(history[next]);
                 return;
               }
-              if (e.key === "ArrowDown" && stepping && recall.current !== null) {
+              if (e.key === "ArrowDown" && stepping && recall.current !== null && collapsed && onLastLine(draft, el.selectionEnd)) {
                 e.preventDefault();
                 const next = recall.current + 1;
                 recall.current = next < history.length ? next : null;

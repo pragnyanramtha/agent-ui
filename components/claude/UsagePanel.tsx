@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Xmark } from "iconoir-react";
 import type { SessionView } from "@/lib/client/useSession";
 import { terminalBusy } from "@/lib/status";
+import { modalOpen } from "@/lib/client/shortcuts";
 import {
   contextOf,
   contextSeries,
@@ -272,7 +273,7 @@ export function UsagePanel({ view, onClose }: { view: SessionView; onClose: () =
 
   useEffect(() => {
     ref.current?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
