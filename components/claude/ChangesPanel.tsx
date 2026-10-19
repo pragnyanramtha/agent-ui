@@ -9,6 +9,7 @@ import { DiffBlock } from "./DiffBlock";
 import { PathLabel } from "./PathLabel";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
 import { modalOpen } from "@/lib/client/shortcuts";
+import { useReturnFocus } from "@/lib/client/a11y";
 
 type Edit = { before: string; after: string; ts: string; kind: "edit" | "write"; failed: boolean };
 export type FileChange = { path: string; edits: Edit[]; added: number; removed: number; last: string };
@@ -54,8 +55,8 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
   const totals = useMemo(() => changes.reduce((t, f) => ({ added: t.added + f.added, removed: t.removed + f.removed }), { added: 0, removed: 0 }), [changes]);
   const rel = (p: string) => (cwd && p.startsWith(`${cwd.replace(/\/+$/, "")}/`) ? p.slice(cwd.replace(/\/+$/, "").length + 1) : p);
 
+  useReturnFocus(ref);
   useEffect(() => {
-    ref.current?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
