@@ -6,7 +6,7 @@ import { api, ApiError } from "./api";
 
 type Listing = { sessions: SessionSummary[]; projects: string[] };
 
-export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null };
+export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
 /* Edits shown before the server confirms them, shared by every mounted list. */
 const overrides = new Map<string, Partial<SessionSummary>>();
@@ -25,7 +25,7 @@ export function inOrder<T>(key: string, task: () => Promise<T>, queues: Map<stri
   return run;
 }
 
-/** Pin, archive or rename a session: shows at once, saves (after any earlier save of the same session, so an
+/** Pin, archive, rename or snooze a session: shows at once, saves (after any earlier save of the same session, so an
  * archive and its quick undo can't swap), then reloads the list. Throws when the save fails. */
 export async function patchSession(id: string, change: SessionChange): Promise<void> {
   const shown: Partial<SessionSummary> = { ...overrides.get(id) };
@@ -34,6 +34,8 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   if (change.archived === true && change.pinned === undefined) shown.pinned = false;
   if (change.pinned === true && change.archived === undefined) shown.archived = false;
   if (change.title) shown.title = change.title;
+  if (change.snoozedUntil !== undefined) shown.snoozedUntil = change.snoozedUntil ?? undefined;
+  if (change.archived === true && change.snoozedUntil === undefined) shown.snoozedUntil = undefined;
   overrides.set(id, shown);
   bumpAll();
   try {

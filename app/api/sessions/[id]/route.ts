@@ -56,7 +56,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ entries, cursor });
 }
 
-/** Pin, archive or rename: { pinned?: boolean, archived?: boolean, title?: string | null }. An empty title clears it. */
+/** Pin, archive, rename or snooze: { pinned?: boolean, archived?: boolean, title?: string | null, snoozedUntil?: number | null }.
+ * An empty title clears it; a null snoozedUntil wakes the session. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: raw } = await params;
   const key = parseSessionKey(decodeURIComponent(raw));
@@ -69,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (patch.title !== undefined) {
       void shownTitle(key.agent, key.native, meta.title).then((title) => postToSession(k, { type: "title", title }), () => undefined);
     }
-    return NextResponse.json({ ok: true, pinned: Boolean(meta.pinned), archived: Boolean(meta.archived), title: meta.title ?? null });
+    return NextResponse.json({ ok: true, pinned: Boolean(meta.pinned), archived: Boolean(meta.archived), title: meta.title ?? null, snoozedUntil: meta.snoozedUntil ?? null });
   } catch (err) {
     return NextResponse.json({ error: `Couldn't save: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }

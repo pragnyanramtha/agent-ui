@@ -87,6 +87,8 @@ export type SessionSummary = {
   /** set from the list's row menu; archived rows still come back so they can be restored */
   pinned?: boolean;
   archived?: boolean;
+  /** hidden from the main lists until then (epoch ms); only sent while it's still ahead */
+  snoozedUntil?: number;
 };
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
