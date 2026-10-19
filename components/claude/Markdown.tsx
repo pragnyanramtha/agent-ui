@@ -127,7 +127,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
     <button
       type="button"
       title={title}
-      aria-label={done ? "Copied" : title}
+      aria-label={done ? "Copied" : `Copy table as ${label}`}
       onClick={() =>
         onCopy().then((ok) => {
           if (!ok) return;
