@@ -9,6 +9,7 @@ import { adapterFor, parseSessionKey, sessionKey } from "@/lib/server/agents";
 import { agentHistory } from "@/lib/server/agents/routes";
 import { postToSession } from "@/lib/server/fallback";
 import { getSessionMeta, parseSessionMetaPatch, pickProfile, setSessionMeta } from "@/lib/server/profiles";
+import { deleteSession } from "@/lib/server/delete-session";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   } catch (err) {
     return NextResponse.json({ error: `Couldn't save: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 });
   }
+}
+
+/** Hides the session for good: { transcript?: boolean } also removes its one transcript file from the agent's own store.
+ * Refused while the session is running. */
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: raw } = await params;
+  const body = (await req.json().catch(() => null)) as { transcript?: unknown } | null;
+  if (body !== null && (typeof body !== "object" || Array.isArray(body))) return NextResponse.json({ error: "Send a JSON object." }, { status: 400 });
+  if (body?.transcript !== undefined && typeof body.transcript !== "boolean") return NextResponse.json({ error: "transcript must be true or false." }, { status: 400 });
+  const res = await deleteSession(decodeURIComponent(raw), { transcript: body?.transcript === true });
+  if (!res.ok) return NextResponse.json({ error: res.error }, { status: res.status });
+  return NextResponse.json({ ok: true, transcriptDeleted: res.removed !== null });
 }
 
 /** What open streams should show after a rename: the custom title, else the one from the transcript. */

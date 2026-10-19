@@ -36,6 +36,9 @@ export type AgentId = "claude" | "codex" | "opencode" | "cursor" | "devin" | "ki
 
 export const AGENT_IDS: AgentId[] = ["claude", "codex", "opencode", "cursor", "devin", "kimi", "gemini", "antigravity"];
 
+/** Agents that keep each session in one file of their own, which "Delete" can remove on request. */
+export const TRANSCRIPT_DELETABLE: AgentId[] = ["claude", "codex", "gemini"];
+
 export const AGENT_LABEL: Record<AgentId, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", cursor: "Cursor", devin: "Devin", kimi: "Kimi", gemini: "Gemini CLI", antigravity: "Antigravity" };
 
 /** An agent profile as the browser sees it (secrets masked). */

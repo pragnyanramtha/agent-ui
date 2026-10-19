@@ -10,6 +10,8 @@ export type SessionChange = { pinned?: boolean; archived?: boolean; title?: stri
 
 /* Edits shown before the server confirms them, shared by every mounted list. */
 const overrides = new Map<string, Partial<SessionSummary>>();
+/* deleted sessions leave every list at once */
+const gone = new Set<string>();
 const hooks = new Set<{ bump: () => void; refresh: (fresh?: boolean) => Promise<void> }>();
 const bumpAll = () => hooks.forEach((h) => h.bump());
 
@@ -59,6 +61,36 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   } finally {
     if (overrides.get(id) === shown) overrides.delete(id);
     bumpAll();
+  }
+}
+
+/** Deletes a session for good (and its transcript file when `transcript`): gone from the list at once, back if the
+ * server refuses. Throws with the server's reason. */
+export async function deleteSession(id: string, transcript: boolean): Promise<void> {
+  gone.add(id);
+  bumpAll();
+  try {
+    await inOrder(id, async () => {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        throw new ApiError("Signed out", 401);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+      }
+      await Promise.all([...hooks].map((h) => h.refresh(true)));
+    });
+  } catch (err) {
+    gone.delete(id);
+    bumpAll();
+    throw err;
   }
 }
 
@@ -138,11 +170,13 @@ export function useSessions(intervalMs = 5000) {
 
   const sessions = useMemo(() => {
     if (!data) return null;
-    if (!overrides.size) return data.sessions;
-    return data.sessions.map((s) => {
-      const o = overrides.get(s.id);
-      return o ? { ...s, ...o } : s;
-    });
+    if (!overrides.size && !gone.size) return data.sessions;
+    return data.sessions
+      .filter((s) => !gone.has(s.id))
+      .map((s) => {
+        const o = overrides.get(s.id);
+        return o ? { ...s, ...o } : s;
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, version]);
 

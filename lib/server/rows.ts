@@ -16,7 +16,7 @@ export function withMeta(s: SessionSummary, m: SessionMeta | undefined): Session
   };
 }
 
-/** Every session the list shows, Claude and the other agents, newest first. Archived ones included. */
+/** Every session the list shows, Claude and the other agents, newest first. Archived ones included, deleted ones not. */
 export async function sessionRows(): Promise<SessionSummary[]> {
   const [sessions, others] = await Promise.all([listSessions(), agentSummaries().catch(() => [])]);
   const meta = allSessionMeta();
@@ -27,6 +27,7 @@ export async function sessionRows(): Promise<SessionSummary[]> {
     }),
     ...others,
   ]
+    .filter((s) => !meta[s.id]?.deleted)
     .map((s) => withMeta(s, meta[s.id]))
     .sort((a, b) => b.mtime - a.mtime);
 }

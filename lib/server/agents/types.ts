@@ -58,4 +58,7 @@ export interface AgentAdapter {
   /** state of the web-driven run for this session, if one exists */
   runState(id: string): CliRunState | null;
   stop(id: string): Promise<void>;
+  /** every file the agent's own store keeps this session's history in, and the folders that store lives under;
+   * agents without one file per session leave this out (their history can't be deleted from here) */
+  transcriptFiles?(id: string): Promise<{ files: string[]; roots: string[] }>;
 }

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Xmark } from "iconoir-react";
-import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
+import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
+import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
-import { patchSession, type SessionChange } from "@/lib/client/useSessions";
+import { deleteSession, patchSession, type SessionChange } from "@/lib/client/useSessions";
 import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
@@ -15,6 +15,7 @@ import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";
 import { copyText } from "./CodeCard";
+import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -338,9 +339,9 @@ function RenameRow({
   );
 }
 
-type RowAction = "pin" | "rename" | "read" | "archive" | "path" | "id" | "link" | "wake" | { snooze: number };
+type RowAction = "pin" | "rename" | "read" | "archive" | "path" | "id" | "link" | "delete" | "wake" | { snooze: number };
 
-/** Pin, rename, mark read, snooze, archive and the copy actions for one row, floating at the pointer or under the "..." button.
+/** Pin, rename, mark read, snooze, archive, the copy actions and delete for one row, floating at the pointer or under the "..." button.
  * Snooze opens its presets in place, so it works the same on a phone. */
 function RowMenu({
   s,
@@ -485,10 +486,89 @@ function RowMenu({
           {s.cwd && item("path", "Copy folder path", <Folder {...icon} />)}
           {item("id", "Copy session ID", <Hashtag {...icon} />)}
           {item("link", "Copy link", <Link {...icon} />)}
+          <div className="mx-2 my-1 h-px bg-line" />
+          <button type="button" role="menuitem" onClick={() => onAction("delete")} className="menu-item text-red-ink">
+            <span className="flex size-4 shrink-0 items-center justify-center">
+              <Trash {...icon} />
+            </span>
+            <span className="min-w-0 flex-1 truncate">Delete…</span>
+          </button>
         </>
       )}
     </div>,
     document.body,
+  );
+}
+
+/** Confirms a delete. The transcript file goes only when ticked, and only for agents that keep one file per session. */
+function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: () => void; onDeleted: (transcript: boolean) => void }) {
+  const [transcript, setTranscript] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const running = isBusy(s) || (s.web?.pending.length ?? 0) > 0;
+  const fileOk = TRANSCRIPT_DELETABLE.includes(s.agent);
+  const inTerminal = Boolean(s.terminal);
+  const agent = AGENT_LABEL[s.agent];
+  const close = useCallback(() => !busy && onClose(), [busy, onClose]);
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteSession(s.id, fileOk && transcript && !inTerminal);
+      onDeleted(fileOk && transcript && !inTerminal);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      title="Delete session?"
+      onClose={close}
+      footer={
+        <>
+          <button type="button" onClick={close} disabled={busy} className={secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" data-autofocus={running ? undefined : true} onClick={() => void go()} disabled={running || busy} className={`${primaryBtn} bg-red text-white`}>
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </>
+      }
+    >
+      <p className="text-[13.5px] leading-relaxed text-ink-2">
+        <span className="font-medium text-ink [overflow-wrap:anywhere]">{s.title}</span> leaves the list on every device. This can&apos;t be undone.
+      </p>
+      {fileOk ? (
+        <label className={`mt-3 flex items-start gap-2.5 text-[13.5px] leading-snug ${inTerminal ? "text-ink-3" : "text-ink"}`}>
+          <input
+            type="checkbox"
+            checked={transcript && !inTerminal}
+            disabled={inTerminal || busy}
+            onChange={(e) => setTranscript(e.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-[var(--color-red)]"
+          />
+          <span>
+            Also delete the transcript file
+            <span className="mt-0.5 block text-[12.5px] text-ink-3">
+              {inTerminal ? "It's open in a terminal, so the file stays." : transcript ? `Removes the history from ${agent}'s own storage too.` : `Otherwise the history stays in ${agent}'s own storage.`}
+            </span>
+          </span>
+        </label>
+      ) : (
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-3">The history stays in {agent}&apos;s own storage.</p>
+      )}
+      {running && (
+        <p className="mt-3 rounded-control bg-orange-tint px-2.5 py-2 text-[13px] text-orange-ink">
+          {(s.web?.pending.length ?? 0) > 0 ? "It's waiting on you. Answer or stop it first." : "It's running. Stop it first."}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 rounded-control bg-red-tint px-2.5 py-2 text-[13px] text-red-ink">
+          {error}
+        </p>
+      )}
+    </Sheet>
   );
 }
 
@@ -719,12 +799,15 @@ export function SessionList({
   inbox = 0,
   finished = NONE_FINISHED,
   onUnread,
+  onDeleted,
 }: {
   sessions: SessionSummary[] | null;
   activeId: string | null;
   /** sessions that finished a turn this device hasn't opened since */
   finished?: Finished;
   onUnread?: (s: SessionSummary, unread: boolean) => void;
+  /** a session was deleted: close its tab */
+  onDeleted?: (id: string) => void;
   /** kept for callers; open tabs no longer change how a row reads */
   openIds?: { id: string }[];
   onPick: (id: string) => void;
@@ -803,6 +886,8 @@ export function SessionList({
   const renameDraft = useRef<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
+  const [deleting, setDeleting] = useState<SessionSummary | null>(null);
+  const closeDelete = useCallback(() => setDeleting(null), []);
   const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -826,6 +911,11 @@ export function SessionList({
   const onAction = (action: RowAction) => {
     if (!menu) return;
     const { s, where } = menu;
+    if (action === "delete") {
+      setMenu(null);
+      setDeleting(s);
+      return;
+    }
     if (action === "rename") {
       setMenu(null);
       renameDraft.current = null;
@@ -1148,6 +1238,18 @@ export function SessionList({
         )}
       </div>
 
+      {deleting && (
+        <DeleteDialog
+          key={deleting.id}
+          s={sessions?.find((x) => x.id === deleting.id) ?? deleting}
+          onClose={closeDelete}
+          onDeleted={(transcript) => {
+            setDeleting(null);
+            onDeleted?.(deleting.id);
+            say(transcript ? "Session and transcript deleted." : "Session deleted.");
+          }}
+        />
+      )}
       {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} unread={Boolean(finished[menu.s.id])} onClose={closeMenu} onAction={onAction} />}
 
       <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">

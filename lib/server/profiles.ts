@@ -227,8 +227,9 @@ export function saveProfiles(list: unknown[]): { ok: true } | { error: string } 
 
 /* ── which profile a session runs on ─────────────────────── */
 
-/** What the user set on a session in the list: pinned, archived, a title of their own, snoozed until (epoch ms). */
-export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string; snoozedUntil?: number };
+/** What the user set on a session in the list: pinned, archived, a title of their own, snoozed until (epoch ms),
+ * or deleted (never listed again). */
+export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string; snoozedUntil?: number; deleted?: boolean };
 export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
 type State = { sessionProfiles?: Record<string, string>; sessionMeta?: Record<string, SessionMeta> };
@@ -265,6 +266,7 @@ export const SNOOZE_MAX_MS = 366 * 86_400_000;
 const cleanMeta = (raw: unknown): SessionMeta => {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
+  if (r.deleted === true) return { deleted: true };
   const out: SessionMeta = {};
   if (r.pinned === true) out.pinned = true;
   if (r.archived === true) out.archived = true;
@@ -353,6 +355,17 @@ export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMet
   for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
   writeJson(STATE_PATH, { ...s, sessionMeta: map });
   return next;
+}
+
+/** Hides a session from the list for good; whatever else was set on it goes. */
+export function markSessionDeleted(key: string) {
+  const s = readState();
+  const map = allSessionMeta();
+  delete map[key];
+  map[key] = { deleted: true };
+  const keys = Object.keys(map);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
+  writeJson(STATE_PATH, { ...s, sessionMeta: map });
 }
 
 /* ── the profile a request runs under ────────────────────── */
