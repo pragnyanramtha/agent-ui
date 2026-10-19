@@ -146,9 +146,9 @@ describe("gemini chat entries", () => {
   });
 
   it("skips slash commands only, not messages that start with / or ?", () => {
-    const typed = ["/stats", "/chat save x", "/memory-add", "/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails"];
+    const typed = ["/stats", "/chat save x", "/memory add x", "/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails", "/tmp is full, clean it", "/home has no space"];
     const texts = geminiEntries(foldChat(jsonl(header, ...typed.map((t, i) => user(`u${i}`, t))))).map((e) => e.kind === "user" && e.text);
-    expect(texts).toEqual(["/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails"]);
+    expect(texts).toEqual(["/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails", "/tmp is full, clean it", "/home has no space"]);
   });
 
   it("marks failed shell commands and drops the report's wrapper", () => {
@@ -164,6 +164,10 @@ describe("gemini chat entries", () => {
             call("boom", "<untrusted_context>\nOutput: boom\nExit Code: 3\nProcess Group PGID: 46645\n</untrusted_context>", "boom"),
             call("empty", "<untrusted_context>\nOutput: (empty)\nProcess Group PGID: 46643\n</untrusted_context>"),
             call("bg", "<untrusted_context>\nOutput: two\nlines\nBackground PIDs: 12\nProcess Group PGID: 11\n</untrusted_context>"),
+            /* the command's own output says "Exit Code": only the trailer counts */
+            call("echo1", "<untrusted_context>\nOutput: tests passed\nExit Code: 1\nProcess Group PGID: 9\n</untrusted_context>", "tests passed\nExit Code: 1"),
+            call("echo0", "<untrusted_context>\nOutput: Exit Code: 0\nExit Code: 3\nProcess Group PGID: 9\n</untrusted_context>", "Exit Code: 0"),
+            call("nodisplay", "<untrusted_context>\nOutput: Exit Code: 0\nbad\nExit Code: 2\nProcess Group PGID: 9\n</untrusted_context>"),
           ],
         }),
       ),
@@ -172,6 +176,9 @@ describe("gemini chat entries", () => {
     expect(result("boom")).toMatchObject({ result: { text: "boom", isError: true } });
     expect(result("empty")).toMatchObject({ result: { text: "", isError: false } });
     expect(result("bg")).toMatchObject({ result: { text: "two\nlines", isError: false } });
+    expect(result("echo1")).toMatchObject({ result: { isError: false } });
+    expect(result("echo0")).toMatchObject({ result: { isError: true } });
+    expect(result("nodisplay")).toMatchObject({ result: { text: "Exit Code: 0\nbad", isError: true } });
   });
 });
 
