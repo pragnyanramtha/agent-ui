@@ -8,6 +8,7 @@ import { WebTerminal, type TerminalTarget } from "./WebTerminal";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
+import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
 import { SettingsScreen } from "./SettingsScreen";
@@ -107,6 +108,9 @@ export function App() {
   const infos = useMemo(() => openTabs.map((t) => describeTab(t, byId.get(t.id), sessions !== null)), [openTabs, byId, sessions]);
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
   const { finished, dismiss } = useFinished(sessions, sessionId);
+  useEffect(() => {
+    if (sessionId) preloadMarkdown();
+  }, [sessionId]);
   const inbox = inboxCount(sessions, finished);
 
   useEffect(() => {
