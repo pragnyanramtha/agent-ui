@@ -55,6 +55,10 @@ const TMUX_PREFIX = "agentu-";
 
 const SECRET = process.env.UI_SECRET ?? "";
 if (SECRET.length < 32) throw new Error("UI_SECRET must be set to at least 32 characters");
+/* the cookie key and the login password stay in this process: shells, agents and any tmux server started from here
+ * inherit process.env (the same keys as lib/server/child-env.ts) */
+const APP_SECRETS = ["UI_SECRET", "UI_PASSWORD", "UI_PASSWORD_HASH"];
+for (const k of APP_SECRETS) delete process.env[k];
 const CLAUDE_HOME = process.env.CLAUDE_HOME ?? path.join(os.homedir(), ".claude");
 const INTERNAL_KEY = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
 
@@ -84,7 +88,9 @@ function validCookie(header) {
     return false;
   }
   const [expires, sig, extra] = value.split(".");
-  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || Number(expires) < Date.now()) return false;
+  /* the same lifetime as lib/auth.ts: SESSION_DAYS (30) plus a minute */
+  const until = Number(expires);
+  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || until < Date.now() || until > Date.now() + 30 * 86_400_000 + 60_000) return false;
   const want = createHmac("sha256", SECRET).update(expires).digest("base64url");
   return want.length === sig.length && timingSafeEqual(Buffer.from(want), Buffer.from(sig));
 }
@@ -248,6 +254,12 @@ const tmuxArg = (s) => (s.endsWith(";") ? `${s.slice(0, -1)}\\;` : s);
 
 function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, rows }) {
   const name = `${TMUX_PREFIX}${randomBytes(4).toString("hex")}`;
+  /* a tmux server started by an older version of this service still holds the app's secrets in its global environment */
+  try {
+    tmux(APP_SECRETS.flatMap((k, i) => [...(i ? [";"] : []), "set-environment", "-g", "-u", k]));
+  } catch {
+    /* no server yet: the one started below gets this process's environment */
+  }
   /* profile secrets would show in /proc/<pid>/cmdline as `-e KEY=value` (tmux has no value-less -e), so the shell
    * reads them from a private file and deletes it */
   let envDir = null;
@@ -580,7 +592,7 @@ function internalOk(req) {
 }
 
 const strList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-const strMap = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([k, x]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof x === "string"));
+const strMap = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([k, x]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof x === "string" && !APP_SECRETS.includes(k)));
 
 async function internal(req, res, url) {
   if (!internalOk(req)) return reply(res, 401, { error: "unauthorized" });

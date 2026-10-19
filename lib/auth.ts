@@ -27,6 +27,9 @@ function safeEqual(a: string, b: string) {
   return diff === 0;
 }
 
+/** not expired, and not further out than a cookie we sign could be (a minute of slack for clock steps) */
+const inLifetime = (expires: number) => expires >= Date.now() && expires <= Date.now() + SESSION_DAYS * 86_400_000 + 60_000;
+
 export async function signSession() {
   const expires = Date.now() + SESSION_DAYS * 86_400_000;
   return `${expires}.${await hmac(String(expires))}`;
@@ -35,6 +38,6 @@ export async function signSession() {
 export async function verifySession(cookie: string | undefined) {
   if (!cookie) return false;
   const [expires, sig, extra] = cookie.split(".");
-  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || Number(expires) < Date.now()) return false;
+  if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || !inLifetime(Number(expires))) return false;
   return safeEqual(sig, await hmac(expires));
 }

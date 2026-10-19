@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
+import { childEnv } from "./child-env";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
  * throwaway index so HEAD, the branch and the staging area are never touched), rewinding to one, the branch's
@@ -23,7 +24,7 @@ function git(cwd: string, args: string[], opts: { env?: Record<string, string>; 
     execFile(
       opts.bin ?? "git",
       args,
-      { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...opts.env }, timeout: opts.timeout ?? 20_000, maxBuffer: 32 * 1024 * 1024 },
+      { cwd, env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }, opts.env), timeout: opts.timeout ?? 20_000, maxBuffer: 32 * 1024 * 1024 },
       (err, stdout, stderr) => {
         if (!err) return resolve(stdout);
         const msg = (stderr.trim() ? stderr : stdout.trim() ? stdout : err.message).trim().split("\n").filter(Boolean).slice(-3).join(" ");
@@ -72,7 +73,7 @@ async function snapshot(root: string): Promise<{ tree: string; skipped: string[]
       execFile(
         "git",
         ["add", "-A", "--ignore-errors", "--", "."],
-        { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...env }, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
+        { cwd: root, env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }, env), timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
         (err, _out, stderr) => resolve(err ? { code: err.code, stderr, message: stderr.trim().split("\n").filter(Boolean).slice(-3).join(" ") || err.message } : null),
       ),
     );
@@ -193,7 +194,7 @@ const MAX_EXCLUDES = 1000;
 /** stdout up to `cap` bytes; the process is stopped once it's reached */
 function gitCapped(cwd: string, args: string[], cap: number): Promise<{ out: string; cut: boolean }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("git", args, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("git", args, { cwd, env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" }), stdio: ["ignore", "pipe", "pipe"] });
     const chunks: Buffer[] = [];
     let size = 0;
     let cut = false;

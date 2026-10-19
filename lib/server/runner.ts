@@ -4,6 +4,7 @@ import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
+import { childEnv } from "./child-env";
 import type { ResolvedProfile } from "./profiles";
 
 /** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
@@ -130,7 +131,7 @@ export class Run {
         settingSources: ["user", "project", "local"],
         systemPrompt: { type: "preset", preset: "claude_code" },
         pathToClaudeCodeExecutable: (p?.bin ? p.binPath : null) ?? CLAUDE_BIN,
-        ...(p && Object.keys(p.env).length ? { env: { ...process.env, ...p.env } } : {}),
+        env: childEnv(p?.env),
         ...(p?.args.length ? profileArgs(p.args, (p.bin ? p.binPath : null) ?? CLAUDE_BIN) : {}),
         canUseTool: this.canUseTool,
         stderr: (data) => process.stderr.write(`[claude ${this.state.sessionId.slice(0, 8)}] ${data}`),

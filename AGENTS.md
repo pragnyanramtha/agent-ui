@@ -82,6 +82,9 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
   and `ALLOWED_HOSTS` are answered; other Hosts get 421 and the WebSocket is refused. With neither variable set (servers
   set up before this existed) any Host is accepted and a warning is logged; rerun `scripts/setup.sh` or set one.
 - The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade.
+- `UI_SECRET`, `UI_PASSWORD` and `UI_PASSWORD_HASH` never reach child processes: every spawn takes its env from
+  `lib/server/child-env.ts`, profiles can't expand them, and `server/pty.mjs` drops them from its own env at startup
+  (and from the global env of a tmux server it reuses). Session cookies expiring more than 30 days out are refused.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes

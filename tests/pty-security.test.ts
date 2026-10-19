@@ -66,6 +66,8 @@ beforeAll(async () => {
       TERM: "xterm-256color",
       TMUX_TMPDIR: home,
       ALLOWED_HOSTS: "agent.example,pinned.example:8443",
+      UI_PASSWORD: "pw-in-env-123",
+      UI_PASSWORD_HASH: "scrypt:salt-in-env:hash-in-env",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -107,5 +109,43 @@ describe("web terminal backend: Host allowlist", () => {
     await until(() => c.out().includes("host-2-ok"));
     c.ws.send(JSON.stringify({ type: "input", data: "exit\r" }));
     await c.closed;
+  });
+});
+
+const INTERNAL = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
+const internal = (p: string, body?: unknown) =>
+  fetch(`http://${HOST}${p}`, { method: body ? "POST" : "GET", headers: { "x-agent-u-internal": INTERNAL, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+const LEAK = /UI_SECRET|UI_PASSWORD|pw-in-env-123|hash-in-env|test-secret-/;
+
+describe("web terminal backend: secrets", () => {
+  it("a web shell's environment has no app secrets", async () => {
+    const c = connect(`cwd=${encodeURIComponent(home)}`);
+    await until(() => c.msgs.some((m) => m.type === "hello"));
+    c.ws.send(JSON.stringify({ type: "input", data: "env; echo env-$((6*7))-done\r" }));
+    await until(() => c.out().includes("env-42-done"));
+    expect(c.out()).toContain("HOME=");
+    expect(c.out()).not.toMatch(LEAK);
+    c.ws.send(JSON.stringify({ type: "input", data: "exit\r" }));
+    await c.closed;
+  });
+
+  it("refuses a validly signed cookie that expires further out than a session can last", async () => {
+    const c = connect("cwd=/", { Cookie: cookie(Date.now() + 365 * 86_400_000) });
+    expect((await c.closed).code).toBe(4401);
+  });
+
+  it.skipIf(!hasTmux)("agents launched in tmux don't get them, also from a tmux server that already had them", async () => {
+    /* a tmux server an older agent-u-pty started, with the secrets in its global environment */
+    spawnSync("tmux", ["new-session", "-d", "-s", "older", "sleep 60"], { env: { ...process.env, TMUX: undefined, TMUX_TMPDIR: home, UI_SECRET: SECRET, UI_PASSWORD: "pw-in-env-123" }, stdio: "ignore" });
+    const out = path.join(home, "tmux-env.out");
+    const res = await internal("/internal/launch", { cmd: "sh", args: ["-c", `env > ${out}; sleep 30`], env: { UI_SECRET: "from-request", OK_VAR: "kept" }, cwd: home, label: "env" });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    await until(() => fs.existsSync(out) && fs.readFileSync(out, "utf8").includes("OK_VAR"));
+    const env = fs.readFileSync(out, "utf8");
+    expect(env).toContain("OK_VAR=kept");
+    expect(env).not.toMatch(LEAK);
+    expect(env).not.toContain("from-request");
+    await internal("/internal/kill", { id });
   });
 });
