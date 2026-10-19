@@ -2,19 +2,22 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDown, ChatPlusIn, ClipboardCheck, Copy, Erase, SelectWindow } from "iconoir-react";
+import { ArrowDown, ChatPlusIn, ClipboardCheck, Copy, Erase, Search, SelectWindow } from "iconoir-react";
 
-export type TerminalAction = "copy" | "paste" | "select-all" | "clear" | "bottom" | "chat";
+export type TerminalAction = "copy" | "paste" | "select-all" | "clear" | "bottom" | "chat" | "find";
 
 /** The terminal's right-click (or long-press) menu, at the pointer */
 export function TerminalMenu({
   at,
   hasSelection,
+  findKey,
   onAction,
   onClose,
 }: {
   at: { x: number; y: number };
   hasSelection: boolean;
+  /** shown next to Find */
+  findKey?: string;
   onAction: (action: TerminalAction) => void;
   onClose: () => void;
 }) {
@@ -85,6 +88,7 @@ export function TerminalMenu({
       {item("paste", "Paste", <ClipboardCheck {...icon} />)}
       {item("select-all", "Select all", <SelectWindow {...icon} />)}
       <div className="mx-2 my-1 h-px bg-line" />
+      {item("find", "Find", <Search {...icon} />, { hint: findKey })}
       {item("bottom", "Scroll to bottom", <ArrowDown {...icon} />)}
       {item("clear", "Clear", <Erase {...icon} />)}
     </div>,

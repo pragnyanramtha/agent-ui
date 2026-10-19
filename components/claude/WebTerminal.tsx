@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
-import { comboFor, isMac } from "@/lib/client/shortcuts";
+import { comboFor, hasMod, isMac, keyLabels } from "@/lib/client/shortcuts";
 import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
-import { oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
+import { isDarkColor, oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
 import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
+import { TerminalFind } from "./TerminalFind";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -123,11 +124,12 @@ export function WebTerminal({
     setConn("connecting");
     setReason(null);
     (async () => {
-      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }] = await Promise.all([
+      const [{ Terminal }, { FitAddon }, { Unicode11Addon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
         import("@xterm/xterm"),
         import("@xterm/addon-fit"),
         import("@xterm/addon-unicode11"),
         import("@xterm/addon-web-links"),
+        import("@xterm/addon-search"),
       ]);
       /* xterm measures glyphs on a canvas, which can't resolve CSS variables: use the real families, once loaded */
       const mono = getComputedStyle(document.body).getPropertyValue("--font-mono-face").trim();
@@ -160,6 +162,16 @@ export function WebTerminal({
       term.loadAddon(new Unicode11Addon());
       term.unicode.activeVersion = "11";
       term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
+      const search = new SearchAddon({ highlightLimit: 2000 });
+      term.loadAddon(search);
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === "keydown" && e.shiftKey && hasMod(e) && e.code === "KeyF") {
+          e.preventDefault();
+          openFindRef.current();
+          return false;
+        }
+        return true;
+      });
       term.open(hostRef.current);
       /* the GPU renderer draws box art and Nerd Font icons cell-exact; fall back to the DOM renderer without WebGL */
       try {
@@ -177,6 +189,7 @@ export function WebTerminal({
         return;
       }
       fit.fit();
+      setSearch(search);
 
       /* connection loop: a kept terminal is re-joined by id from the last byte seen */
       let kept: string | null = tgt.term ?? null;
@@ -339,6 +352,8 @@ export function WebTerminal({
         ws?.close(4000, "closed by viewer");
         term.dispose();
         termRef.current = null;
+        setSearch(null);
+        setFind(null);
       };
     })().catch((err: unknown) => {
       if (disposed) return;
@@ -429,6 +444,19 @@ export function WebTerminal({
     termRef.current?.focus();
   };
 
+  const [search, setSearch] = useState<import("@xterm/addon-search").SearchAddon | null>(null);
+  /* the find bar, and a counter that refocuses its field when asked to open again */
+  const [find, setFind] = useState<{ n: number; dark: boolean } | null>(null);
+  const openFindRef = useRef(() => {});
+  openFindRef.current = () => {
+    setMenu(null);
+    setFind((f) => ({ n: (f?.n ?? 0) + 1, dark: isDarkColor(termRef.current?.options.theme?.background ?? "#000000") }));
+  };
+  const closeFind = () => {
+    setFind(null);
+    termRef.current?.focus();
+  };
+  const findKey = keyLabels(["Mod", "Shift", "F"]).join(isMac() ? "" : "+");
   const [menu, setMenu] = useState<{ x: number; y: number; selection: boolean } | null>(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -487,6 +515,7 @@ export function WebTerminal({
     const t = termRef.current;
     if (!t) return;
     const selection = t.getSelection();
+    if (action === "find") return openFindRef.current();
     if (action === "chat") {
       if (!selection.trim()) return;
       if (sendToComposer(fenceBlock(selection))) {
@@ -581,12 +610,13 @@ export function WebTerminal({
         <div className="relative min-h-0 flex-1">
           <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" />
           {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
+          {find && search && <TerminalFind search={search} dark={find.dark} focusKey={find.n} onClose={closeFind} />}
           {notice && (
             <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-[12px] text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
               {notice}
             </p>
           )}
-          {menu && <TerminalMenu at={menu} hasSelection={menu.selection} onAction={(a) => void act(a)} onClose={closeMenu} />}
+          {menu && <TerminalMenu at={menu} hasSelection={menu.selection} findKey={findKey} onAction={(a) => void act(a)} onClose={closeMenu} />}
         </div>
         <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
           <button type="button" onPointerDown={(e) => e.preventDefault()} onClick={() => void paste()} className="h-10 min-w-10 shrink-0 rounded-[8px] bg-hover px-3 font-mono text-[12.5px] text-ink-2 active:bg-hover-2">
