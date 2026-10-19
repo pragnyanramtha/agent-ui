@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { sameOrigin, signedIn } from "@/lib/guard";
+import { hostOk, sameOrigin, signedIn } from "@/lib/guard";
 
 const PUBLIC = ["/login", "/api/auth/login", "/manifest.webmanifest", "/icon.svg", "/apple-touch-icon.png", "/sw.js"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const api = pathname.startsWith("/api/");
+
+  if (!hostOk(req)) return new NextResponse("Unknown host.", { status: 421, headers: { "Content-Type": "text/plain" } });
 
   /* state-changing API calls must come from this origin (see lib/guard.ts) */
   if (api && req.method !== "GET" && req.method !== "HEAD" && !sameOrigin(req)) return NextResponse.json({ error: "Bad origin" }, { status: 403 });

@@ -99,6 +99,25 @@ function sameOrigin(req) {
   }
 }
 
+/* Host allowlist, the same rules as lib/hosts.ts: loopback names, ALLOWED_HOSTS and PUBLIC_HOSTNAME; any Host when unset */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+function splitHost(value) {
+  const m = /^(\[[0-9a-f:.]+\]|[^:/\s[\]]+)(?::(\d{1,5}))?$/.exec(String(value ?? "").trim().toLowerCase());
+  return m ? [m[1].replace(/\.$/, ""), m[2] ?? ""] : ["", ""];
+}
+const ALLOWED_HOSTS = (() => {
+  const raw = [...(process.env.ALLOWED_HOSTS ?? "").split(","), process.env.PUBLIC_HOSTNAME ?? ""].map((s) => s.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""));
+  const list = raw.filter(Boolean).map(splitHost).filter(([name]) => name);
+  return list.length ? list : null;
+})();
+if (!ALLOWED_HOSTS) console.warn("agent-u pty: neither ALLOWED_HOSTS nor PUBLIC_HOSTNAME is set, so any Host header is accepted (DNS rebinding). Set one in .env.local.");
+function hostOk(req) {
+  if (!ALLOWED_HOSTS) return true;
+  const [name, port] = splitHost(req.headers.host);
+  if (!name) return false;
+  return LOOPBACK.has(name) || ALLOWED_HOSTS.some(([n, p]) => n === name && (!p || p === port));
+}
+
 const envOf = (pid, key) => {
   try {
     const m = new RegExp(`(?:^|\0)${key}=([^\0]*)`).exec(fs.readFileSync(`/proc/${pid}/environ`, "utf8"));
@@ -628,6 +647,7 @@ async function internal(req, res, url) {
 }
 
 const server = http.createServer((req, res) => {
+  if (!hostOk(req)) return res.writeHead(421).end();
   const url = new URL(req.url ?? "/", "http://local");
   if (url.pathname.startsWith("/internal/")) {
     internal(req, res, url).catch((err) => reply(res, 500, { error: String(err?.message ?? err) }));
@@ -643,6 +663,7 @@ server.on("upgrade", (req, socket, head) => {
     socket.write(`HTTP/1.1 ${code} ${msg}\r\nConnection: close\r\n\r\n`);
     socket.destroy();
   };
+  if (!hostOk(req)) return refuse(421, "Misdirected Request");
   if (url.pathname !== "/pty") return refuse(404, "Not Found");
   if (!sameOrigin(req)) return refuse(403, "Bad Origin");
   /* past the origin check, refusals go over the socket: a browser only sees a raw HTTP refusal as a network error */

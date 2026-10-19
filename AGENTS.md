@@ -17,7 +17,8 @@ All machine-specific values live in gitignored env files; `.env.example` documen
   because Next's dotenv expands `$`; wins if both are set), `UI_SECRET` (32+ chars, signs the session cookie), optional `CLAUDE_BIN`, `CLAUDE_HOME`, `HIDE_PROJECTS`,
  `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
  `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
- `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, plus any secrets profiles reference as `${NAME}`.
+ `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, `PUBLIC_HOSTNAME` (written by `scripts/setup.sh`) and `ALLOWED_HOSTS` (comma list of
+ other names the site is reached by, `host` or `host:port`; see Security model), plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
 - Optional, also on your machine and gitignored: `.env.server` (KEY=value lines `scripts/setup.sh` merges into the server's
  `.env.local`) and `agent-u.config.json` (the profiles file it installs).
@@ -74,7 +75,10 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 - One password for everything; the site can open a shell on the server, so treat the password like an SSH key.
 - Middleware gates every page and API route on the signed `cui_session` cookie (HttpOnly, SameSite=strict, Secure behind
   HTTPS); state-changing API calls also need a same-origin `Origin`. Login is rate limited per IP.
-- The web terminal backend (`server/pty.mjs`) re-checks the cookie and origin on the WebSocket upgrade.
+- Host allowlist against DNS rebinding (`lib/hosts.ts`, copied in `server/pty.mjs`): only loopback names, `PUBLIC_HOSTNAME`
+  and `ALLOWED_HOSTS` are answered; other Hosts get 421 and the WebSocket is refused. With neither variable set (servers
+  set up before this existed) any Host is accepted and a warning is logged; rerun `scripts/setup.sh` or set one.
+- The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes
