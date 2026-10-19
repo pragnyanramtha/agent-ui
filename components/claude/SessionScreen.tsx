@@ -11,7 +11,7 @@ import { appendToDraft, fillTextarea, INSERT_INTO_COMPOSER_EVENT, type InsertInt
 import { carryOver, loadEffort, saveEffort } from "@/lib/client/storage";
 import { effortFromCommand, effortOptions } from "@/lib/agent-traits";
 import { serverId, useSession } from "@/lib/client/useSession";
-import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
+import { answerAsk, failureText, postReliably, transient, type Answer } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { useGitInfo } from "@/lib/client/useGitInfo";
@@ -30,6 +30,9 @@ import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { TaskPill } from "./TaskPill";
+import { latestTasks, showTasks } from "@/lib/client/tasks";
+import type { PendingAsk } from "@/lib/types";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -306,6 +309,32 @@ export function SessionScreen({
 
   /* the cards show a failure themselves and offer the answer again */
   const respond = useCallback((body: Answer) => answerAsk(id, body), [id]);
+
+  /* "Deny with note…": the composer takes the reason. Claude hears it with the denial; the other agents'
+   * approvals carry no reason, so there it follows the denial as a message */
+  const [noteFor, setNoteFor] = useState<Extract<PendingAsk, { kind: "permission" }> | null>(null);
+  useEffect(() => setNoteFor(null), [id]);
+  const noteAsk = noteFor && run?.pending.some((p) => p.requestId === noteFor.requestId) ? noteFor : null;
+  useEffect(() => {
+    if (noteFor && !noteAsk) setNoteFor(null);
+  }, [noteFor, noteAsk]);
+  const sendNote = useCallback(
+    async (text: string) => {
+      if (!noteAsk) return false;
+      const message = text.trim();
+      try {
+        await respond({ requestId: noteAsk.requestId, allow: false, ...(agent === "claude" ? { message } : {}) });
+      } catch (err) {
+        setError(failureText(err));
+        return false;
+      }
+      setNoteFor(null);
+      if (agent !== "claude") void send(message);
+      return true;
+    },
+    [noteAsk, respond, agent, send],
+  );
+  const tasks = useMemo(() => latestTasks(view.entries), [view.entries]);
 
   /* status as a quiet mark + word; below 480px only the mark shows for calm states, states that need you keep the word */
   const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
@@ -696,7 +725,7 @@ export function SessionScreen({
         )}
         bottomPad={composerH}
         changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
-        footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} /> : null}
+        footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} onNote={setNoteFor} noting={noteAsk?.requestId ?? null} /> : null}
         empty={
           view.status === "missing" ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
@@ -759,13 +788,15 @@ export function SessionScreen({
                 {error}
               </p>
             )}
+            {showTasks(tasks, Boolean(busy)) && <TaskPill key={id} progress={tasks} live={Boolean(busy)} />}
             <Composer
               draftKey={id}
               agent={agent}
               placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
               history={sentTexts}
               onSend={send}
-              running={Boolean(busy && (run || terminal))}
+              note={noteAsk ? { label: `Denying: ${noteAsk.title}`, placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : null}
+              running={Boolean(busy && (run || terminal) && !noteAsk)}
               onStop={() => (live ? void control("interrupt") : void pressKey("Escape"))}
               slashCommands={run?.slashCommands ?? []}
               mode={mode}
@@ -793,7 +824,7 @@ export function SessionScreen({
               defaultEffort={profileInfo?.defaultEffort ?? null}
               onEffortChange={pickEffort}
               usage={usage}
-              suggestion={run?.suggestion ?? null}
+              suggestion={noteAsk ? null : (run?.suggestion ?? null)}
               cost={cost}
               costUsd={run?.costUsd ?? null}
               onAppCommand={(name, arg) => {
