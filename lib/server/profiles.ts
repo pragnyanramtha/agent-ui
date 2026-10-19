@@ -227,9 +227,10 @@ export function saveProfiles(list: unknown[]): { ok: true } | { error: string } 
 
 /* ── which profile a session runs on ─────────────────────── */
 
-/** What the user set on a session in the list: pinned, archived, a title of their own. */
-export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string };
-export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null };
+/** What the user set on a session in the list: pinned, archived, a title of their own, snoozed until (epoch ms),
+ * or deleted (never listed again). */
+export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string; snoozedUntil?: number; deleted?: boolean };
+export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
 type State = { sessionProfiles?: Record<string, string>; sessionMeta?: Record<string, SessionMeta> };
 const readState = (): State => {
@@ -260,18 +261,22 @@ export function setSessionProfile(key: string, profile: string) {
 /* ── pinned, archived and renamed sessions ───────────────── */
 
 export const TITLE_MAX = 200;
+export const SNOOZE_MAX_MS = 366 * 86_400_000;
 
 const cleanMeta = (raw: unknown): SessionMeta => {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
+  if (r.deleted === true) return { deleted: true };
   const out: SessionMeta = {};
   if (r.pinned === true) out.pinned = true;
   if (r.archived === true) out.archived = true;
   if (typeof r.title === "string" && r.title.trim()) out.title = r.title.trim().slice(0, TITLE_MAX);
+  /* a snooze that has run out is gone: the session is back */
+  if (typeof r.snoozedUntil === "number" && Number.isFinite(r.snoozedUntil) && r.snoozedUntil > Date.now()) out.snoozedUntil = Math.round(r.snoozedUntil);
   return out;
 };
 
-/** Every session the user pinned, archived or renamed, by session key. */
+/** Every session the user pinned, archived, renamed or snoozed, by session key. */
 export function allSessionMeta(): Record<string, SessionMeta> {
   const raw = readState().sessionMeta;
   if (!raw || typeof raw !== "object") return {};
@@ -285,13 +290,13 @@ export function allSessionMeta(): Record<string, SessionMeta> {
 
 export const getSessionMeta = (key: string): SessionMeta => allSessionMeta()[key] ?? {};
 
-/** A strict reading of a PATCH body: only pinned, archived and title, with the right types. */
+/** A strict reading of a PATCH body: only pinned, archived, title and snoozedUntil, with the right types. */
 export function parseSessionMetaPatch(body: unknown): SessionMetaPatch | string {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "Send a JSON object.";
   const r = body as Record<string, unknown>;
   const keys = Object.keys(r);
   if (!keys.length) return "Nothing to change.";
-  const unknown = keys.find((k) => k !== "pinned" && k !== "archived" && k !== "title");
+  const unknown = keys.find((k) => k !== "pinned" && k !== "archived" && k !== "title" && k !== "snoozedUntil");
   if (unknown) return `Unknown field "${unknown.slice(0, 40)}".`;
   const out: SessionMetaPatch = {};
   for (const k of ["pinned", "archived"] as const) {
@@ -308,10 +313,18 @@ export function parseSessionMetaPatch(body: unknown): SessionMetaPatch | string 
       out.title = t || null;
     }
   }
+  if ("snoozedUntil" in r) {
+    const v = r.snoozedUntil;
+    if (v === null) out.snoozedUntil = null;
+    else if (typeof v !== "number" || !Number.isFinite(v)) return "snoozedUntil must be a time in milliseconds or null.";
+    else if (v <= Date.now()) return "Pick a time in the future.";
+    else if (v > Date.now() + SNOOZE_MAX_MS) return "Snooze for less than a year.";
+    else out.snoozedUntil = Math.round(v);
+  }
   return out;
 }
 
-/** Applies a patch and returns what the session ends up with. Archiving unpins; pinning unarchives. */
+/** Applies a patch and returns what the session ends up with. Archiving unpins and wakes; pinning unarchives. */
 export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMeta {
   const s = readState();
   const map = allSessionMeta();
@@ -330,6 +343,11 @@ export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMet
     if (patch.title) next.title = patch.title.slice(0, TITLE_MAX);
     else delete next.title;
   }
+  if (patch.archived === true && patch.snoozedUntil === undefined) patch = { ...patch, snoozedUntil: null };
+  if (patch.snoozedUntil !== undefined) {
+    if (patch.snoozedUntil) next.snoozedUntil = patch.snoozedUntil;
+    else delete next.snoozedUntil;
+  }
   /* re-added last so the newest edits survive the trim below */
   delete map[key];
   if (Object.keys(next).length) map[key] = next;
@@ -337,6 +355,17 @@ export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMet
   for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
   writeJson(STATE_PATH, { ...s, sessionMeta: map });
   return next;
+}
+
+/** Hides a session from the list for good; whatever else was set on it goes. */
+export function markSessionDeleted(key: string) {
+  const s = readState();
+  const map = allSessionMeta();
+  delete map[key];
+  map[key] = { deleted: true };
+  const keys = Object.keys(map);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
+  writeJson(STATE_PATH, { ...s, sessionMeta: map });
 }
 
 /* ── the profile a request runs under ────────────────────── */
