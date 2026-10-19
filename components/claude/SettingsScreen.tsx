@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
 import { OPEN_SETTINGS_SECTION_EVENT, resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
+import { toast } from "@/lib/client/toast";
 import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
 import { SETTINGS_SEARCH_EVENT, takeSettingsSearch } from "@/lib/client/settings-link";
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
 import { SECTION_ICONS, SectionBody } from "./settings/sections";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 const LAST_KEY = "cui:settings-section";
 
@@ -15,41 +18,23 @@ function SectionHeader({ id }: { id: SectionId }) {
   const values = useSettings();
   const info = sectionInfo(id);
   const own = settingsIn(id);
-  const [undo, setUndo] = useState<Partial<Settings> | null>(null);
-  useEffect(() => setUndo(null), [id]);
-  useEffect(() => {
-    if (!undo) return;
-    const t = setTimeout(() => setUndo(null), 6000);
-    return () => clearTimeout(t);
-  }, [undo]);
   const atDefault = sectionIsDefault(values, id);
+  const reset = () => {
+    const before = Object.fromEntries(own.map((d) => [d.key, values[d.key]])) as Partial<Settings>;
+    resetSection(id);
+    toast({ key: "reset-section", tone: "success", title: `${info.label} settings reset`, action: { label: "Undo", run: () => setSettings(before) } });
+  };
   return (
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
       <div className="min-w-0 flex-1">
         <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
         <p className="mt-0.5 text-sm text-ink-3">{info.description}</p>
       </div>
-      {own.length > 0 &&
-        (undo ? (
-          <SmallButton
-            onClick={() => {
-              setSettings(undo);
-              setUndo(null);
-            }}
-          >
-            Undo reset
-          </SmallButton>
-        ) : (
-          <SmallButton
-            disabled={atDefault}
-            onClick={() => {
-              setUndo(Object.fromEntries(own.map((d) => [d.key, values[d.key]])) as Partial<Settings>);
-              resetSection(id);
-            }}
-          >
-            Reset to defaults
-          </SmallButton>
-        ))}
+      {own.length > 0 && (
+        <SmallButton disabled={atDefault} onClick={reset}>
+          Reset to defaults
+        </SmallButton>
+      )}
     </div>
   );
 }
@@ -66,7 +51,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
         onKeyDown={(e) => e.key === "Escape" && value && (e.preventDefault(), onChange(""))}
         placeholder="Search settings"
         aria-label="Search settings"
-        className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3 md:text-sm [&::-webkit-search-cancel-button]:hidden"
+        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 md:text-sm md:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
         <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -77,9 +62,17 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
   );
 }
 
-function Results({ query, onOpen }: { query: string; onOpen: (id: SectionId) => void }) {
+function Results({ query, onOpen, onClear }: { query: string; onOpen: (id: SectionId) => void; onClear: () => void }) {
   const hits = searchSettings(query);
-  if (!hits.length) return <p className="px-1 py-10 text-center text-sm text-ink-3">No settings match &ldquo;{query.trim()}&rdquo;.</p>;
+  if (!hits.length)
+    return (
+      <EmptyState
+        announce
+        icon={<Search width={18} height={18} strokeWidth={1.8} />}
+        {...noMatchCopy(query, "Try another word, like theme, font or notifications.")}
+        actions={[{ label: "Clear search", onClick: onClear }]}
+      />
+    );
   return (
     <>
       {hits.map((h) => {
@@ -230,7 +223,7 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
         <div ref={contentRef} className={`safe-bottom min-w-0 md:block md:flex-1 md:overflow-y-auto md:overscroll-contain ${paged || searching ? "block" : "hidden"}`}>
           <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 pt-2 pb-16 sm:px-6 md:pt-6">
             {searching ? (
-              <Results query={query} onOpen={open} />
+              <Results query={query} onOpen={open} onClear={() => setQuery("")} />
             ) : (
               <>
                 <SectionHeader id={section} />

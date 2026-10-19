@@ -18,7 +18,20 @@ describe("GET /api/settings", () => {
   it("answers defaults (an empty object) before anything is saved", async () => {
     const res = GET();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ settings: {}, updatedAt: 0 });
+    expect(await res.json()).toEqual({ settings: {}, updatedAt: 0, defaults: { gitFetchIntervalMs: 60_000 } });
+  });
+
+  it("names the server's own default for Check the remote", async () => {
+    const saved = process.env.GIT_FETCH_INTERVAL_MS;
+    try {
+      process.env.GIT_FETCH_INTERVAL_MS = "300000";
+      expect((await GET().json()).defaults).toEqual({ gitFetchIntervalMs: 300_000 });
+      process.env.GIT_FETCH_INTERVAL_MS = "0";
+      expect((await GET().json()).defaults).toEqual({ gitFetchIntervalMs: 0 });
+    } finally {
+      if (saved === undefined) delete process.env.GIT_FETCH_INTERVAL_MS;
+      else process.env.GIT_FETCH_INTERVAL_MS = saved;
+    }
   });
 });
 

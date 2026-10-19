@@ -118,7 +118,7 @@ export function Select({
               className={`menu-item cursor-default ${o.disabled ? "opacity-50" : ""}`}
             >
               <span className="min-w-0 flex-1 truncate">{o.label}</span>
-              {o.hint && <span className="shrink-0 text-[12px] text-ink-3">{o.hint}</span>}
+              {o.hint && <span className="shrink-0 text-xs text-ink-3">{o.hint}</span>}
               <Check width={14} height={14} strokeWidth={2} className={`shrink-0 ${o.value === value ? "text-ink-2" : "invisible"}`} aria-hidden />
             </div>
           ))}

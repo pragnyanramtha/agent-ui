@@ -2,7 +2,8 @@
 
 import { Fragment, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { Search, Undo, Xmark } from "iconoir-react";
-import { setSetting } from "@/lib/client/settings";
+import { setSetting, useSetting } from "@/lib/client/settings";
+import { sendChords, sendNote, type SendShortcut } from "@/lib/client/composer-keys";
 import { comboFor, isMac, setRecording, useBindings } from "@/lib/client/shortcuts";
 import {
   allConflicts,
@@ -23,6 +24,8 @@ import {
   type CommandId,
 } from "@/lib/keybindings";
 import { Card } from "./controls";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 const save = (b: Bindings) => setSetting("keybindings", serializeBindings(b));
 
@@ -30,7 +33,7 @@ function Caps({ chord, mac }: { chord: string; mac: boolean }) {
   return (
     <span className="inline-flex items-center gap-0.5">
       {chordParts(chord, mac).map((k, i) => (
-        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] border border-line bg-field px-1.5 font-sans text-[11.5px] leading-none text-ink-2 tabular-nums">
+        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] border border-line bg-field px-1.5 font-sans text-xs leading-none text-ink-2 tabular-nums">
           {k}
         </kbd>
       ))}
@@ -38,9 +41,12 @@ function Caps({ chord, mac }: { chord: string; mac: boolean }) {
   );
 }
 
-function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { cmd: Command; bindings: Bindings; mac: boolean; conflicts: CommandId[]; recording: boolean; onRecord: (on: boolean) => void }) {
+/** A command's keys as shown; Send message follows Settings > Composer > Send with. */
+const shownKeys = (id: CommandId | string, bindings: Bindings, send: SendShortcut) => (id === "send" ? sendChords(send) : keysFor(id, bindings));
+
+function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord, send }: { cmd: Command; bindings: Bindings; mac: boolean; conflicts: CommandId[]; recording: boolean; onRecord: (on: boolean) => void; send: SendShortcut }) {
   const id = cmd.id as CommandId;
-  const keys = keysFor(id, bindings);
+  const keys = shownKeys(id, bindings, send);
   const custom = isCustom(id, bindings);
   const [warn, setWarn] = useState<string | null>(null);
   useEffect(() => {
@@ -72,21 +78,21 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
   };
 
   const others = conflicts.map((o) => commandById(o)!.label);
-  const note = cmd.fixed ?? warn ?? (others.length ? `Same keys as ${others.join(", ")}.` : null);
+  const note = (id === "send" ? sendNote(send) : cmd.fixed) ?? warn ?? (others.length ? `Same keys as ${others.join(", ")}.` : null);
   const tone = !cmd.fixed && (warn || others.length) ? "text-orange-ink" : "text-ink-3";
   return (
     <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1.5 px-3.5 py-2">
       <div className="min-w-[min(100%,12rem)] flex-1">
-        <div className="text-[13.5px] text-ink">{cmd.label}</div>
+        <div className="text-sm text-ink">{cmd.label}</div>
         {note && (
-          <div className={`mt-0.5 text-[12px] leading-relaxed ${tone}`} role={warn ? "status" : undefined}>
+          <div className={`mt-0.5 text-xs leading-relaxed ${tone}`} role={warn ? "status" : undefined}>
             {note}
           </div>
         )}
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {cmd.fixed ? (
-          <span className="flex items-center gap-1.5 px-1.5 text-[11px] text-ink-3">
+          <span className="flex items-center gap-1.5 px-1.5 text-2xs text-ink-3">
             {keys.map((k) => (
               <Caps key={k} chord={k} mac={mac} />
             ))}
@@ -99,12 +105,12 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
             onBlur={() => recording && onRecord(false)}
             aria-label={recording ? `Press the new keys for ${cmd.label}` : `Change shortcut for ${cmd.label}: ${keys.length ? keys.map((k) => chordLabel(k, mac)).join(" or ") : "none"}`}
             aria-pressed={recording}
-            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-control border px-2 text-[11px] text-ink-3 transition-colors ${
+            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-control border px-2 text-2xs text-ink-3 transition-colors ${
               recording ? "border-accent bg-accent-tint text-accent-ink" : "border-transparent hover:border-line hover:bg-hover"
             }`}
           >
             {recording ? (
-              <span className="text-[12px] font-medium">Press keys…</span>
+              <span className="text-xs font-medium">Press keys…</span>
             ) : keys.length ? (
               keys.map((k, i) => (
                 <Fragment key={k}>
@@ -113,7 +119,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
                 </Fragment>
               ))
             ) : (
-              <span className="text-[12px]">None</span>
+              <span className="text-xs">None</span>
             )}
           </button>
         )}
@@ -140,6 +146,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord }: { c
 /** Settings > Keyboard: every command with its shortcuts; click one and press new keys to change it. */
 export function KeyboardSection() {
   const bindings = useBindings();
+  const [send] = useSetting("sendShortcut");
   const [mac, setMac] = useState(false);
   useEffect(() => setMac(isMac()), []);
   const [query, setQuery] = useState("");
@@ -152,7 +159,7 @@ export function KeyboardSection() {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = COMMANDS.filter((c) => {
     if (!words.length) return true;
-    const hay = [c.label, c.group, ...(((c as Command).keywords) ?? []), ...keysFor(c.id, bindings).map((k) => `${k} ${chordLabel(k, mac)}`)].join(" ").toLowerCase();
+    const hay = [c.label, c.group, ...(((c as Command).keywords) ?? []), ...shownKeys(c.id, bindings, send).map((k) => `${k} ${chordLabel(k, mac)}`)].join(" ").toLowerCase();
     return words.every((w) => hay.includes(w));
   });
   const changed = COMMANDS.filter((c) => isCustom(c.id, bindings)).length;
@@ -168,7 +175,7 @@ export function KeyboardSection() {
             onKeyDown={(e) => e.key === "Escape" && query && (e.preventDefault(), e.stopPropagation(), setQuery(""))}
             placeholder="Search shortcuts"
             aria-label="Search shortcuts"
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3 md:text-[13px] [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 md:text-sm md:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
           />
           {query && (
             <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -176,7 +183,7 @@ export function KeyboardSection() {
             </button>
           )}
         </div>
-        {changed > 0 && <span className="text-[12px] text-ink-3">{changed === 1 ? "1 shortcut changed" : `${changed} shortcuts changed`}</span>}
+        {changed > 0 && <span className="text-xs text-ink-3">{changed === 1 ? "1 shortcut changed" : `${changed} shortcuts changed`}</span>}
       </div>
       {COMMAND_GROUPS.map((g) => {
         const rows = shown.filter((c) => c.group === g);
@@ -192,13 +199,22 @@ export function KeyboardSection() {
                 conflicts={conflicts.get(c.id) ?? []}
                 recording={recording === c.id}
                 onRecord={(on) => setRecordingId(on ? c.id : null)}
+                send={send}
               />
             ))}
           </Card>
         );
       })}
-      {!shown.length && <p className="px-1 py-6 text-center text-[13px] text-ink-3">No shortcuts match &ldquo;{query.trim()}&rdquo;.</p>}
-      <p className="px-1 text-[12px] leading-relaxed text-ink-3">
+      {!shown.length && (
+        <EmptyState
+          announce
+          className="py-8"
+          icon={<Search width={18} height={18} strokeWidth={1.8} />}
+          {...noMatchCopy(query, "Search by action, like tab or sidebar, or by key, like K.")}
+          actions={[{ label: "Clear search", onClick: () => setQuery("") }]}
+        />
+      )}
+      <p className="px-1 text-xs leading-relaxed text-ink-3">
         Click a shortcut, then press the new keys. Esc cancels, Backspace removes it.
         {comboFor("shortcuts", mac, { bindings }) && ` Press ${comboFor("shortcuts", mac, { bindings })} outside a text field to see them anywhere.`}
       </p>

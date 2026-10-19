@@ -18,6 +18,7 @@ import {
   diffSettings,
   domState,
   encodeStored,
+  parseServerDefaults,
   parseSettingsFile,
   parseValue,
   pickValid,
@@ -26,6 +27,7 @@ import {
   storageKey,
   themeCache,
   type SectionId,
+  type ServerDefaults,
   type SettingChange,
   type SettingDef,
   type SettingKey,
@@ -43,6 +45,8 @@ export type { Settings, SettingKey } from "@/lib/settings-schema";
 const CHANGE = "agent-u:settings";
 /* changes not yet confirmed by the server, kept so a reload or a dropped connection doesn't lose them */
 const PENDING_KEY = "cui:synced-pending";
+/* what "Server default" means on this server, kept for the first paint */
+const SERVER_DEFAULTS_KEY = "cui:server-defaults";
 const PUSH_DELAY_MS = 400;
 const PULL_EVERY_MS = 5_000;
 
@@ -94,6 +98,34 @@ function saveSynced(next: Partial<Settings>) {
   /* if storage is unavailable the memory copy still holds for this tab */
   cacheRaw = lsGet(SYNCED_CACHE_KEY);
   cache = next;
+}
+
+/* ── server defaults ──────────────────────────────────────── */
+
+let defaultsRaw: string | null | undefined;
+let defaultsCache: ServerDefaults = {};
+const NO_DEFAULTS: ServerDefaults = {};
+
+function serverDefaults(): ServerDefaults {
+  const raw = lsGet(SERVER_DEFAULTS_KEY);
+  if (raw !== defaultsRaw) {
+    defaultsRaw = raw;
+    try {
+      defaultsCache = parseServerDefaults(JSON.parse(raw ?? "{}"));
+    } catch {
+      defaultsCache = {};
+    }
+  }
+  return defaultsCache;
+}
+
+function takeServerDefaults(raw: unknown) {
+  const next = parseServerDefaults(raw);
+  if (JSON.stringify(next) === JSON.stringify(serverDefaults())) return;
+  lsSet(SERVER_DEFAULTS_KEY, JSON.stringify(next));
+  defaultsRaw = lsGet(SERVER_DEFAULTS_KEY);
+  defaultsCache = next;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
 }
 
 /* ── reads and writes ─────────────────────────────────────── */
@@ -183,7 +215,7 @@ export const sectionIsDefault = (values: Settings, section: SectionId) => settin
 
 /* ── React ────────────────────────────────────────────────── */
 
-const OWN_KEYS = new Set<string>([SYNCED_CACHE_KEY, ...SETTING_KEYS.filter((k) => !isSynced(k)).map(storageKey)]);
+const OWN_KEYS = new Set<string>([SYNCED_CACHE_KEY, SERVER_DEFAULTS_KEY, ...SETTING_KEYS.filter((k) => !isSynced(k)).map(storageKey)]);
 
 function subscribe(cb: () => void) {
   const onStorage = (e: StorageEvent) => (!e.key || OWN_KEYS.has(e.key)) && cb();
@@ -209,6 +241,11 @@ export function useSetting<K extends SettingKey>(key: K): [Settings[K], (value: 
 export function useDefaultEffort(agent: AgentId): string {
   const [value] = useSetting(EFFORT_SETTING[agent] ?? "effortClaude");
   return EFFORT_SETTING[agent] && value !== "default" ? value : "";
+}
+
+/** What this server does for settings left at "Server default" (empty until the server has answered once). */
+export function useServerDefaults(): ServerDefaults {
+  return useSyncExternalStore(subscribe, serverDefaults, () => NO_DEFAULTS);
 }
 
 /** Every setting at once, for screens that show many. */
@@ -320,14 +357,14 @@ function schedule(ms: number) {
   timer = setTimeout(() => void flush(), ms);
 }
 
-async function request(method: "GET" | "PUT", body?: unknown): Promise<{ settings?: unknown }> {
+async function request(method: "GET" | "PUT", body?: unknown): Promise<{ settings?: unknown; defaults?: unknown }> {
   const res = await fetch("/api/settings", {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
   });
-  const data = (await res.json().catch(() => ({}))) as { settings?: unknown; error?: string; rejected?: unknown };
+  const data = (await res.json().catch(() => ({}))) as { settings?: unknown; defaults?: unknown; error?: string; rejected?: unknown };
   if (res.status === 400 && Array.isArray(data.rejected)) throw new Refused(data.error ?? "Request failed (400)", data.rejected.filter((k): k is string => typeof k === "string"));
   if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
   return data;
@@ -393,9 +430,10 @@ export async function pull(force = false): Promise<void> {
   lastPull = Date.now();
   const gen = writes;
   try {
-    const res = await request("GET");
+    const data = await request("GET");
     /* a save started or landed meanwhile: its answer is newer than this one */
-    if (gen === writes && !flushing) merge(res.settings);
+    if (gen === writes && !flushing) merge(data.settings);
+    if (data.defaults !== undefined) takeServerDefaults(data.defaults);
   } catch {}
 }
 

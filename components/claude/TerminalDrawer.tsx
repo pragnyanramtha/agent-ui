@@ -102,7 +102,7 @@ export function TerminalDrawer({
                 aria-selected={on}
                 onClick={() => setActive(t.key)}
                 title={info?.label ?? t.target.label}
-                className={`flex h-full max-w-[180px] items-center gap-1.5 font-mono text-[12px] ${tabs.length > 1 ? "pr-1 pl-2" : "px-2"}`}
+                className={`flex h-full max-w-[180px] items-center gap-1.5 font-mono text-xs ${tabs.length > 1 ? "pr-1 pl-2" : "px-2"}`}
               >
                 <span className={`size-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
                 <span className="truncate">{names[i]}</span>

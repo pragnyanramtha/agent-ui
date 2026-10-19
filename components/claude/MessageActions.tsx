@@ -48,7 +48,7 @@ export const MessageActions = memo(function MessageActions({ text, ts, align = "
   return (
     <div
       data-copied={copied || undefined}
-      className={`msg-actions flex h-8 items-center gap-1 text-[12px] text-ink-3 select-none transition-opacity duration-150 motion-reduce:transition-none pointer-fine:absolute pointer-fine:bottom-0 pointer-fine:h-6 pointer-fine:opacity-0 pointer-fine:group-hover/msg:opacity-100 pointer-fine:focus-within:opacity-100 pointer-fine:data-copied:opacity-100 ${
+      className={`msg-actions flex h-8 items-center gap-1 text-xs text-ink-3 select-none transition-opacity duration-150 motion-reduce:transition-none pointer-fine:absolute pointer-fine:bottom-0 pointer-fine:h-6 pointer-fine:opacity-0 pointer-fine:group-hover/msg:opacity-100 pointer-fine:focus-within:opacity-100 pointer-fine:data-copied:opacity-100 ${
         align === "end" ? "flex-row-reverse self-end pointer-fine:right-0 -mr-1.5" : "self-start pointer-fine:left-0 -ml-1.5"
       }`}
     >

@@ -27,6 +27,9 @@ export function setProfilesCache(d: Data) {
   window.dispatchEvent(new Event(PROFILES_CHANGED));
 }
 
+/** Asks the server again (an agent was just installed); every screen showing profiles updates. */
+export const reloadProfiles = () => load(true).then(setProfilesCache);
+
 export function useProfiles() {
   const [data, setData] = useState<Data | null>(cache);
   useEffect(() => {

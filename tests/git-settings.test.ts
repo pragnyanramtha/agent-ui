@@ -81,6 +81,8 @@ describe("background fetch interval", () => {
     expect(g.fetchIntervalMs()).toBe(60_000);
     store({ gitFetchInterval: null });
     expect(g.fetchIntervalMs()).toBe(300_000);
+    store({ gitFetchInterval: "server" });
+    expect(g.fetchIntervalMs()).toBe(300_000);
   });
 
   it("doesn't fetch while it's off, and does once it's back on", async () => {

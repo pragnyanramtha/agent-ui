@@ -5,7 +5,8 @@ import { EditPencil, Folder, List, MailIn, Plus, Settings, Terminal, Xmark } fro
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
-import { AGENT_TONE, AgentBadge, isBusy } from "./SessionList";
+import { AGENT_TONE, AgentBadge, isBusy, useModKey } from "./SessionList";
+import { comboFor, useBindings } from "@/lib/client/shortcuts";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
 import { scrollBehavior } from "@/lib/client/motion";
 
@@ -87,6 +88,9 @@ export function TabBar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
   const [dragging, setDragging] = useState<string | null>(null);
+  const mod = useModKey();
+  const bindings = useBindings();
+  const closeKey = comboFor("closeTab", mod === "⌘", { bindings });
 
   /* fade edges only where there's more to scroll */
   useLayoutEffect(() => {
@@ -177,7 +181,7 @@ export function TabBar({
                 }}
                 data-on={on || undefined}
                 role="presentation"
-                className={`tab-item group/tab relative flex h-8 w-[184px] shrink-0 items-center rounded-control pr-1 text-[13px] transition-[background-color,color,opacity,box-shadow] duration-150 ${dragging === t.id ? "opacity-50" : ""}`}
+                className={`tab-item group/tab relative flex h-8 w-[184px] shrink-0 items-center rounded-control pr-1 text-sm transition-[background-color,color,opacity,box-shadow] duration-150 ${dragging === t.id ? "opacity-50" : ""}`}
                 style={{ animation: "tab-in 220ms cubic-bezier(0.23,1,0.32,1) both" }}
               >
                 <button
@@ -202,7 +206,7 @@ export function TabBar({
                 <button
                   type="button"
                   aria-hidden
-                  title="Close (Alt+W)"
+                  title={closeKey ? `Close (${closeKey})` : "Close"}
                   tabIndex={-1}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onClose(t.id)}
@@ -244,7 +248,7 @@ export function TabsButton({ count, attention, onClick }: { count: number; atten
       data-tabs-opener
       className="relative flex size-10 shrink-0 items-center justify-center rounded-[10px] text-ink-2 hover:bg-hover hover:text-ink lg:hidden"
     >
-      <span className="flex h-[19px] min-w-[19px] items-center justify-center rounded-[6px] border-[1.6px] border-current px-[3px] text-[10.5px] font-semibold tabular-nums leading-none">
+      <span className="flex h-[19px] min-w-[19px] items-center justify-center rounded-[6px] border-[1.6px] border-current px-[3px] text-2xs font-semibold tabular-nums leading-none">
         {count > 99 ? "∞" : count}
       </span>
       {attention && <span className="absolute top-2 right-2 size-2 rounded-full bg-orange ring-2 ring-page" aria-hidden />}
@@ -312,12 +316,12 @@ export function TabSheet({
       >
         <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong" aria-hidden />
         <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-          <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">Open tabs</h2>
-          <span className="text-[12.5px] tabular-nums text-ink-3">{tabs.length}</span>
+          <h2 className="text-base font-semibold tracking-[-0.01em] text-ink">Open tabs</h2>
+          <span className="text-sm tabular-nums text-ink-3">{tabs.length}</span>
           <button
             type="button"
             onClick={onNew}
-            className="tap relative ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-ink shadow-btn transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.97]"
+            className="tap relative ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink shadow-btn transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.97]"
           >
             <Plus width={15} height={15} strokeWidth={2} aria-hidden />
             New
@@ -342,11 +346,11 @@ export function TabSheet({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <span className={`min-w-0 truncate text-[15px] font-medium ${on ? "text-ink" : "text-ink-2"}`}>{t.title}</span>
+                      <span className={`min-w-0 truncate text-md font-medium ${on ? "text-ink" : "text-ink-2"}`}>{t.title}</span>
                       {t.agent !== "claude" && <AgentBadge agent={t.agent} />}
                     </span>
                     {(t.meta || t.needsYou) && (
-                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-3">
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-ink-3">
                         {t.needsYou && <span className="shrink-0 font-medium text-orange-ink">Needs you</span>}
                         {t.needsYou && t.meta && <span aria-hidden>·</span>}
                         {t.meta && <span className="truncate">{t.meta}</span>}
@@ -370,7 +374,7 @@ export function TabSheet({
           <button
             type="button"
             onClick={onAllSessions}
-            className="flex h-11 w-full items-center gap-3 rounded-card px-3 text-left text-[14px] font-medium text-ink-2 hover:bg-hover hover:text-ink"
+            className="flex h-11 w-full items-center gap-3 rounded-card px-3 text-left text-base font-medium text-ink-2 hover:bg-hover hover:text-ink"
           >
             <List width={17} height={17} strokeWidth={1.8} aria-hidden />
             All sessions

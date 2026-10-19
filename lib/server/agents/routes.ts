@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import type { AgentId, PermissionMode, ServerEvent } from "@/lib/types";
-import { parseMode, str } from "../http";
+import { folderGone, parseMode, str } from "../http";
+import { FOLDER_GONE, folderGoneMessage } from "@/lib/empty-states";
 import { InputRefused, inputTarget, typeIntoTerminal } from "../input";
 import { terminalOf, toRunState } from "./bridge";
 import { onDelta, onTurn } from "./cli-run";
@@ -197,6 +198,8 @@ async function sendNow(agent: AgentId, native: string, text: string, o: { id?: s
   const before = pickProfile(agent, null, key);
   const profile = pickProfile(agent, o.profile, key);
   if (!sameStore(before, profile)) return { ok: false, error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, status: 409, code: "other_store" };
+  const cwd = (await a.get(native).catch(() => null))?.cwd;
+  if (cwd && (await folderGone(cwd))) return { ok: false, error: folderGoneMessage(cwd), status: 409, code: FOLDER_GONE };
   try {
     const effort = (o.effort === undefined ? profile.defaultEffort : o.effort) ?? undefined;
     await withProfile(profile, () => a.send(native, text, { model: o.model || profile.defaultModel || profile.models?.[0] || undefined, effort, mode: o.mode }));

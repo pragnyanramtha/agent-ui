@@ -113,7 +113,7 @@ function TestRow() {
 function SignOutRow({ everywhere = false }: { everywhere?: boolean }) {
   const label = everywhere ? "Sign out everywhere" : "Sign out";
   return (
-    <Row label={label} note={everywhere ? "Ends the session on every device, this one too. Agents keep running." : "Ends this browser's session. Agents keep running."}>
+    <Row label={label} note={everywhere ? "Signs out every device, this one too. Agents keep running." : "Signs this browser out. Agents keep running."}>
       <SmallButton
         tone="danger"
         onClick={() => void signOut(everywhere)}

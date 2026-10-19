@@ -1,8 +1,8 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
-import { useSetting, useSettings } from "@/lib/client/settings";
-import { ACCENTS, PALETTES, isShown, settingDef, type EnumSetting, type NumberSetting, type SettingKey, type Settings } from "@/lib/settings-schema";
+import { useServerDefaults, useSetting, useSettings } from "@/lib/client/settings";
+import { ACCENTS, PALETTES, isShown, settingDef, shownOptions, type EnumSetting, type NumberSetting, type SettingKey, type Settings } from "@/lib/settings-schema";
 import { Row, Segmented, Select, Slider, Swatches, Switch } from "./controls";
 import { PalettePicker, useCustomColors, useDarkClass } from "./PalettePicker";
 import { ColorField, CustomThemeField } from "./ThemeFields";
@@ -13,13 +13,14 @@ const fmt = (d: NumberSetting) => (v: number) => `${v}${d.unit ?? ""}`;
 export function SettingControl<K extends SettingKey>({ k, id }: { k: K; id?: string }) {
   const def = settingDef(k);
   const [value, set] = useSetting(k);
+  const serverDefaults = useServerDefaults();
   const setAny = set as (v: unknown) => void;
   switch (def.type) {
     case "boolean":
       return <Switch id={id} checked={value as boolean} onChange={setAny} label={def.label} />;
     case "enum": {
       const d = def as EnumSetting;
-      if (d.control === "select" || (!d.control && d.options.length > 4)) return <Select id={id} value={value as string} options={d.options} onChange={setAny} label={def.label} />;
+      if (d.control === "select" || (!d.control && d.options.length > 4)) return <Select id={id} value={value as string} options={shownOptions(k, d.options, value as string, serverDefaults)} onChange={setAny} label={def.label} />;
       if (d.control === "swatches") return <AccentSwatches value={value as Settings["accent"]} onChange={setAny} />;
       if (d.control === "palette") return <PalettePicker value={value as Settings["palette"]} onChange={setAny} />;
       return <Segmented value={value as string} options={d.options} onChange={setAny} label={def.label} />;
@@ -35,7 +36,7 @@ export function SettingControl<K extends SettingKey>({ k, id }: { k: K; id?: str
     }
     case "string":
       if (def.control === "theme-json") return <CustomThemeField id={id} />;
-      return <input id={id} type="text" value={value as string} maxLength={def.maxLength} placeholder={def.placeholder} onChange={(e) => setAny(e.target.value)} className="field-ring h-8 w-56 rounded-control border border-line bg-field px-2.5 text-sm text-ink outline-none" />;
+      return <input id={id} type="text" value={value as string} maxLength={def.maxLength} placeholder={def.placeholder} onChange={(e) => setAny(e.target.value)} className="field-ring h-8 w-56 rounded-control border border-line bg-field px-2.5 text-[16px] text-ink outline-none sm:text-sm sm:pointer-coarse:text-[16px]" />;
     case "color":
       return <ColorField k={k as "accentColor"} id={id} />;
   }

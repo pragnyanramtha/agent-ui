@@ -8,7 +8,9 @@ import { effortOptions } from "@/lib/agent-traits";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
 import type { Check as HealthRow, CheckStatus as HealthStatus, DoctorReport } from "@/lib/server/doctor";
 import { openServerTerminal } from "@/lib/client/terminals";
-import { setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
+import { reloadProfiles, setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
+import { launcherEmpty } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 import { useSetting } from "@/lib/client/settings";
 import { clockTime } from "@/lib/time-format";
 import { copyText } from "./CodeCard";
@@ -70,6 +72,15 @@ function Launcher({ projects }: { projects: string[] }) {
     setProfile((p) => p || localStorage.getItem("cui:launchProfile") || "claude");
   }, [projects]);
   const chosen = usable.find((p) => p.id === profile) ?? usable[0];
+  const none = launcherEmpty(profiles);
+  const [checking, setChecking] = useState(false);
+  const checkAgain = () => {
+    setChecking(true);
+    void reloadProfiles()
+      .catch(() => setError("Couldn't reach the server."))
+      .finally(() => setChecking(false));
+  };
+  const openShell = () => window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: cwd || undefined, label: `Shell: ${shortPath(cwd || "~")}` } }));
 
   const start = async () => {
     if (!chosen) return;
@@ -94,42 +105,52 @@ function Launcher({ projects }: { projects: string[] }) {
       <H>
         <span id="launch-h">Start an agent</span>
       </H>
-      <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
-        <label className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-medium text-ink-3">Agent</span>
-          <Select
-            label="Agent"
-            value={chosen?.id ?? ""}
-            onChange={setProfile}
-            options={AGENT_IDS.flatMap((a) => usable.filter((p) => p.agent === a)).map((p) => ({ value: p.id, label: p.label, hint: p.installed ? undefined : "Not installed", disabled: !p.installed }))}
+      {none ? (
+        <div className="rounded-[12px] bg-surface shadow-hairline">
+          <EmptyState
+            className="py-8"
+            icon={<Terminal width={18} height={18} strokeWidth={1.8} />}
+            {...none}
+            actions={[
+              { label: "Open a shell", onClick: openShell },
+              { label: checking ? "Checking…" : "Check again", onClick: checkAgain, disabled: checking },
+            ]}
           />
-        </label>
-        <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
-          <span className="text-xs font-medium text-ink-3">Folder</span>
-          <button type="button" onClick={() => setPicker(true)} className={`${field} truncate text-left`} translate="no">
-            {cwd ? shortPath(cwd) : <span className="text-ink-3">Choose a folder</span>}
-          </button>
-        </label>
-        <label className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-medium text-ink-3">Model</span>
-          <input value={model} onChange={(e) => setModel(e.target.value)} list="launch-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
-          <datalist id="launch-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
-        </label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => void start()} disabled={busy || !chosen?.installed} className={`${primaryBtn} flex-1 gap-1.5`}>
-            <Terminal width={15} height={15} strokeWidth={1.9} />
-            {busy ? "Starting…" : "Start"}
-          </button>
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: cwd || undefined, label: `Shell: ${shortPath(cwd || "~")}` } }))}
-            className={secondaryBtn}
-          >
-            Shell
-          </button>
         </div>
-      </div>
-      <p className="px-1 pt-1.5 text-xs text-ink-3">Keeps running after you close the tab.</p>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-xs font-medium text-ink-3">Agent</span>
+            <Select
+              label="Agent"
+              value={chosen?.id ?? ""}
+              onChange={setProfile}
+              options={AGENT_IDS.flatMap((a) => usable.filter((p) => p.agent === a)).map((p) => ({ value: p.id, label: p.label, hint: p.installed ? undefined : "Not installed", disabled: !p.installed }))}
+            />
+          </label>
+          <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
+            <span className="text-xs font-medium text-ink-3">Folder</span>
+            <button type="button" onClick={() => setPicker(true)} className={`${field} truncate text-left`} translate="no">
+              {cwd ? shortPath(cwd) : <span className="text-ink-3">Choose a folder</span>}
+            </button>
+          </label>
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-xs font-medium text-ink-3">Model</span>
+            <input value={model} onChange={(e) => setModel(e.target.value)} list="launch-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
+            <datalist id="launch-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
+          </label>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void start()} disabled={busy || !chosen?.installed} className={`${primaryBtn} flex-1 gap-1.5`}>
+              <Terminal width={15} height={15} strokeWidth={1.9} />
+              {busy ? "Starting…" : "Start"}
+            </button>
+            <button type="button" onClick={openShell} className={secondaryBtn}>
+              Shell
+            </button>
+          </div>
+        </div>
+      )}
+      {!none && <p className="px-1 pt-1.5 text-xs text-ink-3">Keeps running after you close the tab.</p>}
       {error && <p className="mt-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
       <FolderPicker open={picker} value={cwd} recent={projects} onPick={setCwd} onClose={() => setPicker(false)} />
     </section>
@@ -166,11 +187,13 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
       <H aside={data && !data.tmux ? <span className="text-xs text-ink-3">Install tmux so these survive restarts</span> : null}>
         <span id="terms-h">Running</span>
       </H>
-      {data?.error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
+      {data?.error && data.terminals.length > 0 && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
       {data === null ? (
         <p className="px-1 text-sm text-ink-3">Loading terminals…</p>
+      ) : data.error && !data.terminals.length ? (
+        <EmptyState size="inline" tone="error" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Can't list terminals" body={data.error} actions={[{ label: "Try again", onClick: () => void load() }]} />
       ) : data.terminals.length === 0 ? (
-        <p className="px-1 text-sm text-ink-3">Nothing running.</p>
+        <EmptyState size="inline" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {data.terminals.map((t) => (

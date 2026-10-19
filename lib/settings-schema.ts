@@ -13,6 +13,7 @@
 import { effortOptions } from "./agent-traits";
 import type { AgentId } from "./types";
 import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
+import { choiceMs, fetchIntervalLabel } from "./git-interval";
 import { TERMINAL_SCHEMES } from "./client/terminal-theme";
 import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, type Bases } from "./theme";
 import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "./sidebar-width";
@@ -32,8 +33,8 @@ export type SectionInfo = {
 
 export const SECTIONS: readonly SectionInfo[] = [
   { id: "general", label: "General", description: "Theme and your account on this server.", items: [
-      { id: "sign-out", label: "Sign out", description: "Ends this browser's session.", keywords: ["log out", "logout", "account"] },
-      { id: "sign-out-everywhere", label: "Sign out everywhere", description: "Ends the session on every device.", keywords: ["log out", "logout", "revoke", "devices", "account"] },
+      { id: "sign-out", label: "Sign out", description: "Signs this browser out.", keywords: ["log out", "logout", "account"] },
+      { id: "sign-out-everywhere", label: "Sign out everywhere", description: "Signs out every device, this one too.", keywords: ["log out", "logout", "revoke", "devices", "account"] },
     ],
   },
   { id: "appearance", label: "Appearance", description: "Colors, fonts, sizes and spacing." },
@@ -1160,8 +1161,9 @@ export const SETTINGS = {
     description: "Fetches in the background while a session's Git panel is open, so new commits show up.",
     keywords: ["fetch", "background", "poll", "upstream", "behind"],
     scope: "synced",
-    default: "1",
+    default: "server",
     options: [
+      { value: "server", label: "Server default" },
       { value: "off", label: "Off" },
       { value: "1", label: "Every minute" },
       { value: "5", label: "Every 5 minutes" },
@@ -1400,6 +1402,25 @@ export function isShown(def: SettingDef, values: Settings): boolean {
   const [key, want] = def.showIf;
   const v = values[key as SettingKey];
   return Array.isArray(want) ? want.includes(v) : v === want;
+}
+
+/** What this server does for settings left at "Server default" (GET /api/settings sends it as `defaults`). */
+export type ServerDefaults = { gitFetchIntervalMs?: number };
+
+/** The `defaults` a server sent, keeping only fields this build understands. */
+export function parseServerDefaults(raw: unknown): ServerDefaults {
+  const ms = raw && typeof raw === "object" ? (raw as Record<string, unknown>).gitFetchIntervalMs : undefined;
+  return typeof ms === "number" && Number.isFinite(ms) && ms >= 0 ? { gitFetchIntervalMs: ms } : {};
+}
+
+/** A setting's options as its control shows them. "Server default" names what the server does, and the option
+ * that does the same folds into it unless it's the one picked. */
+export function shownOptions<T extends string>(key: SettingKey, options: readonly EnumOption<T>[], value: T, defaults: ServerDefaults): EnumOption<T>[] {
+  if (key !== "gitFetchInterval" || defaults.gitFetchIntervalMs === undefined) return [...options];
+  const ms = defaults.gitFetchIntervalMs;
+  return options
+    .filter((o) => o.value === "server" || o.value === value || choiceMs(o.value) !== ms)
+    .map((o) => (o.value === "server" ? { ...o, label: `${fetchIntervalLabel(ms)} (default)` } : o));
 }
 
 /** The setting that holds an agent's default reasoning effort, for agents that have levels. */

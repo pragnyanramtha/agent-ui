@@ -72,7 +72,7 @@ function transcriptMtime(id: string, dir: string): number {
 function toSession(r: AgyRow, dir: string): AgentSession {
   return {
     id: r.id,
-    title: r.title || r.preview.split("\n")[0].slice(0, 120) || "Antigravity conversation",
+    title: r.title || r.preview.split("\n")[0].slice(0, 120) || "Antigravity session",
     cwd: r.cwd || startedCwds.get(r.id) || "",
     mtime: Math.max(r.mtime, transcriptMtime(r.id, dir)),
     size: 0,
@@ -334,12 +334,12 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
     const deadline = setTimeout(() => {
       if (settled) return;
       stopTurn(run.key);
-      done(new Error("Antigravity didn't start a conversation in time."));
+      done(new Error("Antigravity didn't start a session in time."));
     }, 85_000);
     run.child.on("exit", (code) => {
       setTimeout(() => {
         if (settled) return;
-        done(new Error(friendlyAgyError(run.failure ?? turnState(run.key)?.error ?? lastStderr(run.stderr)) || `Antigravity exited before starting a conversation (code ${code}).`));
+        done(new Error(friendlyAgyError(run.failure ?? turnState(run.key)?.error ?? lastStderr(run.stderr)) || `Antigravity exited before starting a session (code ${code}).`));
       }, 300);
     });
     run.child.on("error", (err) => done(err));
@@ -351,7 +351,7 @@ async function send(id: string, text: string, opts: { model?: string; mode: Perm
   if (!bin) throw new Error("Antigravity isn't installed.");
   const found = locate(id);
   const cwd = found?.row?.cwd || startedCwds.get(id);
-  if (!found && !cwd) throw new Error("Antigravity conversation not found.");
+  if (!found && !cwd) throw new Error("Antigravity session not found.");
   /* agy would otherwise work (often with permissions bypassed) wherever we happen to be */
   if (!cwd) throw new Error("Can't find this session's folder.");
   if (!fs.existsSync(cwd)) throw new Error(`This session's folder is gone: ${cwd}`);

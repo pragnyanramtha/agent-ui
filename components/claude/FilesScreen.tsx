@@ -2,12 +2,14 @@
 
 import { confirmAsk, promptAsk } from "./Ask";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Copy, Download, EditPencil, Eye, EyeClosed, Folder, FolderPlus, Menu, MoreHoriz, NavArrowLeft, NavArrowUp, OpenNewWindow, Page, Refresh, Trash, Upload, Xmark } from "iconoir-react";
+import { Copy, Download, EditPencil, Eye, EyeClosed, Folder, FolderPlus, FolderWarning, Menu, MoreHoriz, NavArrowLeft, NavArrowUp, OpenNewWindow, Page, Refresh, Trash, Upload, Xmark } from "iconoir-react";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
 import { withPreviewCsp } from "@/lib/client/html-preview";
 import { formatBytes, uploadFile } from "@/lib/client/upload";
 import { CodeCard, copyText } from "./CodeCard";
 import { Markdown } from "./Markdown";
+import { folderErrorCopy, type EmptyCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
 
 /* Files on the server: browse, preview artifacts (images, media, markdown, HTML, code), edit text,
  * and move files both ways. Works the same on a phone: the preview takes the screen there. */
@@ -28,6 +30,8 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
   const [listing, setListing] = useState<Listing | null>(null);
   const [file, setFile] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* the folder asked for wouldn't open: shown instead of the list, with the way out */
+  const [unopened, setUnopened] = useState<{ target?: string; copy: EmptyCopy } | null>(null);
   const [loading, setLoading] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -50,6 +54,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         const d = await api<Listing | FileInfo>(`/api/files?${q}`);
         if (n !== reqRef.current) return;
         setError(null);
+        setUnopened(null);
         if (d.kind === "file") {
           setFile(d);
           if (d.parent && d.parent !== listing?.path) void open(d.parent, opts);
@@ -58,7 +63,10 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         setListing(d);
         localStorage.setItem(PATH_KEY, d.path);
       } catch (err) {
-        if (n === reqRef.current) setError(err instanceof ApiError ? err.message : "Couldn't reach the server.");
+        if (n === reqRef.current) {
+          setError(null);
+          setUnopened({ target, copy: err instanceof ApiError ? folderErrorCopy(err.message, err.status) : folderErrorCopy("") });
+        }
       } finally {
         if (n === reqRef.current) setLoading(false);
       }
@@ -260,10 +268,28 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       )}
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-6 sm:px-3">
-        {listing === null && !error ? (
+        {unopened ? (
+          <EmptyState
+            tone="error"
+            icon={<FolderWarning width={18} height={18} strokeWidth={1.8} />}
+            {...unopened.copy}
+            actions={[
+              { label: "Try again", onClick: () => void open(unopened.target) },
+              ...(unopened.target ? [{ label: "Open home folder", onClick: () => void open(), primary: true }] : []),
+            ]}
+          />
+        ) : listing === null ? (
           <p className="px-3 py-6 text-sm text-ink-3">Loading files…</p>
-        ) : listing?.entries.length === 0 ? (
-          <p className="px-3 py-6 text-sm text-ink-3">Empty folder{listing.hiddenCount ? ` (${listing.hiddenCount} hidden)` : ""}</p>
+        ) : listing.entries.length === 0 ? (
+          <EmptyState
+            icon={<Folder width={18} height={18} strokeWidth={1.8} />}
+            title="This folder is empty"
+            body={listing.hiddenCount ? `${listing.hiddenCount} hidden ${listing.hiddenCount === 1 ? "item" : "items"}. Drop files here or upload some.` : "Drop files here or upload some."}
+            actions={[
+              { label: "Upload", onClick: () => inputRef.current?.click() },
+              ...(listing.hiddenCount && !hidden ? [{ label: "Show hidden", onClick: () => (setHidden(true), void open(dir || undefined, { hidden: true })) }] : []),
+            ]}
+          />
         ) : (
           <ul className="flex flex-col">
             {listing?.entries.map((it) => (
