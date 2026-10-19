@@ -4,13 +4,13 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
-import { shortPath, timeAgo } from "@/lib/client/api";
+import { shortPath } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
 import { deleteSession, patchSession, type SessionChange } from "@/lib/client/useSessions";
 import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
-import { snoozePresets, wakeFull, wakeLabel } from "@/lib/client/snooze";
+import { snoozePresets, wakeLabel } from "@/lib/client/snooze";
 import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
@@ -23,6 +23,10 @@ import { useBindings } from "@/lib/client/shortcuts";
 import { keysFor } from "@/lib/keybindings";
 import type { Settings as SettingValues } from "@/lib/settings-schema";
 import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
+import { createFlip } from "@/lib/client/flip";
+import { AgentIcon } from "./AgentIcon";
+import { ProjectIcon, useProjectIcons } from "./ProjectIcon";
+import { SessionHoverCard } from "./SessionHoverCard";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -61,17 +65,6 @@ export function AgentMark({ agent, className = "" }: { agent: AgentId; className
 export function AgentBadge({ agent }: { agent: AgentId }) {
   return <span className="shrink-0 text-[12px] text-ink-3">{AGENT_LABEL[agent]}</span>;
 }
-
-const ago = (ms: number, now: number) => {
-  const t = timeAgo(ms, now);
-  return t === "now" ? "just now" : /\d$/.test(t) ? `on ${t}` : `${t} ago`;
-};
-
-/** The hover title: the full name, the folder, and when (or that it's open). */
-const rowTitle = (s: SessionSummary, now: number) =>
-  `${s.title}\n${s.project || "No folder"} · ${isLive(s) ? "open" : ago(s.mtime, now)}${s.agent !== "claude" ? ` · ${AGENT_LABEL[s.agent]}` : ""}${
-    (s.snoozedUntil ?? 0) > now ? `\nSnoozed until ${wakeFull(s.snoozedUntil!)}` : ""
-  }`;
 
 /** Snoozed and quiet: out of the main lists. A session that's working or waiting on you always shows. */
 export const isAsleep = (s: SessionSummary, now: number) => (s.snoozedUntil ?? 0) > now && !s.archived && !isBusy(s) && !s.web?.pending.length;
@@ -172,8 +165,6 @@ const focusRow = (list: HTMLElement | null, id: string) =>
 type RowProps = {
   id: string;
   title: string;
-  /** the hover title: full name, folder, when */
-  tip: string;
   status: SessionStatus | null;
   /** last activity (or start, or when a snoozed session wakes), already formatted */
   time: string;
@@ -192,7 +183,7 @@ type RowProps = {
 
 /** One session: status dot, title, time. The "..." button covers the time on hover or focus, so nothing reflows.
  * Props are plain values and stable callbacks: a poll that changes one session re-renders only its row. */
-const Row = memo(function Row({ id, title, tip, status, time, agent, active, where, menuOpen, renaming, draft, onPick, onMenu, onRenamed }: RowProps) {
+const Row = memo(function Row({ id, title, status, time, agent, active, where, menuOpen, renaming, draft, onPick, onMenu, onRenamed }: RowProps) {
   if (renaming) return <RenameRow title={title} draft={draft} onDone={(t, viaKey) => onRenamed(id, t, viaKey)} />;
   const tail = menuOpen ? "invisible" : "pointer-fine:group-hover/item:invisible pointer-fine:group-focus-within/item:invisible";
   return (
@@ -212,7 +203,6 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         onClick={() => onPick(id)}
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts="F2 Delete"
-        title={tip}
         className={`side-row gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
       >
         <span className="flex w-1.5 shrink-0 justify-center" aria-hidden>
@@ -220,7 +210,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
         {status && <span className="sr-only">, {STATUS_LABEL[status]}</span>}
-        {agent && <span role="img" aria-label={AGENT_LABEL[agent]} className={`size-2 shrink-0 rounded-[2.5px] opacity-80 ${AGENT_TONE[agent]}`} />}
+        {agent && <AgentIcon agent={agent} size={13} label className="opacity-90" />}
         <span className={`min-w-7 shrink-0 text-right text-[12px] text-ink-3 tabular-nums ${tail}`}>{time}</span>
       </button>
       <button
@@ -581,8 +571,10 @@ function Section({ label, open, onToggle, action, children }: { label: string; o
   );
 }
 
-/** A folder's label: quiet 28px text with a chevron; the session count shows on hover. */
-const ProjectHeader = memo(function ProjectHeader({ id, name, path, count, open, onToggle }: { id: string; name: string; path: string; count: number; open: boolean; onToggle: (id: string) => void }) {
+/** A folder's label: its favicon or monogram, then quiet 28px text; the mark turns into the chevron under a mouse or
+ * keyboard focus, and the session count shows on hover. Without a folder it keeps the plain chevron. */
+const ProjectHeader = memo(function ProjectHeader({ id, name, path, count, open, icon, onToggle }: { id: string; name: string; path: string; count: number; open: boolean; icon: string | null | undefined; onToggle: (id: string) => void }) {
+  const chevron = <NavArrowRight width={12} height={12} strokeWidth={2.2} aria-hidden className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />;
   return (
     <button
       type="button"
@@ -592,7 +584,16 @@ const ProjectHeader = memo(function ProjectHeader({ id, name, path, count, open,
       title={path}
       className="group/ph flex h-7 w-full shrink-0 items-center gap-1.5 rounded-control px-2.5 text-left text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
     >
-      <NavArrowRight width={12} height={12} strokeWidth={2.2} aria-hidden className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+      {id ? (
+        <span className="relative flex size-3.5 shrink-0 items-center justify-center" aria-hidden>
+          <span className={`flex transition-opacity duration-150 pointer-fine:group-hover/ph:opacity-0 group-focus-visible/ph:opacity-0 ${open ? "" : "opacity-60"}`}>
+            <ProjectIcon name={name} icon={icon} size={14} />
+          </span>
+          <span className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-150 pointer-fine:group-hover/ph:opacity-100 group-focus-visible/ph:opacity-100">{chevron}</span>
+        </span>
+      ) : (
+        chevron
+      )}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       <span className="shrink-0 tabular-nums opacity-0 transition-opacity duration-150 group-hover/ph:opacity-100 group-focus-visible/ph:opacity-100" aria-label={`${count} ${count === 1 ? "session" : "sessions"}`}>
         {count}
@@ -1098,7 +1099,6 @@ export const SessionList = memo(function SessionList({
       key={s.id}
       id={s.id}
       title={s.title}
-      tip={rowTitle(s, now)}
       status={sessionStatus(s, Boolean(finished[s.id]))}
       time={time ?? timeOf(sort === "created" ? s.created || s.mtime : s.mtime)}
       agent={showAgents && s.agent !== "claude" ? s.agent : null}
@@ -1156,7 +1156,22 @@ export const SessionList = memo(function SessionList({
   };
 
   const shownProjects = allProjects ? projects : projects.filter((p, i) => i < PROJECT_CAP || p.key === activeProject);
+  const projectIcons = useProjectIcons(view === "project" ? shownProjects.map((p) => p.key).filter(Boolean) : []);
   const recentGroups = groupRows(recent.slice(0, recentCap), groupBy, now);
+
+  /* rows slide to where they move (a poll reorders them, a pin, a rename under Title sort) */
+  const flip = useRef<ReturnType<typeof createFlip> | null>(null);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    flip.current = createFlip(el, { selector: "[data-session-row]", key: (row) => row.dataset.sessionRow, target: (row) => row.parentElement });
+    flip.current.update();
+    return () => {
+      flip.current?.dispose();
+      flip.current = null;
+    };
+  }, []);
+  useLayoutEffect(() => flip.current?.update());
   const palette = () => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT));
   const bindings = useBindings();
   const newKey = keysFor("newSession", bindings)[0];
@@ -1357,7 +1372,7 @@ export const SessionList = memo(function SessionList({
                     const { shown: list, hidden } = fullProjects.has(p.key) ? { shown: p.rows, hidden: 0 } : capRows(p.rows, cap, activeId);
                     return (
                       <div key={p.key} data-nav-group className="flex flex-col gap-px [&:not(:first-child)]:mt-1.5">
-                        <ProjectHeader id={p.key} name={p.name} path={p.key ? shortPath(p.key) : "No folder"} count={p.rows.length} open={open} onToggle={toggleProject} />
+                        <ProjectHeader id={p.key} name={p.name} path={p.key ? shortPath(p.key) : "No folder"} count={p.rows.length} open={open} icon={projectIcons.get(p.key)} onToggle={toggleProject} />
                         {open && (
                           <>
                             {list.map((s) => row(s, "project"))}
@@ -1444,6 +1459,7 @@ export const SessionList = memo(function SessionList({
         />
       )}
       {menu && <RowMenu key={menu.id} s={byId.get(menu.id) ?? menu.s} at={menu.at} unread={Boolean(finished[menu.id])} onClose={closeMenu} onAction={onAction} />}
+      <SessionHoverCard list={listRef} byId={byId} finished={finished} />
 
       <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
         {toast && (
