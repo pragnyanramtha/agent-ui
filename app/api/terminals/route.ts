@@ -9,6 +9,7 @@ import { getProfile, pickProfile } from "@/lib/server/profiles";
 import { getRun } from "@/lib/server/runner";
 import { killTerminal, launchAgent, listTerminals } from "@/lib/server/terminals";
 import { terminalForKey } from "@/lib/server/agents/bridge";
+import { parseEffort } from "@/lib/agent-traits";
 
 /* a double tap (or two devices) must not start two TUIs on one session */
 const launching = new Map<string, Promise<Response>>();
@@ -27,6 +28,7 @@ export async function GET() {
 /**
  * Starts an agent's own TUI in a kept terminal: { profile, cwd } for a new session,
  * or { session } to open an existing one interactively (its folder and agent come from the session).
+ * Optional { model, effort } become the agent's launch flags.
  */
 export async function POST(req: NextRequest) {
   const body = await readJson(req);
@@ -82,7 +84,7 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
   /* the idle web run hands the session over only once the launch can actually happen */
   if (key && native && parseSessionKey(key)?.agent === "claude") getRun(native)?.close();
   try {
-    const t = await launchAgent({ profile, cwd, session: native, sessionKey: key, model: str(body.model) || null, cols: Number(body.cols) || undefined, rows: Number(body.rows) || undefined });
+    const t = await launchAgent({ profile, cwd, session: native, sessionKey: key, model: str(body.model) || null, effort: parseEffort(profile.agent, body.effort), cols: Number(body.cols) || undefined, rows: Number(body.rows) || undefined });
     return NextResponse.json({ ...t, label: profile.label });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });

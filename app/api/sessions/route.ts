@@ -12,6 +12,7 @@ import { guardTurn } from "@/lib/server/fallback";
 import { pickProfile, setSessionProfile } from "@/lib/server/profiles";
 import { beforeTurn } from "@/lib/server/checkpoints";
 import { GitError, moveCheckpoints, newWorktree } from "@/lib/server/git";
+import { parseEffort } from "@/lib/agent-traits";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +69,8 @@ async function start(body: Record<string, unknown>) {
   const profile = pickProfile("claude", body.profile, null);
   const model = str(body.model) || undefined;
   const mode = parseMode(body.permissionMode) ?? "default";
-  const run = startRun({ cwd, model, permissionMode: mode, profile });
+  const effort = parseEffort("claude", body.effort);
+  const run = startRun({ cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   const id = await Promise.race([run.sessionId(), new Promise<string>((r) => setTimeout(() => r(""), 90_000))]);
   if (!id) {
@@ -76,6 +78,6 @@ async function start(body: Record<string, unknown>) {
     return NextResponse.json({ error: run.state.error ?? "Claude didn't start in time." }, { status: 502 });
   }
   setSessionProfile(id, profile.id);
-  guardTurn({ key: id, text, mode, model, profile });
+  guardTurn({ key: id, text, mode, model, effort, profile });
   return NextResponse.json({ id });
 }

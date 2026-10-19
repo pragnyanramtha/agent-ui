@@ -32,8 +32,9 @@ export type CliRunState = {
   pending?: PendingAsk[];
 };
 
-export type StartOptions = { cwd: string; text: string; model?: string; mode: PermissionMode };
-export type SendOptions = { model?: string; mode: PermissionMode };
+/** `effort` is a level from lib/agent-traits.ts; drivers without levels ignore it */
+export type StartOptions = { cwd: string; text: string; model?: string; effort?: string; mode: PermissionMode };
+export type SendOptions = { model?: string; effort?: string; mode: PermissionMode };
 
 export interface AgentAdapter {
   id: AgentId;

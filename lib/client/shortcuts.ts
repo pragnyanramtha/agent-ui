@@ -22,6 +22,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "close-terminal", keys: ["Ctrl", "Shift", "X"], label: "Close terminal", group: "Panels" },
   { id: "send", keys: ["Mod", "Enter"], label: "Send message", group: "Composer" },
   { id: "recall", keys: ["↑"], label: "Edit last message (empty composer)", group: "Composer" },
+  { id: "stash", keys: ["Mod", "S"], label: "Stash the draft", group: "Composer" },
   { id: "stop", keys: ["Esc"], label: "Stop the turn (while working)", group: "Composer" },
 ];
 

@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { AgentId, ServerTerminal } from "@/lib/types";
 import type { ResolvedProfile } from "./profiles";
+import { effortArgs } from "@/lib/agent-traits";
 
 /* Long-lived terminals on the server, owned by the pty backend (server/pty.mjs). They keep
  * running with no browser attached, so an agent started from a phone keeps working when the
@@ -30,14 +31,15 @@ export const listTerminals = () => call<{ terminals: ServerTerminal[]; tmux: boo
 export const killTerminal = (id: string) => call<{ ok: boolean }>("POST", "/internal/kill", { id });
 
 /** argv (after the binary) that opens an agent's own TUI, resuming `session` when given. */
-export function interactiveArgs(agent: AgentId, o: { session?: string | null; model?: string | null; cwd: string }): string[] {
+export function interactiveArgs(agent: AgentId, o: { session?: string | null; model?: string | null; effort?: string | null; cwd: string }): string[] {
   const m = o.model ?? null;
   const s = o.session ?? null;
+  const e = effortArgs(agent, o.effort);
   switch (agent) {
     case "claude":
-      return [...(s ? ["--resume", s] : []), ...(m ? ["--model", m] : [])];
+      return [...(s ? ["--resume", s] : []), ...(m ? ["--model", m] : []), ...e];
     case "codex":
-      return [...(s ? ["resume", s] : []), ...(m ? ["-m", m] : [])];
+      return [...(s ? ["resume", s] : []), ...(m ? ["-m", m] : []), ...e];
     case "opencode":
       return [o.cwd, ...(s ? ["-s", s] : []), ...(m ? ["-m", m] : [])];
     case "cursor":
@@ -53,14 +55,15 @@ export function interactiveArgs(agent: AgentId, o: { session?: string | null; mo
   }
 }
 
-export type Launch = { profile: ResolvedProfile; cwd: string; session?: string | null; sessionKey?: string | null; model?: string | null; cols?: number; rows?: number };
+/** `effort`: undefined uses the profile's default, null none */
+export type Launch = { profile: ResolvedProfile; cwd: string; session?: string | null; sessionKey?: string | null; model?: string | null; effort?: string | null; cols?: number; rows?: number };
 
 /** Starts the profile's agent in a kept terminal; resolves with the terminal id. */
 export async function launchAgent(l: Launch) {
   const p = l.profile;
   const bin = p.bin ? p.binPath : (p.binPath ?? (p.agent === "claude" ? "claude" : null));
   if (!bin) throw new Error(`${p.label} isn't installed.`);
-  const args = [...p.args, ...(p.launchArgs ?? []), ...interactiveArgs(p.agent, { session: l.session, model: l.model ?? p.defaultModel ?? null, cwd: l.cwd })];
+  const args = [...p.args, ...(p.launchArgs ?? []), ...interactiveArgs(p.agent, { session: l.session, model: l.model ?? p.defaultModel ?? null, effort: l.effort === undefined ? p.defaultEffort : l.effort, cwd: l.cwd })];
   const where = l.cwd.split("/").filter(Boolean).pop() ?? l.cwd;
   return call<{ id: string; backing: "tmux" | "pty" }>("POST", "/internal/launch", {
     cmd: bin,

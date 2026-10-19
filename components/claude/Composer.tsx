@@ -1,19 +1,23 @@
 "use client";
 
 import { useSetting } from "@/lib/client/settings";
-import { comboFor, modalOpen } from "@/lib/client/shortcuts";
+import { comboFor, hasMod, modalOpen } from "@/lib/client/shortcuts";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
+import { Archive, ArrowUp, Attachment, Brain, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck, Trash } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { promptAsk } from "./Ask";
 import type { SessionCost } from "@/lib/client/usage";
-import { shortPath } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
 import { load, save } from "@/lib/client/storage";
 import { AGENT_LABEL, type AgentId, type PermissionMode, type ProfileInfo } from "@/lib/types";
 import { withAttachments } from "@/lib/attachments";
 import { AttachmentChips, useAttachments } from "./Attachments";
+import { effortLabel, effortOptions } from "@/lib/agent-traits";
+import { insertMention, mentionAt } from "@/lib/client/mentions";
+import { useFileSearch } from "@/lib/client/useFileSearch";
+import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
 
 /* The composer pill: one calm surface with a "+" menu on the left, the text
  * in the middle, and one quiet agent/model/approvals picker plus send on the
@@ -47,11 +51,11 @@ export function modelLabel(model: string | null) {
 
 export type AgentOption = { id: AgentId; label: string; installed: boolean };
 
-type Menu = "slash" | "pick" | "plus" | null;
+type Menu = "slash" | "mention" | "pick" | "plus" | "stash" | "effort" | null;
 
 const KIND_LABEL: Record<SlashItem["kind"], string> = { app: "This app", builtin: "Claude Code", command: "Your commands", skill: "Skills" };
 
-const MENU_W = { pick: 272, plus: 232 };
+const MENU_W = { pick: 272, plus: 248, effort: 280 };
 
 function MenuShell({
   children,
@@ -140,6 +144,10 @@ export function Composer({
   profile,
   onProfileChange,
   history,
+  effort = "",
+  onEffortChange,
+  defaultEffort = null,
+  root,
 }: {
   draftKey: string;
   placeholder: string;
@@ -183,8 +191,19 @@ export function Composer({
   onProfileChange?: (id: string) => void;
   /** messages already sent in this session, oldest first; Arrow Up in an empty box brings them back */
   history?: string[];
+  /** reasoning effort picked for this session, "" for the default (the profile's, else the agent's own);
+   * the chip shows when the agent has levels and this is handled */
+  effort?: string;
+  onEffortChange?: (effort: string) => void;
+  /** the profile's default level, named on the Default row */
+  defaultEffort?: string | null;
+  /** the session's folder: @ lists its files */
+  root?: string;
 }) {
   const [draft, setDraft] = useState("");
+  const [caret, setCaret] = useState(0);
+  /* where the caret goes once a picked path is in the box */
+  const caretAfter = useRef<number | null>(null);
   const [sendWithEnter] = useSetting("sendWithEnter");
   /* index into `history` while stepping through it with the arrows; null when not recalling */
   const recall = useRef<number | null>(null);
@@ -201,6 +220,7 @@ export function Composer({
   const rootRef = useRef<HTMLDivElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const effortRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const [catalog, setCatalog] = useState<SlashItem[]>([]);
@@ -208,6 +228,8 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileNote, setFileNote] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [stashes, setStashes] = useState<Stash[]>([]);
+  useEffect(() => setStashes(loadStash(root)), [root]);
   const addFiles = (list: FileList | File[]) => setFileNote(files.add(list));
   useEffect(() => {
     if (!fileNote) return;
@@ -268,14 +290,25 @@ export function Composer({
     const disk = agent === "claude" ? catalog : [];
     const known = new Set(disk.map((c) => c.name));
     const live = slashCommands.filter((n) => !known.has(n)).map((name): SlashItem => ({ name, description: "", kind: "command" }));
-    return [...(onAppCommand ? APP_COMMANDS : []), ...disk, ...live];
+    const app = APP_COMMANDS.filter((c) => c.name !== "effort" || effortOptions(agent).length > 0);
+    return [...(onAppCommand ? app : []), ...disk, ...live];
   }, [catalog, slashCommands, onAppCommand, agent]);
   /* "Commands" in the + menu opens the list without touching the text; picking one prefixes it */
   const forcedSlash = menu === "slash";
   const commands = slashQuery !== undefined ? rankCommands(allCommands, slashQuery) : forcedSlash ? rankCommands(allCommands, "") : [];
-  const openMenu: Menu = menu ?? (slashQuery !== undefined && !slashHidden ? "slash" : null);
+  const mention = root && slashQuery === undefined ? mentionAt(draft, caret) : null;
+  const found = useFileSearch(root, mention?.query);
+  const openMenu: Menu = menu ?? (slashHidden ? null : slashQuery !== undefined ? "slash" : mention ? "mention" : null);
 
-  useEffect(() => setActive(0), [slashQuery, forcedSlash]);
+  useEffect(() => setActive(0), [slashQuery, forcedSlash, mention?.query]);
+
+  useLayoutEffect(() => {
+    const at = caretAfter.current;
+    if (at === null) return;
+    caretAfter.current = null;
+    inputRef.current?.setSelectionRange(at, at);
+    setCaret(at);
+  }, [draft]);
 
   /* menus open toward the side of the screen with more room */
   useLayoutEffect(() => {
@@ -296,7 +329,7 @@ export function Composer({
 
   const closeMenu = useCallback(
     (refocus: boolean) => {
-      const trigger = menu === "pick" ? pickRef.current : menu === "plus" ? plusRef.current : inputRef.current;
+      const trigger = menu === "pick" ? pickRef.current : menu === "plus" || menu === "stash" ? plusRef.current : menu === "effort" ? effortRef.current : inputRef.current;
       setMenu(null);
       setSlashHidden(true);
       if (refocus) trigger?.focus();
@@ -329,22 +362,23 @@ export function Composer({
 
   /* the picker takes focus on the checked item (the + menu on its first) so arrows work right away */
   useEffect(() => {
-    if (menu !== "pick" && menu !== "plus") return;
+    if (menu !== "pick" && menu !== "plus" && menu !== "stash" && menu !== "effort") return;
     const root = menuRef.current;
-    const el = (menu === "pick" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
+    const el = (menu !== "plus" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
     el?.focus({ preventScroll: true });
   }, [menu]);
 
-  const toggleMenu = (which: "pick" | "plus") => {
-    if (menu === which) return closeMenu(false);
-    const root = rootRef.current?.getBoundingClientRect();
-    const trigger = (which === "pick" ? pickRef.current : plusRef.current)?.getBoundingClientRect();
-    if (root && trigger) {
-      const w = Math.min(MENU_W[which], root.width);
+  const toggleMenu = (which: "pick" | "plus" | "effort") => {
+    if (menu === which || (which === "plus" && menu === "stash")) return closeMenu(false);
+    if (which === "plus") setStashes(loadStash(root));
+    const box = rootRef.current?.getBoundingClientRect();
+    const trigger = (which === "pick" ? pickRef.current : which === "effort" ? effortRef.current : plusRef.current)?.getBoundingClientRect();
+    if (box && trigger) {
+      const w = Math.min(MENU_W[which], box.width);
       setMenuPos(
-        which === "pick"
-          ? { right: Math.max(0, Math.min(root.right - trigger.right - 4, root.width - w)) }
-          : { left: Math.max(0, Math.min(trigger.left - root.left - 4, root.width - w)) },
+        which !== "plus"
+          ? { right: Math.max(0, Math.min(box.right - trigger.right - 4, box.width - w)) }
+          : { left: Math.max(0, Math.min(trigger.left - box.left - 4, box.width - w)) },
       );
     }
     setMenu(which);
@@ -377,8 +411,51 @@ export function Composer({
     inputRef.current?.focus();
   };
 
+  const keptFiles = () => files.items.filter((a) => a.state === "done" && a.path).map((a) => ({ name: a.name, size: a.size, path: a.path! }));
+  const canStash = Boolean(draft.trim() || keptFiles().length);
+  /** puts the draft (and its uploaded files) aside and clears the box; false when nothing was stashed */
+  const stashDraft = (quiet = false) => {
+    if (files.uploading) return setFileNote("Wait for the upload to finish."), false;
+    const kept = keptFiles();
+    if (!draft.trim() && !kept.length) return !quiet && setFileNote("Nothing to stash."), false;
+    const list = pushStash(root, draft, kept);
+    if (!list) return setFileNote("Couldn't stash. Browser storage is full or turned off."), false;
+    setStashes(list);
+    setDraft("");
+    files.clear();
+    recall.current = null;
+    if (!quiet) setFileNote("Prompt stashed. Restore it from the + menu.");
+    return true;
+  };
+  /* a draft in the box is stashed first, so restoring never loses text */
+  const restoreStash = (s: Stash) => {
+    if ((draft.trim() || files.items.length) && !stashDraft(true)) return;
+    const swapped = Boolean(draft.trim() || files.items.length);
+    setStashes(dropStash(root, s.id));
+    setDraft(s.text);
+    files.restore(s.files);
+    setMenu(null);
+    if (swapped) setFileNote("Your draft was stashed.");
+    inputRef.current?.focus();
+  };
+  const deleteStash = (id: string) => {
+    setStashes(dropStash(root, id));
+    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>(ITEM_SELECTOR)?.focus({ preventScroll: true }));
+  };
+
+  const pickMention = (rel: string) => {
+    if (!mention) return;
+    const next = insertMention(draft, mention.start, mention.end, rel);
+    caretAfter.current = next.caret;
+    setDraft(next.text);
+    inputRef.current?.focus();
+  };
+
   const currentMode = MODES.find((m) => m.key === mode) ?? MODES[0];
+  const efforts = onEffortChange ? effortOptions(agent) : [];
+  const effortName = effortLabel(agent, effort || defaultEffort);
   const slashOpen = openMenu === "slash";
+  const mentionOpen = openMenu === "mention";
   /* with `agents` (even while it loads) the agent is choosable; the Claude section is always there */
   const pickable = agents && onAgentChange;
   const agentLabel = agents?.find((a) => a.id === agent)?.label ?? AGENT_LABEL[agent];
@@ -498,6 +575,46 @@ export function Composer({
         </MenuShell>
       )}
 
+      {mentionOpen && (
+        <MenuShell placement={placement} maxHeight={Math.min(menuMax, 416)}>
+          <div role="listbox" id={`${uid}-files`} aria-label="Files">
+            {found.files.map((f, i) => {
+              const cut = f.lastIndexOf("/");
+              return (
+                <button
+                  key={f}
+                  id={`${uid}-file-${i}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  tabIndex={-1}
+                  ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => pickMention(f)}
+                  className={`flex h-10 w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left transition-colors duration-75 sm:h-8 ${i === active ? "bg-hover" : ""}`}
+                >
+                  <span className="shrink-0 truncate font-mono text-[13px] text-ink sm:text-[12.5px]" translate="no">
+                    {f.slice(cut + 1)}
+                  </span>
+                  {cut > 0 && (
+                    /* rtl keeps the end of a long folder path in view; bdi keeps its characters in order */
+                    <span className="min-w-0 truncate text-[12px] text-ink-3" translate="no" dir="rtl">
+                      <bdi>{f.slice(0, cut)}</bdi>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {found.files.length === 0 && (
+            <p className="px-2.5 py-2 text-[12.5px] text-ink-3">
+              {found.loading ? "Searching files…" : found.error ? "Couldn't list files here." : mention?.query ? `No files match “${mention.query}”.` : "No files here."}
+            </p>
+          )}
+        </MenuShell>
+      )}
+
       {openMenu === "plus" && (
         <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={MENU_W.plus}>
           <div ref={menuRef} role="menu" id={`${uid}-plus`} aria-label="Add" onKeyDown={moveFocus}>
@@ -551,6 +668,81 @@ export function Composer({
               <span>Commands</span>
               <span className="ml-auto text-[12px] text-ink-3">Type /</span>
             </button>
+            <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canStash}
+              onClick={() => {
+                setMenu(null);
+                stashDraft();
+                inputRef.current?.focus();
+              }}
+              className={`${menuRow} disabled:text-ink-3`}
+            >
+              <Archive width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span>Stash prompt</span>
+              <span className="ml-auto text-[12px] text-ink-3 pointer-coarse:hidden">{comboFor("stash")}</span>
+            </button>
+            {stashes.length > 0 && (
+              <button type="button" role="menuitem" aria-haspopup="menu" onClick={() => setMenu("stash")} className={menuRow}>
+                <span aria-hidden className="size-4 shrink-0" />
+                <span>Stashed prompts</span>
+                <span className="ml-auto text-[12px] text-ink-3 tabular-nums">{stashes.length}</span>
+              </button>
+            )}
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "stash" && (
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={300}>
+          <div ref={menuRef} role="menu" id={`${uid}-stash`} aria-label="Stashed prompts" onKeyDown={moveFocus}>
+            <MenuLabel>Stashed prompts</MenuLabel>
+            {stashes.map((st) => {
+              const title = stashTitle(st);
+              return (
+                <div key={st.id} className="flex min-w-0 items-center gap-0.5">
+                  <button type="button" role="menuitem" onClick={() => restoreStash(st)} title="Put back in the box" className={`${menuRow} flex-1`}>
+                    <span className="min-w-0 flex-1 truncate">{title}</span>
+                    {st.files.length > 0 && <Attachment width={14} height={14} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-label={`${st.files.length} attached`} />}
+                    <span className="shrink-0 text-[12px] text-ink-3 tabular-nums">{timeAgo(st.at)}</span>
+                  </button>
+                  <button type="button" role="menuitem" aria-label={`Delete stashed prompt: ${title}`} title="Delete" onClick={() => deleteStash(st.id)} className={`${ghost} size-10 rounded-[8px] sm:size-8`}>
+                    <Trash width={15} height={15} strokeWidth={1.8} aria-hidden />
+                  </button>
+                </div>
+              );
+            })}
+            {stashes.length === 0 && <p className="px-2.5 py-2 text-[12.5px] text-ink-3">No stashed prompts.</p>}
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "effort" && efforts.length > 0 && (
+        <MenuShell placement={placement} maxHeight={menuMax} right={menuPos.right} width={MENU_W.effort}>
+          <div ref={menuRef} role="menu" id={`${uid}-effort`} aria-label="Reasoning effort" onKeyDown={moveFocus}>
+            <MenuLabel>Reasoning effort</MenuLabel>
+            {[{ key: "", name: "Default", desc: defaultEffort ? `Profile default: ${effortLabel(agent, defaultEffort) ?? defaultEffort}` : `${agentLabel} decides` }, ...efforts].map((o) => {
+              const on = o.key === effort;
+              return (
+                <button
+                  key={o.key || "default"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    onEffortChange?.(o.key);
+                    closeMenu(true);
+                  }}
+                  className={menuRow}
+                >
+                  <span className="shrink-0">{o.name}</span>
+                  <span className="ml-auto min-w-0 truncate text-[12px] text-ink-3">{o.desc}</span>
+                  <Check width={15} height={15} strokeWidth={2.2} className={`shrink-0 text-ink ${on ? "" : "invisible"}`} aria-hidden />
+                </button>
+              );
+            })}
           </div>
         </MenuShell>
       )}
@@ -729,7 +921,7 @@ export function Composer({
             aria-haspopup="menu"
             aria-expanded={openMenu === "plus"}
             aria-controls={openMenu === "plus" ? `${uid}-plus` : undefined}
-            aria-label="Add files, folder or command"
+            aria-label="Add files, folder or command, or stash the prompt"
             title="Add"
             onClick={() => toggleMenu("plus")}
             className={`${ghost} size-9 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
@@ -763,9 +955,11 @@ export function Composer({
           readOnly={Boolean(busy)}
           onChange={(e) => {
             setDraft(e.target.value);
+            setCaret(e.target.selectionStart);
             setSlashHidden(false);
             if (menu) setMenu(null);
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onPaste={(e) => {
             const pasted = [...e.clipboardData.files];
             if (!pasted.length) return;
@@ -776,6 +970,30 @@ export function Composer({
           onKeyDown={(e) => {
             /* the keys belong to the input method while it composes (Enter picks a candidate) */
             if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            /* Mod+S puts the draft aside instead of saving the page */
+            if (hasMod(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s") {
+              e.preventDefault();
+              stashDraft();
+              return;
+            }
+            /* Enter waits for the list instead of sending a half-typed path */
+            if (mentionOpen && !found.files.length && found.loading && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              return;
+            }
+            if (mentionOpen && found.files.length) {
+              const n = found.files.length;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+                e.preventDefault();
+                pickMention(found.files[Math.min(active, n - 1)]);
+                return;
+              }
+            }
             if (slashOpen && commands.length) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -833,8 +1051,8 @@ export function Composer({
           placeholder={busy ? busyLabel : placeholder}
           aria-label="Message"
           aria-busy={Boolean(busy) || undefined}
-          aria-controls={slashOpen ? `${uid}-slash` : undefined}
-          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : undefined}
+          aria-controls={slashOpen ? `${uid}-slash` : mentionOpen ? `${uid}-files` : undefined}
+          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : mentionOpen && found.files.length ? `${uid}-file-${Math.min(active, found.files.length - 1)}` : undefined}
           aria-autocomplete="list"
           enterKeyHint="enter"
           className={`composer-input w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-ink outline-none [grid-area:primary] [overflow-wrap:anywhere] sm:text-[15px] sm:pointer-coarse:text-[16px] ${
@@ -868,6 +1086,30 @@ export function Composer({
             <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
             <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
           </button>
+          {efforts.length > 0 && (
+            <button
+              ref={effortRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "effort"}
+              aria-controls={openMenu === "effort" ? `${uid}-effort` : undefined}
+              aria-label={`Reasoning effort: ${effortName ?? "Default"}`}
+              title={`Reasoning effort: ${effortName ?? "Default"}`}
+              onClick={() => toggleMenu("effort")}
+              onKeyDown={(e) => {
+                if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "effort") {
+                  e.preventDefault();
+                  toggleMenu("effort");
+                }
+              }}
+              className={`tap relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2 text-[13px] transition-[background-color,color] duration-150 ${
+                openMenu === "effort" ? "bg-hover text-ink" : effortName ? "text-ink-2 hover:bg-hover hover:text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
+              }`}
+            >
+              <Brain width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              {effortName && <span className="whitespace-nowrap">{effortName}</span>}
+            </button>
+          )}
           <ContextRing usage={usage} costUsd={costUsd} cost={cost} />
           {/* with nothing to send, Stop takes Send's place; next to Send it keeps its distance so a near miss doesn't interrupt */}
           {running && onStop && (

@@ -7,6 +7,7 @@ import { api, ApiError, timeAgo } from "@/lib/client/api";
 import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/client/useProfiles";
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
+import { saveEffort } from "@/lib/client/storage";
 import { Composer, MODELS, type AgentOption } from "./Composer";
 import { FolderPicker } from "./FolderPicker";
 import { Pulse } from "./Pulse";
@@ -42,6 +43,8 @@ export function NewSession({
   const [cwd, setCwd] = useState("");
   const [mode, setMode] = useState<PermissionMode>("default");
   const [model, setModel] = useState("");
+  /* "" for the default (the profile's, else the agent's own) */
+  const [effort, setEffort] = useState("");
   const [agent, setAgent] = useState<AgentId>("claude");
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [picker, setPicker] = useState(false);
@@ -82,11 +85,13 @@ export function NewSession({
     localStorage.setItem(`cui:newProfile:${agent}`, id);
   };
   const profileInfo = profiles?.find((p) => p.id === profile);
+  const sentEffort = effort || profileInfo?.defaultEffort || "";
   const agentModels = useAgentModels(agent, profile);
 
   const pickAgent = (a: AgentId) => {
     setAgent(a);
     setModel("");
+    setEffort("");
     /* other agents can't show approval prompts from their print modes yet: run them unattended */
     setMode(a === "claude" ? "default" : "bypassPermissions");
     localStorage.setItem("cui:newAgent", a);
@@ -141,8 +146,9 @@ export function NewSession({
       return false;
     }
     try {
-      const { id } = await api<{ id: string }>("/api/sessions", { agent, profile, cwd: cwd.trim(), text, model: model || undefined, permissionMode: mode, worktree, clientId: newClientId() });
+      const { id } = await api<{ id: string }>("/api/sessions", { agent, profile, cwd: cwd.trim(), text, model: model || undefined, effort: sentEffort, permissionMode: mode, worktree, clientId: newClientId() });
       localStorage.setItem("cui:lastCwd", cwd.trim());
+      saveEffort(id, effort);
       onOpen(id);
       return true;
     } catch (err) {
@@ -164,7 +170,7 @@ export function NewSession({
     }
     setLaunching(true);
     try {
-      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile, cwd: cwd.trim(), model: model || undefined });
+      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile, cwd: cwd.trim(), model: model || undefined, effort: sentEffort });
       localStorage.setItem("cui:lastCwd", cwd.trim());
       openServerTerminal(t, `${t.label} in ${cwd.trim().split("/").pop()}`);
     } catch (err) {
@@ -211,6 +217,10 @@ export function NewSession({
               profiles={profiles ?? undefined}
               profile={profile}
               onProfileChange={pickProfile}
+              root={cwd.trim() || undefined}
+              effort={effort}
+              defaultEffort={profileInfo?.defaultEffort ?? null}
+              onEffortChange={setEffort}
               agents={agents}
               agent={agent}
               onAgentChange={pickAgent}
