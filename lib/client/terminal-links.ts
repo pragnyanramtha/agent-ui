@@ -51,3 +51,14 @@ export function resolveTerminalPath(p: string, cwd: string | null | undefined, h
   }
   return `/${parts.join("/")}`;
 }
+
+/** The folder from an OSC 7 report (`file://host/path`, percent-encoded), which some shells send after each command */
+export function parseOsc7(data: string): string | null {
+  const m = /^(?:file|kitty-shell-cwd):\/\/[^/]*(\/.*)$/.exec(data.trim());
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]);
+  } catch {
+    return null;
+  }
+}

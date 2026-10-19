@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findPathLinks, resolveTerminalPath } from "@/lib/client/terminal-links";
+import { findPathLinks, parseOsc7, resolveTerminalPath } from "@/lib/client/terminal-links";
 
 const paths = (s: string) => findPathLinks(s).map((m) => m.text);
 
@@ -47,5 +47,19 @@ describe("resolveTerminalPath", () => {
   it("gives up on relative paths without a folder", () => {
     expect(resolveTerminalPath("src/a.ts", "", "/home/me")).toBeNull();
     expect(resolveTerminalPath("~/a.ts", "/w", null)).toBeNull();
+  });
+});
+
+describe("parseOsc7", () => {
+  it("reads the folder from a file URL", () => {
+    expect(parseOsc7("file://box/home/me/my%20app")).toBe("/home/me/my app");
+    expect(parseOsc7("file:///tmp")).toBe("/tmp");
+    expect(parseOsc7("kitty-shell-cwd://box/w")).toBe("/w");
+  });
+
+  it("ignores anything else", () => {
+    expect(parseOsc7("http://x/y")).toBeNull();
+    expect(parseOsc7("file://box")).toBeNull();
+    expect(parseOsc7("file://box/%E0%A4%A")).toBeNull();
   });
 });

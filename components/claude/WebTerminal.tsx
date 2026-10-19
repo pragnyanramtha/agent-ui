@@ -10,7 +10,7 @@ import { isDarkColor, oscColor, readTerminalTheme } from "@/lib/client/terminal-
 import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
 import { TerminalFind } from "./TerminalFind";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
-import { findPathLinks, resolveTerminalPath } from "@/lib/client/terminal-links";
+import { findPathLinks, parseOsc7, resolveTerminalPath } from "@/lib/client/terminal-links";
 import { deviceBoxTrusted } from "@/lib/client/terminal-render";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
@@ -181,7 +181,7 @@ export function WebTerminal({
   /* after a shell exits, "New shell" opens a fresh one in the same folder */
   const [fresh, setFresh] = useState(false);
   const tgt: TerminalTarget = fresh ? { cwd: target.cwd, label: target.label } : target;
-  /* where relative paths in the output start from: the folder the terminal opened in */
+  /* where relative paths in the output start from: the folder the terminal opened in, or the last one it reported */
   const cwdRef = useRef<string | null>(target.cwd ?? null);
   const dockedRef = useRef(docked);
   dockedRef.current = docked;
@@ -397,6 +397,15 @@ export function WebTerminal({
           return true;
         }),
       );
+      /* shells that report their folder (OSC 7) keep relative paths and new tabs where they cd'd to */
+      const osc7 = term.parser.registerOscHandler(7, (data) => {
+        const dir = parseOsc7(data);
+        if (dir) {
+          cwdRef.current = dir;
+          setCwd(dir);
+        }
+        return true;
+      });
       const onData = term.onData((data) => {
         const m = modRef.current;
         if (m && data.length === 1) {
@@ -454,6 +463,7 @@ export function WebTerminal({
         onData.dispose();
         onResize.dispose();
         osc.forEach((h) => h.dispose());
+        osc7.dispose();
         ended = true;
         ws?.close(4000, "closed by viewer");
         term.dispose();
