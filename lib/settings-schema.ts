@@ -548,7 +548,6 @@ export const SETTINGS = {
     min: 1000,
     max: 100000,
     step: 1000,
-    unit: " lines",
     control: "slider",
   }),
   terminalWebgl: boolean({
