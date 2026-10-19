@@ -87,7 +87,7 @@ function files(dir: string): string[] {
 export const allUiStrings = () => DIRS.flatMap((d) => files(path.join(ROOT, d))).flatMap(uiStrings);
 
 const BANNED = /\b(tmux|zellij|pty|JSON-RPC|adapters?|bridge)\b|\bSSE\b/i;
-const LOADING = /^(Loading|Connecting|Reconnecting|Saving|Starting|Sending|Checking|Fetching|Opening|Deleting|Uploading|Searching|Stopping|Pushing|Pulling|Committing|Generating|Installing|Restarting|Waiting|Reading|Preparing|Signing|Applying|Creating|Importing|Exporting|Moving|Renaming|Copying|Cloning)\b/;
+const LOADING = /^(Loading|Connecting|Reconnecting|Saving|Starting|Sending|Checking|Fetching|Opening|Deleting|Uploading|Searching|Stopping|Pushing|Pulling|Committing|Generating|Installing|Restarting|Waiting for|Reading|Preparing|Signing|Applying|Creating|Importing|Exporting|Moving|Renaming|Copying|Cloning)\b/;
 
 /** Where a plumbing word is the right word: install hints, the health check's names for what it found, CLI flags. */
 const ALLOW: { file: string; text: RegExp; why: string }[] = [
