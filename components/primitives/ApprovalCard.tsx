@@ -2,8 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/atoms/Button";
+import { KeyCap } from "@/components/atoms/KeyCap";
 import GlideMenu from "@/components/primitives/GlideMenu";
 import { reducedMotion } from "@/lib/client/motion";
+import { approvalKey, focusSpot, keyInScope, overlayOpen } from "@/lib/client/approval-keys";
 
 /* ─────────────────────────────────────────────────────────
  * APPROVAL CARD (human-in-the-loop)
@@ -150,6 +152,7 @@ export default function ApprovalCard({
   onDismiss,
   resettable = true,
   className = "max-w-80",
+  keys = false,
 }: {
   questions?: ApprovalQuestion[];
   labels?: Partial<ApprovalLabels>;
@@ -163,6 +166,8 @@ export default function ApprovalCard({
   variant?: string;
   /** width constraint for the card; defaults to the primitive's 320px */
   className?: string;
+  /** 1-9 pick options and Enter moves on (see approvalKey for when they apply) */
+  keys?: boolean;
 } = {}) {
   const t = { ...DEFAULT_LABELS, ...labels };
   const [qi, setQi] = useState(0);
@@ -217,10 +222,13 @@ export default function ApprovalCard({
     setQi(Math.min(Math.max(next, 0), questions.length - 1));
   };
 
+  /* the auto-advance timer calls send from the render before the pick; it must see the pick */
+  const latest = useRef({ answers, custom });
+  latest.current = { answers, custom };
   const send = () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
     setError(null);
-    const done = onSubmitted?.(answers, custom);
+    const done = onSubmitted?.(latest.current.answers, latest.current.custom);
     if (!done) return setSent(true);
     setSent("sending");
     done.then(
@@ -258,6 +266,27 @@ export default function ApprovalCard({
       }, 480);
     }
   };
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const onKey = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onKey.current = (e) => {
+    if (!open || sent || !keyInScope(e.target, rootRef.current)) return;
+    const question = questions[qi];
+    const options = Array.isArray(question?.options) ? question.options.length : 0;
+    const act = approvalKey(e, { kind: "question", focus: focusSpot(e.target), options, canContinue: hasAnswer, overlay: overlayOpen() });
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (act.type === "pick") toggle(act.index);
+    else if (act.type === "continue") advance();
+  };
+  useEffect(() => {
+    if (!keys) return;
+    const fn = (e: KeyboardEvent) => onKey.current(e);
+    /* capture: the message box takes Enter for itself even when it's empty */
+    window.addEventListener("keydown", fn, true);
+    return () => window.removeEventListener("keydown", fn, true);
+  }, [keys]);
 
   const reset = () => {
     setQi(0);
@@ -302,7 +331,7 @@ export default function ApprovalCard({
   }
 
   return (
-    <div className={`w-full ${className}`}>
+    <div ref={rootRef} className={`w-full ${className}`}>
       <div className="relative overflow-hidden rounded-card bg-surface shadow-card" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
         <button
           type="button"
@@ -375,6 +404,7 @@ export default function ApprovalCard({
                             <span className={`text-sm leading-snug transition-colors duration-200 sm:leading-none ${on ? "text-ink" : "text-ink-2"}`}>
                               {option}
                             </span>
+                            {keys && i < 9 && <KeyCap className="ml-auto">{i + 1}</KeyCap>}
                           </button>
                         );
                       })}
@@ -388,6 +418,7 @@ export default function ApprovalCard({
                             if (question.type === "radio") setAnswers((current) => ({ ...current, [qIdx]: [] }));
                           }}
                           onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                             if (event.key === "Enter" && hasAnswer) {
                               event.preventDefault();
                               advance();
@@ -442,8 +473,9 @@ export default function ApprovalCard({
             <Button variant="ghost" size="sm" className="tap pointer-coarse:h-9" onClick={() => (last ? (onDismiss ? send() : setOpen(false)) : goTo(qi + 1))}>
               {t.skip}
             </Button>
-            <Button variant="accent" size="sm" className="tap pointer-coarse:h-9" disabled={!hasAnswer} onClick={advance}>
+            <Button variant="accent" size="sm" className={`tap pointer-coarse:h-9 ${keys ? "pointer-fine:pr-1.5" : ""}`} disabled={!hasAnswer} onClick={advance}>
               {last ? t.send : t.continue}
+              {keys && <KeyCap onFill>↵</KeyCap>}
             </Button>
           </div>
         </div>

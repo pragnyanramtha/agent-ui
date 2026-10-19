@@ -124,6 +124,24 @@ describe("matching", () => {
     expect(chordFromEvent(ev({ key: "Control", ctrlKey: true }), false)).toBeNull();
     expect(chordFromEvent(ev({ key: "Meta", metaKey: true }), true)).toBeNull();
   });
+
+  it("leaves keys that type text to a text field", () => {
+    const n = withKeys({}, "newSession", ["N"]);
+    expect(matchesCommand(ev({ key: "n" }), "newSession", n, false)).toBe(true);
+    expect(matchesCommand(ev({ key: "n" }), "newSession", n, false, true)).toBe(false);
+    expect(matchesCommand(ev({ key: "?", shiftKey: true }), "shortcuts", {}, false, true)).toBe(false);
+    /* German Mac: Option+5 types "[" and Option+8 "{" */
+    expect(matchesCommand(ev({ key: "[", code: "Digit5", altKey: true }), "tab5", {}, true)).toBe(true);
+    expect(matchesCommand(ev({ key: "[", code: "Digit5", altKey: true }), "tab5", {}, true, true)).toBe(false);
+    expect(matchesCommand(ev({ key: "{", code: "Digit8", altKey: true }), "tab8", {}, true, true)).toBe(false);
+    /* US Mac: Option+1 types "¡", which nobody needs more than the tab */
+    expect(matchesCommand(ev({ key: "¡", code: "Digit1", altKey: true }), "tab1", {}, true, true)).toBe(true);
+    expect(matchesCommand(ev({ key: "∑", code: "KeyW", altKey: true }), "closeTab", {}, true, true)).toBe(true);
+    /* Ctrl, Cmd and named keys still work in a field */
+    expect(matchesCommand(ev({ key: "k", metaKey: true }), "palette", {}, true, true)).toBe(true);
+    expect(matchesCommand(ev({ key: "t", altKey: true }), "newSession", {}, false, true)).toBe(true);
+    expect(matchesCommand(ev({ key: "Escape" }), "stop", {}, false, true)).toBe(true);
+  });
 });
 
 describe("recording", () => {

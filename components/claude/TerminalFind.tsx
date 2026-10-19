@@ -47,6 +47,7 @@ export function TerminalFind({ search, dark, focusKey, onClose }: { search: Sear
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "Enter") {
             e.preventDefault();
             step(e.shiftKey);

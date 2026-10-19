@@ -62,11 +62,12 @@ async function binary(): Promise<string | null> {
   return found;
 }
 
-const toSession = (s: { id: string; title: string; directory: string; time_updated: number; model: string | null }): AgentSession => ({
+const toSession = (s: { id: string; title: string; directory: string; time_created?: number; time_updated: number; model: string | null }): AgentSession => ({
   id: s.id,
   title: s.title.replace(/^New session - \d{4}-\d\d-\d\dT[\d:.]+Z$/, "") || "",
   cwd: s.directory,
   mtime: s.time_updated,
+  created: s.time_created || undefined,
   size: 0,
   model: s.model,
 });

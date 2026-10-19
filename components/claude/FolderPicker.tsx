@@ -152,6 +152,7 @@ export function FolderPicker({
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     switch (e.key) {
       case "ArrowDown":
       case "ArrowUp":

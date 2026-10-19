@@ -59,7 +59,7 @@ const oneLine = (s: string, max = 120) => {
 
 function toSession(m: FileMeta, names: Map<string, string>): AgentSession {
   const title = names.get(m.id) ?? (m.firstPrompt ? oneLine(m.firstPrompt) : "");
-  return { id: m.id, title, cwd: m.cwd, mtime: m.mtime, size: m.size, model: m.model };
+  return { id: m.id, title, cwd: m.cwd, mtime: m.mtime, created: m.created, size: m.size, model: m.model };
 }
 
 async function list(): Promise<AgentSession[]> {

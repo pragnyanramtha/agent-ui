@@ -66,7 +66,13 @@ function useLift(active: boolean) {
     };
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    /* the composer grows with a long draft, and the panel narrows when the side panel opens */
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    for (const el of [document.getElementById("session-panel"), document.querySelector("#session-panel [data-composer]")]) if (el) ro?.observe(el);
+    return () => {
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
   }, [active]);
   return lift;
 }

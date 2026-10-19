@@ -402,8 +402,8 @@ a:focus-visible .animated-underline::after {
   will-change: opacity, transform, filter;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .home-reveal {
+.home-reveal {
+  @variant motion-reduce {
     opacity: 1 !important;
     transform: none !important;
     filter: none !important;
@@ -472,11 +472,13 @@ a:focus-visible .animated-underline::after {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stream-caret {
+.stream-caret {
+  @variant motion-reduce {
     animation: none;
   }
-  .stream-tail {
+}
+.stream-tail {
+  @variant motion-reduce {
     filter: none;
     -webkit-mask-image: none;
     mask-image: none;
@@ -581,8 +583,8 @@ body {
 
 /* The live indicator can't wave under reduced motion; hold a fully lit grid
  * instead so busy still reads differently from the idle mark. */
-@media (prefers-reduced-motion: reduce) {
-  .pulse-busy > span {
+.pulse-busy > span {
+  @variant motion-reduce {
     animation: none !important;
     opacity: 0.75 !important;
   }
@@ -1255,13 +1257,17 @@ label {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .composer-menu,
-  .folder-sheet {
+.composer-menu,
+.folder-sheet {
+  @variant motion-reduce {
     animation: fade-in 120ms ease-out both;
   }
-  .composer-busy::placeholder {
-    animation: none;
+}
+.composer-busy {
+  @variant motion-reduce {
+    &::placeholder {
+      animation: none;
+    }
   }
 }
 

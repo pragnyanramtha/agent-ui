@@ -6,7 +6,7 @@ import { api, timeAgo } from "@/lib/client/api";
 import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LABEL, type GitAction, type GitState, type GitStep } from "@/lib/client/git-actions";
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
-import { modalOpen } from "@/lib/client/shortcuts";
+import { isTyping, modalOpen } from "@/lib/client/shortcuts";
 import { useSetting } from "@/lib/client/settings";
 import { fullDateTime } from "@/lib/time-format";
 
@@ -153,7 +153,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const load = useCallback(
     async (quiet = false) => {
       try {
-        const d = await api<Data>(`/api/git?session=${encodeURIComponent(session)}`);
+        const d = await api<Data>(`/api/git?session=${encodeURIComponent(session)}&fetch=1`);
         const text = JSON.stringify(d);
         if (text !== lastText.current) {
           lastText.current = text;
@@ -170,7 +170,9 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   useEffect(() => {
     void load();
     ref.current?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !modalOpen() && closeRef.current();
+    /* Escape in the composer or another field outside the panel is that field's */
+    const onKey = (e: KeyboardEvent) =>
+      e.key === "Escape" && !e.defaultPrevented && !modalOpen() && !(isTyping(e.target) && !ref.current?.contains(e.target as Node)) && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [load]);

@@ -95,6 +95,8 @@ export type FileMeta = {
   subagent: boolean;
   /** last model seen (turn_context / thread settings) */
   model: string | null;
+  /** when the session started (session_meta's timestamp), ms */
+  created?: number;
   mtime: number;
   size: number;
   /** head facts never change once found; only the tail is re-read on growth */
@@ -117,8 +119,11 @@ async function scanHead(file: string, size: number, meta: FileMeta) {
     const { lines } = await readRecords(file, 0, Math.min(size, step));
     for (const { line } of lines) {
       if (line.includes('"type":"session_meta"')) {
-        const p = safeParse(line)?.payload ?? {};
+        const rec = safeParse(line);
+        const p = rec?.payload ?? {};
         if (typeof p.cwd === "string") meta.cwd = p.cwd;
+        const at = Date.parse(String(p.timestamp ?? rec?.timestamp ?? ""));
+        if (at > 0) meta.created = at;
         const src = p.source;
         meta.subagent = p.thread_source === "subagent" || Boolean(src && typeof src === "object" && "subagent" in src);
       } else if (!meta.firstPrompt && line.includes('"role":"user"')) {
