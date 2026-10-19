@@ -9,6 +9,8 @@ import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
 import type { Check as HealthRow, CheckStatus as HealthStatus, DoctorReport } from "@/lib/server/doctor";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
+import { useSetting } from "@/lib/client/settings";
+import { clockTime } from "@/lib/time-format";
 import { copyText } from "./CodeCard";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { FolderPicker } from "./FolderPicker";
@@ -205,6 +207,7 @@ const DOT: Record<HealthStatus, string> = { ok: "bg-green", warn: "bg-orange", f
 const SAYS: Record<HealthStatus, string> = { ok: "OK", warn: "Warning", fail: "Problem", unknown: "Unknown" };
 
 function HealthCheck() {
+  const [fmt] = useSetting("timeFormat");
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,7 +244,7 @@ function HealthCheck() {
         <span id="health-h">Health check</span>
       </H>
       <p className="px-1 pb-2 text-xs text-ink-3" aria-live="polite">
-        {summary ? `${summary} · ${new Date(report!.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}
+        {summary ? `${summary} · ${clockTime(report!.at, fmt)}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}
       </p>
       {error && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
       {report && (

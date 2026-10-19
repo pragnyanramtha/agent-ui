@@ -5,7 +5,7 @@ import { CodeCard } from "@/components/claude/CodeCard";
 import { highlight } from "@/lib/client/highlight";
 
 const code = (n: number) => Array.from({ length: n }, (_, i) => `const v${i + 1} = "x";`).join("\n") + "\n";
-const render = (props: { code: string; label?: string; collapseAfter?: number }) => renderToStaticMarkup(createElement(CodeCard, props));
+const render = (props: { code: string; label?: string; collapsible?: boolean }) => renderToStaticMarkup(createElement(CodeCard, props));
 
 describe("CodeCard", () => {
   it("renders one pre and one gutter element, not an element per line", () => {
@@ -17,7 +17,7 @@ describe("CodeCard", () => {
   });
 
   it("collapses long blocks behind Show all and keeps the gutter in step", () => {
-    const html = render({ code: code(100), label: "ts", collapseAfter: 40 });
+    const html = render({ code: code(100), label: "ts", collapsible: true });
     expect(html).toContain("Show all 100 lines");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("v30");
@@ -26,7 +26,7 @@ describe("CodeCard", () => {
   });
 
   it("leaves short blocks and blocks without a limit whole", () => {
-    expect(render({ code: code(40), label: "ts", collapseAfter: 40 })).not.toContain("Show all");
+    expect(render({ code: code(40), label: "ts", collapsible: true })).not.toContain("Show all");
     const html = render({ code: code(100), label: "ts" });
     expect(html).not.toContain("Show all");
     expect(html).toContain("v100");

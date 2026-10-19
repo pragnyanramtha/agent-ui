@@ -2,14 +2,9 @@
 
 import { memo, useEffect, useRef, useState } from "react";
 import { Check, Copy } from "iconoir-react";
+import { useSetting } from "@/lib/client/settings";
+import { clockTime, fullDateTime } from "@/lib/time-format";
 import { copyText } from "./CodeCard";
-
-/** "14:02", always 24-hour. */
-export function clock(ts: string) {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return null;
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
 
 function CopyButton({ text, onCopied }: { text: string; onCopied: (v: boolean) => void }) {
   const [copied, setCopied] = useState(false);
@@ -48,7 +43,8 @@ function CopyButton({ text, onCopied }: { text: string; onCopied: (v: boolean) =
  */
 export const MessageActions = memo(function MessageActions({ text, ts, align = "start" }: { text: string; ts?: string; align?: "start" | "end" }) {
   const [copied, setCopied] = useState(false);
-  const time = ts ? clock(ts) : null;
+  const [fmt] = useSetting("timeFormat");
+  const time = ts ? clockTime(ts, fmt) : "";
   return (
     <div
       data-copied={copied || undefined}
@@ -58,7 +54,7 @@ export const MessageActions = memo(function MessageActions({ text, ts, align = "
     >
       {text && <CopyButton text={text} onCopied={setCopied} />}
       {time && (
-        <time dateTime={ts} title={new Date(ts!).toLocaleString()} className="px-1 tabular-nums">
+        <time dateTime={ts} title={fullDateTime(ts!, fmt)} className="px-1 tabular-nums">
           {time}
         </time>
       )}

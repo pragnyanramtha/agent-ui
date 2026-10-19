@@ -4,10 +4,11 @@ import { memo, useRef, useState, type CSSProperties, type ReactNode } from "reac
 import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, TaskList, Terminal, Tools } from "iconoir-react";
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
+import { useSetting } from "@/lib/client/settings";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
 import { Boundary } from "./Boundary";
 import { failedCount, runSummary } from "@/lib/client/turns";
-import { CodeCard, COLLAPSE_LINES, copyText } from "./CodeCard";
+import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
 import { PathLabel } from "./PathLabel";
@@ -285,7 +286,7 @@ function PatchView({ patch }: { patch: string }) {
   return (
     <>
       {files.map((f, i) => (
-        <div key={i} className="w-full overflow-hidden rounded-card bg-surface shadow-card">
+        <div key={i} className="diff-tone w-full overflow-hidden rounded-card bg-surface shadow-card">
           <div className="flex h-9 min-w-0 items-center gap-2 border-b border-line px-3 font-mono text-[12px]">
             <PathLabel path={f.moveTo ?? f.path} className="min-w-0" />
             {f.moveTo && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">moved</span>}
@@ -366,7 +367,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     case "Write":
       return (
         <Stack>
-          <CodeCard code={s("content")} label={s("file_path")} collapseAfter={COLLAPSE_LINES} />
+          <CodeCard code={s("content")} label={s("file_path")} collapsible />
           {result?.isError && <Output result={result} />}
         </Stack>
       );
@@ -485,7 +486,9 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
 }
 
 const Row = memo(function Row({ item, result, active }: { item: RunItem; result?: ToolResult; active: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [toolCalls] = useSetting("toolCalls");
+  const [manual, setManual] = useState<boolean | null>(null);
+  const open = manual ?? toolCalls === "details";
   const summary = item.kind === "thinking" ? { verb: "Thought", chip: item.text.split("\n")[0], mono: false, icon: "think" as const } : summarizeTool(item.name, item.input ?? {});
   const failed = result?.isError;
   const waiting = item.kind === "tool" && !result && active;
@@ -496,7 +499,7 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setManual(!open)}
         className={`group/row -mx-1 flex min-h-10 w-[calc(100%+8px)] min-w-0 items-center gap-1.5 rounded-control px-1 py-0.5 text-left leading-relaxed transition-colors duration-100 hover:bg-hover-2 pointer-fine:min-h-7 ${FOCUS_INSET}`}
       >
         <span className="relative flex h-4 w-5 shrink-0 items-center justify-center text-ink-3">
@@ -584,9 +587,10 @@ export const ToolRun = memo(function ToolRun({
   thinking?: string;
 }) {
   const [manual, setManual] = useState<boolean | null>(null);
+  const [toolCalls] = useSetting("toolCalls");
   const rootRef = useRef<HTMLDivElement>(null);
   const onScreen = useOnScreen(rootRef, active);
-  const open = manual ?? active;
+  const open = manual ?? (active || toolCalls !== "collapsed");
   const last = items[items.length - 1];
   const lastSummary = last?.kind === "tool" ? summarizeTool(last.name, last.input ?? {}) : null;
   const live = thinking?.trim() ? thinking : undefined;

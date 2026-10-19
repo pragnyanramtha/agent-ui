@@ -31,6 +31,7 @@ import {
   type SettingKey,
   type Settings,
 } from "@/lib/settings-schema";
+import { migrateDeviceSettings } from "./settings-migrate";
 
 /* The settings store. Device settings live in localStorage under their own keys (older keys keep their old format).
  * Synced settings are cached in localStorage for the first paint, fetched from /api/settings on load and on focus,
@@ -60,6 +61,13 @@ function lsSet(key: string, value: string | null) {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
+  } catch {}
+}
+
+/* before the first read, so older stored choices come through */
+if (typeof window !== "undefined") {
+  try {
+    migrateDeviceSettings(localStorage);
   } catch {}
 }
 

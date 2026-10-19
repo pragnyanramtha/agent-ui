@@ -14,7 +14,7 @@ import { editsIn, failedCount, splitTurns, toBlocks, undoCheckpoint, type Block 
 import type { GitInfo } from "@/lib/client/useGitInfo";
 import { api } from "@/lib/client/api";
 import { confirmAsk } from "./Ask";
-import { stamp } from "@/lib/client/stamp";
+import { dayStamp, type TimeFormat } from "@/lib/time-format";
 import { Markdown } from "./Markdown";
 import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./MessageActions";
 import { ENTER } from "./motion";
@@ -27,16 +27,18 @@ import { scrollBehavior } from "@/lib/client/motion";
 export const RELEASE_PIN_EVENT = "cui:release-pin";
 
 const GAP_MS = 30 * 60_000;
+/* how long after opening a session "Never" auto-scroll still keeps the newest content in view, while history lands */
+const SETTLE_MS = 1500;
 
 /** A time divider before a user turn that starts a new day or comes after a long pause. */
-function separators(blocks: Block[]) {
+function separators(blocks: Block[], fmt: TimeFormat) {
   const out = new Map<string, string>();
   let last = 0;
   for (const b of blocks) {
     if (b.type !== "user") continue;
     const t = Date.parse(b.entry.ts);
     if (!Number.isFinite(t)) continue;
-    if (!last || t - last > GAP_MS || new Date(t).toDateString() !== new Date(last).toDateString()) out.set(b.key, stamp(t));
+    if (!last || t - last > GAP_MS || new Date(t).toDateString() !== new Date(last).toDateString()) out.set(b.key, dayStamp(t, fmt));
     last = t;
   }
   return out;
@@ -281,8 +283,15 @@ export function Thread({
   changes?: { session: string; git: GitInfo | null; onView?: () => void; onUndone?: () => void };
 }) {
   const live = useLiveTurn(view.entries, busy);
-  const blocks = useMemo(() => toBlocks(view.entries, live), [view.entries, live]);
-  const dividers = useMemo(() => separators(blocks), [blocks]);
+  const [timeFmt] = useSetting("timeFormat");
+  const [showThinking] = useSetting("showThinking");
+  const [workLog] = useSetting("workLog");
+  const [changesCard] = useSetting("turnChanges");
+  const [undoButton] = useSetting("turnUndo");
+  const [scrollMode] = useSetting("autoScroll");
+  const [streamText] = useSetting("streamText");
+  const blocks = useMemo(() => toBlocks(view.entries, live, { thinking: showThinking }), [view.entries, live, showThinking]);
+  const dividers = useMemo(() => separators(blocks, timeFmt), [blocks, timeFmt]);
   const runs = useStableRuns(blocks, view.results);
   const lastChanges = useMemo(() => blocks.findLast((b) => b.type === "changes")?.key, [blocks]);
   const turnRefs = useMemo(
@@ -291,7 +300,7 @@ export function Thread({
   );
   /* only the latest changes can be undone on their own: rewinding further back would take later turns' work too */
   const undoFor = (b: Extract<Block, { type: "changes" }>) => {
-    if (!changes?.git || busy || b.key !== lastChanges) return undefined;
+    if (!undoButton || !changes?.git || busy || b.key !== lastChanges) return undefined;
     const id = undoCheckpoint(changes.git.checkpoints, turnRefs, b.turn);
     if (!id) return undefined;
     return async () => {
@@ -315,20 +324,36 @@ export function Thread({
   const stickRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
   const prependAnchor = useRef<{ height: number; top: number } | null>(null);
+  const modeRef = useRef(scrollMode);
+  modeRef.current = scrollMode;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
-  /* Follow new content while the reader is at the bottom; scrolling up releases the pin. */
+  /* Follow new content while the reader is at the bottom (Settings > Conversation > Auto-scroll):
+   *   follow: scrolling up releases the pin, coming back to the bottom takes it again
+   *   stop: scrolling up releases it until Jump to latest or the next message sent
+   *   never: nothing moves while the agent writes; history still lands at the bottom when a session opens */
   useEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;
     if (!el || !content) return;
     let raf = 0;
+    let lastTop = el.scrollTop;
+    const mountedAt = Date.now();
+    const isNear = () => el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     const onScroll = () => {
-      const near = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
-      stickRef.current = near;
+      const near = isNear();
+      const up = el.scrollTop < lastTop - 1;
+      lastTop = el.scrollTop;
+      stickRef.current = modeRef.current === "stop" ? stickRef.current && !(up && !near) : near;
       setAtBottom(near);
     };
     const pin = () => {
-      if (!stickRef.current) return;
+      if (!stickRef.current) return setAtBottom(isNear());
+      if (modeRef.current === "never" && busyRef.current && Date.now() - mountedAt > SETTLE_MS) {
+        stickRef.current = false;
+        return setAtBottom(isNear());
+      }
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight;
@@ -361,6 +386,17 @@ export function Thread({
     prependAnchor.current = null;
   }, [view.entries, view.loadingOlder]);
 
+  /* "stop" waits for the reader; sending a message is them coming back */
+  const pendingCount = view.pending.length;
+  const lastPending = useRef(pendingCount);
+  useEffect(() => {
+    if (pendingCount > lastPending.current && modeRef.current === "stop" && !stickRef.current) {
+      stickRef.current = true;
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    }
+    lastPending.current = pendingCount;
+  }, [pendingCount]);
+
   const loadOlder = () => {
     const el = scrollRef.current;
     if (el) prependAnchor.current = { height: el.scrollHeight, top: el.scrollTop };
@@ -368,9 +404,10 @@ export function Thread({
     onLoadOlder();
   };
 
-  const liveText = view.streams.filter((s) => s.kind === "text" && s.text);
+  /* "When complete" leaves text that's still arriving out; the working indicator stands in until it lands */
+  const liveText = streamText === "live" ? view.streams.filter((s) => s.kind === "text" && s.text) : [];
   /* reasoning streaming in for the next step; shown as a live row in the active run */
-  const liveThinking = busy && !liveText.length && !view.pending.length ? view.streams.findLast((s) => s.kind === "thinking" && s.text.trim())?.text : undefined;
+  const liveThinking = showThinking && busy && !liveText.length && !view.pending.length ? view.streams.findLast((s) => s.kind === "thinking" && s.text.trim())?.text : undefined;
   const lastBlock = blocks[blocks.length - 1];
   const lastIsRun = lastBlock?.type === "run";
   /* thinking after prose or a prompt has no run to join yet, so it gets one of its own */
@@ -442,7 +479,7 @@ export function Thread({
             if (b.type === "fold")
               return (
                 <div key={b.key} style={style}>
-                  <TurnFold ms={b.ms} tools={b.tools} failed={b.blocks.reduce((n, c) => n + (c.type === "run" ? failedCount(c.items, runs.get(c.key)?.results ?? EMPTY_RESULTS) : 0), 0)}>
+                  <TurnFold ms={b.ms} tools={b.tools} defaultOpen={workLog === "expanded"} failed={b.blocks.reduce((n, c) => n + (c.type === "run" ? failedCount(c.items, runs.get(c.key)?.results ?? EMPTY_RESULTS) : 0), 0)}>
                     {b.blocks.map((c) =>
                       c.type === "run" ? (
                         <ToolRun key={c.key} items={runs.get(c.key)?.items ?? c.items} results={runs.get(c.key)?.results ?? EMPTY_RESULTS} active={false} />
@@ -454,7 +491,7 @@ export function Thread({
                 </div>
               );
             if (b.type === "changes")
-              return (
+              return !changesCard ? null : (
                 <div key={b.key} style={style}>
                   <TurnChanges tools={b.tools} results={view.results} onView={changes?.onView} onUndo={undoFor(b)} />
                 </div>

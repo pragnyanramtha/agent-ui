@@ -76,7 +76,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
           <span className="text-[12px] text-ink-3 tabular-nums">
             {changes.length} {changes.length === 1 ? "file" : "files"}
           </span>
-          <span className="font-mono text-[12px] tabular-nums">
+          <span className="diff-tone font-mono text-[12px] tabular-nums">
             <span className="text-(color:--add-ink)">+{totals.added}</span> <span className="text-red-ink">-{totals.removed}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close changes" className="tap relative ml-auto flex size-9 items-center justify-center rounded-[9px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -103,7 +103,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
                   <NavArrowDown width={12} height={12} strokeWidth={2.4} className={`shrink-0 text-ink-3 transition-transform duration-200 ${expanded ? "" : "-rotate-90"}`} />
                   <PathLabel path={rel(f.path)} className="min-w-0 flex-1" />
                   <span className="shrink-0 text-[11.5px] text-ink-3">{f.edits.length > 1 ? `${f.edits.length} edits` : f.edits[0]?.kind === "write" ? "written" : "1 edit"}</span>
-                  <span className="shrink-0 tabular-nums">
+                  <span className="diff-tone shrink-0 tabular-nums">
                     <span className="text-(color:--add-ink)">+{f.added}</span> <span className="text-red-ink">-{f.removed}</span>
                   </span>
                 </button>

@@ -49,12 +49,12 @@ const isEdit = (e: Entry): e is ToolEntry => e.kind === "tool" && EDIT_TOOLS.has
 /** the tool calls in a turn that wrote files (what the Changes panel counts) */
 export const editsIn = (entries: Entry[]) => entries.filter(isEdit);
 
-function plainBlocks(entries: Entry[], pin: boolean): Block[] {
+function plainBlocks(entries: Entry[], pin: boolean, thinking: boolean): Block[] {
   const blocks: Block[] = [];
   let joinable = false;
   for (const e of entries) {
     /* models that keep reasoning private still log an empty thinking block; it carries nothing to show */
-    if (e.kind === "thinking" && !String(e.text ?? "").trim()) continue;
+    if (e.kind === "thinking" && (!thinking || !String(e.text ?? "").trim())) continue;
     if (e.kind === "tool" || e.kind === "thinking") {
       if (pin && e.kind === "tool" && PINNED_TOOLS.has(e.name)) {
         blocks.push({ type: "run", key: e.id, items: [e] });
@@ -94,14 +94,15 @@ const toolCount = (blocks: Block[]) => blocks.reduce((n, b) => n + (b.type === "
  * (tool runs and the prose between them), anything that needs the reader (notices, plans,
  * questions), the closing answer, and a changed-files card when it wrote files.
  * The live turn (`live`: the agent is still on the last one) keeps every block, so it streams as it happens.
+ * `thinking: false` leaves reasoning out (Settings > Conversation > Show thinking).
  */
-export function toBlocks(entries: Entry[], live = false): Block[] {
+export function toBlocks(entries: Entry[], live = false, opts: { thinking?: boolean } = {}): Block[] {
   const out: Block[] = [];
   const turns = splitTurns(entries);
   turns.forEach((turn, t) => {
     if (turn.user) out.push({ type: "user", key: turn.user.id, entry: turn.user });
     const open = live && t === turns.length - 1;
-    const flat = plainBlocks(turn.entries, !open);
+    const flat = plainBlocks(turn.entries, !open, opts.thinking !== false);
     if (open) {
       out.push(...flat);
       return;

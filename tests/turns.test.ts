@@ -64,6 +64,13 @@ describe("toBlocks", () => {
     ]);
   });
 
+  it("leaves thinking out when it's hidden, in finished and live turns", () => {
+    expect(shape(toBlocks(turn, false, { thinking: false }))[1]).toEqual({ fold: ["text:I'll read the server first.", "run:2", "text:Found it.", "run:1"], tools: 3 });
+    expect(shape(toBlocks(turn, true, { thinking: false })).slice(0, 3)).toEqual(["user:fix it", "text:I'll read the server first.", "run:2"]);
+    const runs = toBlocks([user("go"), think("a"), tool("Read", { file_path: "/a" }), think("b"), text("ok")], true, { thinking: false }).filter((b) => b.type === "run");
+    expect(runs.map((b) => (b as Extract<Block, { type: "run" }>).items.map((i) => i.kind))).toEqual([["tool"]]);
+  });
+
   it("only the last turn is live", () => {
     const blocks = toBlocks([...turn, user("again", 200), tool("Bash", { command: "ls" }, 201)], true);
     expect(shape(blocks).slice(0, 2)).toEqual(["user:fix it", expect.objectContaining({ tools: 3 })]);

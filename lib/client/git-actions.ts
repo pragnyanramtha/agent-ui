@@ -98,5 +98,5 @@ export function otherActions(s: GitState): GitAction[] {
   return out.filter((a) => a.id !== main);
 }
 
-/** Pushing straight to the default branch asks first. */
-export const needsDefaultBranchConfirm = (s: GitState, a: GitAction) => a.steps.includes("push") && isDefaultBranch(s);
+/** Pushing straight to the default branch asks first, unless turned off (Settings > Git). */
+export const needsDefaultBranchConfirm = (s: GitState, a: GitAction, enabled = true) => enabled && a.steps.includes("push") && isDefaultBranch(s);

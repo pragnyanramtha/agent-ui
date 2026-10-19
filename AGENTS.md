@@ -20,7 +20,7 @@ All machine-specific values live in gitignored env files; `.env.example` documen
  `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
  `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
  `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, checkpoint limits (`CHECKPOINT_MAX_FILE_MB`, `CHECKPOINT_MAX_TOTAL_MB`,
- `CHECKPOINT_MAX_AGE_DAYS`), `PUBLIC_HOSTNAME` (written by `scripts/setup.sh`) and `ALLOWED_HOSTS` (comma list of
+ `CHECKPOINT_MAX_AGE_DAYS`), `GIT_FETCH_INTERVAL_MS` (default for Settings > Git > Check the remote), `PUBLIC_HOSTNAME` (written by `scripts/setup.sh`) and `ALLOWED_HOSTS` (comma list of
  other names the site is reached by, `host` or `host:port`; see Security model), `TRUST_PROXY_HEADERS` (`1` behind the
  tunnel, also written by setup.sh), plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.

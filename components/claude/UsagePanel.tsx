@@ -6,6 +6,8 @@ import type { SessionView } from "@/lib/client/useSession";
 import { terminalBusy } from "@/lib/status";
 import { modalOpen } from "@/lib/client/shortcuts";
 import { useOverflow, useReturnFocus } from "@/lib/client/a11y";
+import { useSetting } from "@/lib/client/settings";
+import { clockTime } from "@/lib/time-format";
 import {
   contextOf,
   contextSeries,
@@ -178,6 +180,7 @@ function Tokens({ totals }: { totals: UsageTotals }) {
 
 /** Context size after every API call, scaled to the session's peak. Drops are compactions. */
 function Sparkline({ points, window }: { points: { t: number; used: number }[]; window: number }) {
+  const fmtTime = useFmtTime();
   const W = 300;
   const H = 48;
   const peak = points.reduce((m, p) => Math.max(m, p.used), 1);
@@ -204,12 +207,14 @@ function Sparkline({ points, window }: { points: { t: number; used: number }[]; 
   );
 }
 
-const fmtTime = (t: number | string) => {
-  const d = new Date(t);
-  return Number.isNaN(d.getTime()) || !t ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+/** times of day in the Time format setting */
+const useFmtTime = () => {
+  const [fmt] = useSetting("timeFormat");
+  return (t: number | string) => (t ? clockTime(t, fmt) : "");
 };
 
 function Turns({ view, busy }: { view: SessionView; busy: boolean }) {
+  const fmtTime = useFmtTime();
   const turns = useMemo(() => turnTimings(view.entries), [view.entries]);
   const recent = turns.slice(-TURN_ROWS).reverse();
   const timed = turns.filter((t) => t.durationMs !== null && !(t.open && busy));

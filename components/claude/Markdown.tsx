@@ -3,7 +3,7 @@
 import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX } from "react";
 import { Check, Copy } from "iconoir-react";
 import type { Components, ExtraProps, MathPlugin, PluginConfig, StreamdownProps } from "streamdown";
-import { CodeCard, COLLAPSE_LINES, copyText } from "./CodeCard";
+import { CodeCard, copyText } from "./CodeCard";
 import { useOverflow } from "@/lib/client/a11y";
 
 /* ── Streamdown loads as its own chunk ──────────────────────────────────
@@ -218,7 +218,7 @@ const components: Components = {
   inlineCode: ({ children }) => <code className="md-code">{children}</code>,
   code: ({ className, children }) => {
     const lang = /language-([\w+#.-]+)/.exec(className ?? "")?.[1];
-    return <CodeCard code={String(children ?? "")} label={lang} collapseAfter={COLLAPSE_LINES} />;
+    return <CodeCard code={String(children ?? "")} label={lang} collapsible />;
   },
   a: ({ node: _node, href, children, className, ...rest }) =>
     href?.startsWith("#") ? (
