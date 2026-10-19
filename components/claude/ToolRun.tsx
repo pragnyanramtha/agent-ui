@@ -82,9 +82,9 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
             <NavArrowDown width={13} height={13} strokeWidth={2.2} />
           </span>
         </span>
-        <span className="max-w-[45%] shrink-0 truncate text-[13px] text-ink-2">{summary.verb}</span>
+        <span className="max-w-[45%] shrink-0 truncate text-sm text-ink-2">{summary.verb}</span>
         {summary.chip && (
-          <span className={`min-w-0 truncate text-ink-3 ${summary.mono ? "font-mono text-[12px]" : "text-[12.5px]"}`} title={item.kind === "tool" && typeof item.input?.file_path === "string" ? item.input.file_path : undefined}>
+          <span className={`min-w-0 truncate text-ink-3 ${summary.mono ? "font-mono text-xs" : "text-[12.5px]"}`} title={item.kind === "tool" && typeof item.input?.file_path === "string" ? item.input.file_path : undefined}>
             {summary.chip}
           </span>
         )}
@@ -127,7 +127,7 @@ function LiveThinking({ text }: { text: string }) {
           <Sparks width={14} height={14} strokeWidth={1.8} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className={`w-fit text-[13px] font-medium sm:text-[12.5px] ${SHIMMER} ${PLAY}`}>Thinking…</span>
+          <span className={`w-fit text-sm font-medium sm:text-[12.5px] ${SHIMMER} ${PLAY}`}>Thinking…</span>
           {/* collapsed, the box pins to the bottom so the newest reasoning stays in view */}
           <span
             className={`flex flex-col text-[12.5px] leading-[1.6] text-ink-2 ${open ? "" : "max-h-[4.8em] justify-end overflow-hidden"}`}
@@ -183,7 +183,7 @@ export const ToolRun = memo(function ToolRun({
         type="button"
         aria-expanded={open}
         onClick={() => setManual(!open)}
-        className={`-mx-1.5 flex h-10 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-[13px] text-ink-2 transition-colors duration-100 hover:bg-hover-2 pointer-fine:h-7 sm:text-[12.5px] ${FOCUS_INSET}`}
+        className={`-mx-1.5 flex h-10 max-w-[calc(100%+12px)] min-w-0 items-center gap-1.5 rounded-control px-1.5 text-sm text-ink-2 transition-colors duration-100 hover:bg-hover-2 pointer-fine:h-7 sm:text-[12.5px] ${FOCUS_INSET}`}
       >
         <span className="flex shrink-0 transition-transform duration-200" style={{ transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}>
           <NavArrowDown width={12} height={12} strokeWidth={2.2} />

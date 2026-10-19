@@ -30,7 +30,7 @@ const STATUS: Record<PatchStatus, { letter: string; tone: string; label: string 
 };
 
 const field =
-  "h-9 min-w-0 rounded-full bg-field px-3 text-[16px] text-ink shadow-hairline outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40 sm:h-8 sm:text-[13px]";
+  "h-9 min-w-0 rounded-full bg-field px-3 text-[16px] text-ink shadow-hairline outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40 sm:h-8 sm:text-sm";
 
 
 function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
@@ -265,9 +265,9 @@ export function DiffView({
       </div>
 
       {error && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-[12.5px] text-red-ink">{error}</p>}
-      {needsCheckpoint && !checkpoints.length && <p className="py-8 text-center text-[13px] text-ink-3">No checkpoints yet.</p>}
-      {loading && !data && !error && <p className="py-8 text-center text-[13px] text-ink-3">Loading diff…</p>}
-      {data && files.length === 0 && <p className="py-8 text-center text-[13px] text-ink-3">No changes.</p>}
+      {needsCheckpoint && !checkpoints.length && <p className="py-8 text-center text-sm text-ink-3">No checkpoints yet.</p>}
+      {loading && !data && !error && <p className="py-8 text-center text-sm text-ink-3">Loading diff…</p>}
+      {data && files.length === 0 && <p className="py-8 text-center text-sm text-ink-3">No changes.</p>}
 
       {data && files.length > 0 && (
         <>
@@ -275,7 +275,7 @@ export function DiffView({
             <span className="tabular-nums">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
-            <span className="diff-tone font-mono text-[12px] tabular-nums">
+            <span className="diff-tone font-mono text-xs tabular-nums">
               <span className="text-green">+{data.additions}</span> <span className="text-red">-{data.deletions}</span>
             </span>
             {scope === "turn" && latest && (
@@ -293,7 +293,7 @@ export function DiffView({
           </div>
           {data.truncated && <p className="rounded-[10px] bg-inset px-3 py-2 text-[12.5px] text-ink-2 shadow-hairline">Some files are too large to show in full.</p>}
 
-          <ul aria-label="Changed files" className="diff-tone max-h-48 overflow-y-auto rounded-[10px] bg-inset py-1 font-mono text-[12px] shadow-hairline">
+          <ul aria-label="Changed files" className="diff-tone max-h-48 overflow-y-auto rounded-[10px] bg-inset py-1 font-mono text-xs shadow-hairline">
             {files.map((f) => (
               <li key={f.path}>
                 <button type="button" onClick={() => jump(f.path)} className="flex w-full min-w-0 items-center gap-2 px-2.5 py-1 text-left hover:bg-hover">
@@ -377,7 +377,7 @@ const FileDiff = memo(function FileDiff({
         type="button"
         onClick={() => onToggle(f)}
         aria-expanded={open}
-        className={`sticky top-0 z-[1] flex h-9 w-full min-w-0 items-center gap-2 border-line bg-surface px-3 text-left font-mono text-[12px] ${open ? "rounded-t-card border-b" : "rounded-card"}`}
+        className={`sticky top-0 z-[1] flex h-9 w-full min-w-0 items-center gap-2 border-line bg-surface px-3 text-left font-mono text-xs ${open ? "rounded-t-card border-b" : "rounded-card"}`}
       >
         <NavArrowDown width={12} height={12} strokeWidth={2.4} className={`shrink-0 text-ink-3 transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         {f.oldPath && (
@@ -389,18 +389,18 @@ const FileDiff = memo(function FileDiff({
           </>
         )}
         <PathLabel path={f.path} className="flex-1" />
-        {f.status !== "modified" && <span className={`shrink-0 font-sans text-[11px] ${STATUS[f.status].tone}`}>{STATUS[f.status].label}</span>}
+        {f.status !== "modified" && <span className={`shrink-0 font-sans text-2xs ${STATUS[f.status].tone}`}>{STATUS[f.status].label}</span>}
         <Counts f={f} />
       </button>
       {open && (
         <div className="rounded-b-card">
           {note && <p className="px-3 py-2.5 text-[12.5px] text-ink-3">{note}</p>}
           {f.hunks.length > 0 && (
-            <div tabIndex={0} translate="no" className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-[12px] leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!">
+            <div tabIndex={0} translate="no" className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-xs leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!">
               <div className={`relative ${wrap && !split ? "" : "min-w-fit"}`}>
                 {f.hunks.map((h, hi) => (
                   <div key={hi}>
-                    <div className="sticky left-0 truncate bg-inset px-3 py-0.5 text-[11px] text-ink-3">{h.header}</div>
+                    <div className="sticky left-0 truncate bg-inset px-3 py-0.5 text-2xs text-ink-3">{h.header}</div>
                     {split
                       ? splitRows(h.lines).map((r, i) => (
                           <div key={i} className="grid items-stretch" style={{ gridTemplateColumns: `${num} minmax(0,1fr) ${num} minmax(0,1fr)` }}>
@@ -414,7 +414,7 @@ const FileDiff = memo(function FileDiff({
               </div>
             </div>
           )}
-          {f.truncated && f.hunks.length > 0 && <p className="border-t border-line px-3 py-2 text-[12px] text-ink-3">Diff cut off here.</p>}
+          {f.truncated && f.hunks.length > 0 && <p className="border-t border-line px-3 py-2 text-xs text-ink-3">Diff cut off here.</p>}
         </div>
       )}
     </section>
@@ -431,8 +431,8 @@ function UnifiedRow({ line: l, num, plain, wrap }: { line: PatchLine; num: strin
   return (
     <div className={`relative grid items-start ${tint(l.type)}`} style={{ gridTemplateColumns: `${num} ${num} minmax(0,1fr)` }}>
       <Bar type={l.type} />
-      <span className={`select-none pr-1.5 text-right text-[11px] tabular-nums ${numTone(l.type)}`}>{l.oldNo ?? ""}</span>
-      <span className={`select-none pr-1.5 text-right text-[11px] tabular-nums ${numTone(l.type)}`}>{l.newNo ?? ""}</span>
+      <span className={`select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)}`}>{l.oldNo ?? ""}</span>
+      <span className={`select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)}`}>{l.newNo ?? ""}</span>
       <code className={`pr-4 pl-2 ${wrap ? "min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"}`}>
         {plain ? l.text : highlight(l.text)}
         {l.noEol && <NoEol />}
@@ -447,7 +447,7 @@ function Cell({ line: l, side, plain, wrap, border }: { line: PatchLine | null; 
   const no = side === "old" ? l.oldNo : l.newNo;
   return (
     <>
-      <span className={`relative select-none pr-1.5 text-right text-[11px] tabular-nums ${tint(l.type)} ${numTone(l.type)} ${edge}`}>
+      <span className={`relative select-none pr-1.5 text-right text-2xs tabular-nums ${tint(l.type)} ${numTone(l.type)} ${edge}`}>
         <Bar type={l.type} />
         {no ?? ""}
       </span>

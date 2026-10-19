@@ -24,7 +24,7 @@ const MONO = "font-mono text-[11.5px] leading-[1.6]";
 
 
 function Label({ children }: { children: ReactNode }) {
-  return <span className="text-[11px] font-medium text-ink-3">{children}</span>;
+  return <span className="text-2xs font-medium text-ink-3">{children}</span>;
 }
 
 /** A capped, scrollable mono block. `wrap` soft-wraps long lines; off, lines scroll sideways (code, paths). */
@@ -43,7 +43,7 @@ function Pre({ children, wrap = true, tone = "text-ink-2", max = "max-h-72" }: {
 const Trimmed = ({ result }: { result: ToolResult }) => (result.truncated ? <span className="font-sans text-ink-3">{"\n"}Output trimmed</span> : null);
 
 function Empty({ result }: { result: ToolResult }) {
-  return <p className="text-[12px] text-ink-3">{result.isError ? "Failed with no output" : "No output"}</p>;
+  return <p className="text-xs text-ink-3">{result.isError ? "Failed with no output" : "No output"}</p>;
 }
 
 function Output({ result, wrap = true, json = false }: { result?: ToolResult; wrap?: boolean; json?: boolean }) {
@@ -204,7 +204,7 @@ function SearchLinks({ result }: { result?: ToolResult }) {
               className={`flex min-w-0 items-baseline gap-2 rounded-[6px] px-2 py-1.5 transition-colors duration-100 hover:bg-hover-2 sm:py-1 ${FOCUS_INSET}`}
             >
               <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink">{l.title}</span>
-              <span className="max-w-[40%] shrink-0 truncate font-mono text-[11px] text-ink-3">{hostOf(l.url)}</span>
+              <span className="max-w-[40%] shrink-0 truncate font-mono text-2xs text-ink-3">{hostOf(l.url)}</span>
             </a>
           </li>
         ))}
@@ -254,7 +254,7 @@ function PatchView({ patch }: { patch: string }) {
     <>
       {files.map((f, i) => (
         <div key={i} className="diff-tone w-full overflow-hidden rounded-card bg-surface shadow-card">
-          <div className="flex h-9 min-w-0 items-center gap-2 border-b border-line px-3 font-mono text-[12px]">
+          <div className="flex h-9 min-w-0 items-center gap-2 border-b border-line px-3 font-mono text-xs">
             <PathLabel path={f.moveTo ?? f.path} className="min-w-0" />
             {f.moveTo && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">moved</span>}
             {PATCH_OP[f.op] && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">{PATCH_OP[f.op]}</span>}
@@ -263,12 +263,12 @@ function PatchView({ patch }: { patch: string }) {
             </span>
           </div>
           {f.lines.length > 0 && (
-            <div tabIndex={0} translate="no" className={`max-h-[26rem] ${SCROLL} py-1.5 font-mono text-[12px] leading-[1.65] text-ink-2`}>
+            <div tabIndex={0} translate="no" className={`max-h-[26rem] ${SCROLL} py-1.5 font-mono text-xs leading-[1.65] text-ink-2`}>
               <div className="relative min-w-fit">
                 {f.lines.map((l, j) =>
                   l.tone === "hunk" ? (
                     l.text ? (
-                      <div key={j} className="mt-1 py-0.5 pr-4 pl-4 text-[11px] whitespace-pre text-ink-3 first:mt-0">
+                      <div key={j} className="mt-1 py-0.5 pr-4 pl-4 text-2xs whitespace-pre text-ink-3 first:mt-0">
                         {l.text}
                       </div>
                     ) : (
@@ -304,7 +304,7 @@ export function Detail({ item, result, active }: { item: RunItem; result?: ToolR
     return item.text.trim() ? (
       <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-ink-2 [overflow-wrap:anywhere]">{item.text}</p>
     ) : (
-      <p className="text-[12px] text-ink-3">Reasoning hidden.</p>
+      <p className="text-xs text-ink-3">Reasoning hidden.</p>
     );
   }
   const input: Record<string, unknown> = item.input ?? {};
@@ -363,7 +363,7 @@ export function Detail({ item, result, active }: { item: RunItem; result?: ToolR
       return (
         <Stack>
           {typeof input.offset === "number" || typeof input.limit === "number" ? (
-            <span className="text-[12px] text-ink-3">
+            <span className="text-xs text-ink-3">
               From line {typeof input.offset === "number" ? input.offset : 1}
               {typeof input.limit === "number" ? `, ${input.limit} lines` : ""}
             </span>
@@ -454,7 +454,7 @@ export function Detail({ item, result, active }: { item: RunItem; result?: ToolR
 /** Copy or save a proposed plan as Markdown. */
 function PlanActions({ plan }: { plan: string }) {
   const [copied, setCopied] = useState<boolean | null>(null);
-  const btn = "tap relative h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
+  const btn = "tap relative h-7 rounded-[7px] px-2.5 text-xs font-medium text-ink-2 shadow-btn hover:bg-hover hover:text-ink";
   return (
     <div className="flex items-center gap-1.5">
       <button

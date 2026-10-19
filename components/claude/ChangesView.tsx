@@ -36,11 +36,11 @@ export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileC
     >
       <div className="safe-top flex shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
         <div className="flex h-14 min-w-0 flex-1 items-center gap-2">
-          <span className="text-[14px] font-semibold text-ink">Changes</span>
-          <span className="text-[12px] text-ink-3 tabular-nums">
+          <span className="text-base font-semibold text-ink">Changes</span>
+          <span className="text-xs text-ink-3 tabular-nums">
             {changes.length} {changes.length === 1 ? "file" : "files"}
           </span>
-          <span className="diff-tone font-mono text-[12px] tabular-nums">
+          <span className="diff-tone font-mono text-xs tabular-nums">
             <span className="text-(color:--add-ink)">+{totals.added}</span> <span className="text-red-ink">-{totals.removed}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close changes" className="tap relative ml-auto flex size-9 items-center justify-center rounded-[9px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -51,7 +51,7 @@ export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileC
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 sm:px-3">
         {partial && <p className="px-2 pb-2 text-[11.5px] text-ink-3">From the loaded part of the conversation. Load earlier messages to include older edits.</p>}
         {changes.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[13px] text-ink-3">No file edits in this conversation yet.</p>
+          <p className="px-2 py-8 text-center text-sm text-ink-3">No file edits in this conversation yet.</p>
         ) : (
           changes.map((f) => {
             const expanded = open === f.path;
@@ -77,7 +77,7 @@ export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileC
                       <button
                         type="button"
                         onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: f.path } }))}
-                        className="self-start rounded-full px-2.5 py-1 text-[12px] font-medium text-ink-2 shadow-btn hover:bg-hover"
+                        className="self-start rounded-full px-2.5 py-1 text-xs font-medium text-ink-2 shadow-btn hover:bg-hover"
                       >
                         Open the file as it is now
                       </button>
