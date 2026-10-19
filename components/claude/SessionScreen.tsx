@@ -14,7 +14,7 @@ import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { HandoffDialog } from "./HandoffDialog";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
-import { terminalBusy } from "@/lib/status";
+import { runFailed, terminalBusy } from "@/lib/status";
 import { AskCards } from "./AskCards";
 import { Composer, MODELS } from "./Composer";
 import { MODE_ALIASES } from "@/lib/commands";
@@ -182,7 +182,7 @@ export function SessionScreen({
     !run?.pending.length &&
     !view.pending.length &&
     lastSaid(view.entries) === "text";
-  const failed = run?.status === "error" && run.error && run.error !== dismissedError ? run.error : null;
+  const failed = runFailed(run) && run?.error && run.error !== dismissedError ? run.error : null;
   const sentTexts = useMemo(() => view.entries.flatMap((e) => (e.kind === "user" && e.text.trim() ? [e.text] : [])).slice(-50), [view.entries]);
   const lastUserText = sentTexts.at(-1) ?? null;
 
@@ -275,8 +275,8 @@ export function SessionScreen({
   const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
   const chipLabel = "max-w-[9rem] truncate max-[479px]:sr-only";
   const loudLabel = "max-w-[9rem] truncate";
-  const runFailed = run?.status === "error";
-  const runLabel = run ? (run.pending.length ? "Needs you" : busy ? "Working…" : runFailed ? "Failed" : "Ready") : "";
+  const turnFailed = runFailed(run);
+  const runLabel = run ? (run.pending.length ? "Needs you" : busy ? "Working…" : turnFailed ? "Failed" : "Ready") : "";
   const status = view.status === "reconnecting" ? (
     <span role="status" className={`${chip} text-orange-ink`} title="Reconnecting…">
       <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-current" aria-hidden />
@@ -288,15 +288,15 @@ export function SessionScreen({
       <span className={chipLabel}>Terminal</span>
     </span>
   ) : run ? (
-    <span role="status" className={`${chip} ${run.pending.length ? "font-medium text-orange-ink" : runFailed && !busy ? "font-medium text-red-ink" : "text-ink-3"}`} title={run.error && runFailed ? run.error : runLabel}>
+    <span role="status" className={`${chip} ${run.pending.length ? "font-medium text-orange-ink" : turnFailed && !busy ? "font-medium text-red-ink" : "text-ink-3"}`} title={run.error && turnFailed ? run.error : runLabel}>
       {run.pending.length ? (
         <span className="size-1.5 shrink-0 rounded-full bg-orange" aria-hidden />
-      ) : runFailed && !busy ? (
+      ) : turnFailed && !busy ? (
         <span className="size-1.5 shrink-0 rounded-full bg-red" aria-hidden />
       ) : (
         <Pulse busy={busy} size={2.5} cellClass={AGENT_TONE[agent]} />
       )}
-      <span className={run.pending.length || (runFailed && !busy) ? loudLabel : chipLabel}>{runLabel}</span>
+      <span className={run.pending.length || (turnFailed && !busy) ? loudLabel : chipLabel}>{runLabel}</span>
     </span>
   ) : null;
 
