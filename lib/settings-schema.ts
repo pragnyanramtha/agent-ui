@@ -18,7 +18,7 @@ import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, typ
 
 export type Scope = "device" | "synced";
 
-export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
+export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "projects";
 
 export type SectionInfo = {
   id: SectionId;
@@ -70,6 +70,16 @@ export const SECTIONS: readonly SectionInfo[] = [
     ],
   },
   { id: "about", label: "About", description: "Version and links.", items: [{ id: "version", label: "Version", keywords: ["build", "commit", "release", "server"] }] },
+  {
+    id: "projects",
+    label: "Projects",
+    description: "Defaults for new sessions and run actions, per folder.",
+    items: [
+      { id: "project-defaults", label: "Project defaults", description: "Profile, model, approvals and worktrees for new sessions in a folder.", keywords: ["folder", "repository", "repo", "profile", "model", "approvals", "effort", "worktree"] },
+      { id: "branch-prefix", label: "Branch prefix", description: "How worktree branches for a project are named.", keywords: ["worktree", "branch", "naming", "git"] },
+      { id: "run-actions", label: "Run actions", description: "Commands the session header's Run menu starts in a terminal.", keywords: ["scripts", "package.json", "npm", "pnpm", "yarn", "bun", "dev server", "tasks", "commands"] },
+    ],
+  },
 ];
 
 /** How a setting shows on <html>: a data attribute with its value, and/or a CSS variable. Default values set nothing. */
