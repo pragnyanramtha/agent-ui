@@ -4,7 +4,8 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { createPortal } from "react-dom";
 import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
-import { api, shortPath, timeAgo } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
+import { signOut } from "@/lib/client/push";
 import { deleteSession, patchSession, type SessionChange } from "@/lib/client/useSessions";
 import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
@@ -17,8 +18,7 @@ import { NotifyButton } from "./NotifyButton";
 import { copyText } from "./CodeCard";
 import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 import { Kbd } from "@/components/atoms/Kbd";
-import { OPEN_SETTINGS_SECTION_EVENT } from "./SettingsScreen";
-import { useSetting } from "@/lib/client/settings";
+import { OPEN_SETTINGS_SECTION_EVENT, useSetting } from "@/lib/client/settings";
 import type { Settings as SettingValues } from "@/lib/settings-schema";
 import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
 
@@ -1477,10 +1477,7 @@ export const SessionList = memo(function SessionList({
           <IconButton
             label="Sign out"
             tipPos="bottom-end"
-            onClick={async () => {
-              await api("/api/auth/logout", {}).catch(() => undefined);
-              window.location.href = "/login";
-            }}
+            onClick={() => void signOut()}
           >
             <LogOut width={17} height={17} strokeWidth={1.8} aria-hidden />
           </IconButton>

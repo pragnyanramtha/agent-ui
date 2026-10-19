@@ -87,7 +87,7 @@ export function firstLine(text: string, secrets: string[] = []) {
   for (const s of secrets) if (s.length >= 4) line = line.split(s).join("••••••");
   /* strip ANSI colours some CLIs print even without a tty */
   line = line.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
-  return line.length > 120 ? `${line.slice(0, 117)}...` : line;
+  return line.length > 120 ? `${line.slice(0, 119)}…` : line;
 }
 
 /* ── agent profiles ─────────────────────────────────────── */
@@ -245,8 +245,8 @@ async function checkTool(t: Tool, timeoutMs: number): Promise<Check> {
 }
 
 const TOOLS: Tool[] = [
-  { id: "tmux", label: "tmux", bin: "tmux", args: ["-V"], missing: "warn", why: "Agents started here stop when the terminal service restarts.", fix: "sudo apt install -y tmux" },
-  { id: "zellij", label: "zellij", bin: "zellij", args: ["--version"], missing: "ok", why: "Optional." },
+  { id: "tmux", label: "Persistent terminals (tmux)", bin: "tmux", args: ["-V"], missing: "warn", why: "Agents started here stop when the terminal service restarts.", fix: "sudo apt install -y tmux" },
+  { id: "zellij", label: "Persistent terminals (zellij)", bin: "zellij", args: ["--version"], missing: "ok", why: "Optional when tmux is installed." },
   { id: "python3", label: "Python 3", bin: "python3", args: ["--version"], missing: "fail", why: "The web terminal needs it.", fix: "sudo apt install -y python3" },
   { id: "git", label: "git", bin: "git", args: ["--version"], missing: "fail", why: "Checkpoints, rewind and commits need it.", fix: "sudo apt install -y git" },
   { id: "gh", label: "GitHub CLI", bin: "gh", args: ["--version"], missing: "warn", why: "Pull requests need it.", fix: "sudo apt install -y gh" },

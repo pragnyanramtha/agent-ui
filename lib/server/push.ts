@@ -84,6 +84,14 @@ export function unsubscribe(endpoint: string) {
   if (store.subs.length !== before) write();
 }
 
+/** Forgets every browser: after "Sign out everywhere" no device should keep getting session details. */
+export function unsubscribeAll() {
+  const store = load();
+  if (!store.subs.length) return;
+  store.subs = [];
+  write();
+}
+
 export type PushMessage = { title: string; body: string; tag: string; url: string; kind: "done" | "needs" | "failed" | "test" };
 
 /** Sends to every subscribed browser; ones the push service says are gone are dropped. */

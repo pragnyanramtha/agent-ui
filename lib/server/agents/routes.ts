@@ -204,7 +204,7 @@ async function sendNow(agent: AgentId, native: string, text: string, o: { id?: s
     return { ok: false, error: err instanceof Error ? err.message : String(err), status: 500 };
   }
   setSessionProfile(key, profile.id);
-  guardTurn({ key, text, mode: o.mode, model: o.model, profile });
+  guardTurn({ key, text, mode: o.mode, model: o.model, effort: o.effort, profile });
   if (o.id) void checkLanding(agent, native, o.id, text);
   return { ok: true };
 }
@@ -380,7 +380,7 @@ export async function agentStart(agent: AgentId, body: Record<string, unknown>) 
     const key = sessionKey(agent, id);
     setMode(key, mode);
     setSessionProfile(key, profile.id);
-    guardTurn({ key, text, mode, model, profile });
+    guardTurn({ key, text, mode, model, effort: asked, profile });
     return NextResponse.json({ id: key });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
@@ -398,6 +398,12 @@ export async function agentControl(agent: AgentId, native: string, body: Record<
     const mode = parseMode(body.value);
     if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
     setMode(key, mode);
+    /* queued messages go out under the mode chosen now, not the one they were queued with */
+    const waiting = queues().get(key);
+    if (waiting?.length) {
+      for (const q of waiting) q.mode = mode;
+      saveQueues();
+    }
   } else if (body.action !== "model" && body.action !== "effort") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

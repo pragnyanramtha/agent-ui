@@ -75,3 +75,12 @@ export async function resyncPush() {
   const fresh = await subscription(publicKey);
   await api("/api/push", { subscription: fresh.toJSON() });
 }
+
+/** Ends this browser's session (every device's with `everywhere`) and goes to the login page. The server forgets this
+ * browser's push subscription too, so a signed-out device stops getting session titles and prompts. */
+export async function signOut(everywhere = false) {
+  const sub = supported() ? await Promise.race([current().then((c) => c.sub), new Promise<null>((r) => setTimeout(() => r(null), 1500))]).catch(() => null) : null;
+  await api("/api/auth/logout", { ...(everywhere ? { everywhere: true } : {}), ...(sub ? { endpoint: sub.endpoint } : {}) }).catch(() => undefined);
+  await sub?.unsubscribe().catch(() => undefined);
+  window.location.href = "/login";
+}

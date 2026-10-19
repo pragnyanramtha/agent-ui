@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseUnifiedPatch } from "@/lib/client/diff";
+import { lineDiff, parseUnifiedPatch } from "@/lib/client/diff";
 
 describe("parseUnifiedPatch edge cases", () => {
   it("unquotes names with emoji next to escapes", () => {
@@ -46,6 +46,27 @@ describe("binary files", () => {
       ["pic.png", "added", true],
       ["old.bin", "deleted", true],
       ["img.png", "binary", true],
+    ]);
+  });
+});
+
+describe("lineDiff", () => {
+  it("diffs by line and reuses the result for the same texts", () => {
+    const before = "a\nb\nc";
+    const after = "a\nB\nc\nd";
+    const first = lineDiff(before, after);
+    expect(first.map((l) => `${l.tone}:${l.text}`)).toEqual(["ctx:a", "del:b", "add:B", "ctx:c", "add:d"]);
+    expect(lineDiff(before, after)).toBe(first);
+    /* the same text built anew is still the same key */
+    expect(lineDiff(["a", "b", "c"].join("\n"), after)).toBe(first);
+    expect(lineDiff(before, after, 2)).not.toBe(first);
+  });
+
+  it("keeps working past the cache bound", () => {
+    for (let i = 0; i < 600; i++) expect(lineDiff(`x${i}`, `y${i}`)).toHaveLength(2);
+    expect(lineDiff("p\nq", "p")).toEqual([
+      { tone: "ctx", text: "p", old: 1, cur: 1 },
+      { tone: "del", text: "q", old: 2, cur: null },
     ]);
   });
 });

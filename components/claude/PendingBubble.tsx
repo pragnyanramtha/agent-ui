@@ -58,10 +58,10 @@ export function PendingBubble({
             : { icon: <Check width={12} height={12} strokeWidth={2.2} />, text: "Delivered", tone: "text-ink-3" };
 
   return (
-    <div className="flex flex-col items-end gap-1 pl-8 sm:pl-20" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
+    <div className="flex flex-col items-end gap-1" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <SentFiles paths={paths} />
       <div
-        className={`max-w-full min-w-0 rounded-[14px] border border-dashed px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:py-2 sm:text-[13.5px] ${
+        className={`max-w-[80%] min-w-0 rounded-2xl border border-dashed px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:px-4 sm:py-3 sm:text-[14px] ${
           pending.state === "failed" ? "border-red/40 bg-red-tint" : "border-line-strong bg-field/60"
         }`}
         aria-busy={pending.state === "sending" || undefined}

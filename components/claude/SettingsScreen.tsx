@@ -2,15 +2,13 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
-import { resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
+import { OPEN_SETTINGS_SECTION_EVENT, resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
 import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
 import { SECTION_ICONS, SectionBody } from "./settings/sections";
 
 const LAST_KEY = "cui:settings-section";
-/** Opens a section (detail: its id) when Settings is already on screen; a fresh Settings screen reads LAST_KEY. */
-export const OPEN_SETTINGS_SECTION_EVENT = "agent-u:settings-section";
 
 function SectionHeader({ id }: { id: SectionId }) {
   const values = useSettings();

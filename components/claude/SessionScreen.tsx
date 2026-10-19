@@ -14,19 +14,16 @@ import { serverId, useSession } from "@/lib/client/useSession";
 import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
-import { HandoffDialog } from "./HandoffDialog";
-import { OPEN_FILES_EVENT } from "./FilesScreen";
+import { useGitInfo } from "@/lib/client/useGitInfo";
+import { AskCards, GitPanel, HandoffDialog, TerminalPeek, UsagePanel } from "./lazy";
+import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { runFailed, terminalBusy } from "@/lib/status";
-import { AskCards } from "./AskCards";
 import { Composer, MODELS } from "./Composer";
 import { MODE_ALIASES } from "@/lib/commands";
 import { ChangesPanel, collectChanges } from "./ChangesPanel";
-import { GitPanel } from "./GitPanel";
 import { OPEN_USAGE_EVENT } from "./ContextRing";
-import { UsagePanel } from "./UsagePanel";
 import { sessionCost } from "@/lib/client/usage";
 import { PendingBubble } from "./PendingBubble";
-import { TerminalPeek } from "./TerminalPeek";
 import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
@@ -47,6 +44,8 @@ function useMeasure<T extends HTMLElement>() {
 }
 
 const OFFLINE = "Couldn't reach the server.";
+const SEGMENT =
+  "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
 type Panel = "changes" | "git" | "usage";
 const PANEL_KEY = "cui:panel";
 
@@ -156,6 +155,11 @@ export function SessionScreen({
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
+  const turns = useMemo(() => view.entries.filter((e) => e.kind === "user").length, [view.entries]);
+  const [gitRev, setGitRev] = useState(0);
+  const project = view.cwd.split("/").filter(Boolean).pop() ?? "";
+  const showTerminal = view.status !== "missing" && Boolean(terminal || !busy);
+  const git = useGitInfo(id, `${busy ? "busy" : "idle"}:${turns}:${gitRev}`);
   const usage = useMemo(() => {
     for (let i = view.entries.length - 1; i >= 0; i--) {
       const e = view.entries[i];
@@ -361,82 +365,90 @@ export function SessionScreen({
     <div className="relative flex min-h-0 min-w-0 flex-1">
     <section ref={sectionRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="on-page safe-top safe-x relative z-20 flex shrink-0 items-center bg-page">
-        <div className="flex h-14 w-full min-w-0 items-center gap-0.5 px-1.5 sm:px-3 lg:h-[52px]">
+        <div className="@container flex h-14 w-full min-w-0 items-center gap-0.5 px-1.5 sm:px-3 lg:h-[52px]">
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <div className="flex min-w-0 flex-1 flex-col px-1.5 sm:flex-row sm:items-baseline sm:gap-2.5">
-            <h1 className="min-w-0 truncate text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]" title={view.title || undefined}>
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-[15px] tracking-[-0.01em] sm:text-[13.5px]">
+            {runsOn && (
+              <span className="flex shrink-0 max-sm:hidden" title={runsOn}>
+                <AgentMark agent={agent} />
+              </span>
+            )}
+            {project && (
+              <>
+                <span className="min-w-[2.5rem] shrink-[4] truncate text-ink-3 max-sm:hidden @max-[36rem]:hidden" title={runsOn ? `${shortPath(view.cwd)} · ${runsOn}` : shortPath(view.cwd)} translate="no">
+                  {project}
+                </span>
+                <span className="shrink-0 text-ink-3/60 max-sm:hidden @max-[36rem]:hidden" aria-hidden>
+                  /
+                </span>
+              </>
+            )}
+            <h1 className="min-w-0 truncate font-medium text-ink" title={[view.title, shortPath(view.cwd)].filter(Boolean).join("\n") || undefined}>
               {view.title || (view.status === "missing" ? "Couldn't load this session" : "Loading session…")}
             </h1>
-            {(view.cwd || runsOn) && (
-              <p className="flex min-w-0 shrink-[3] items-center gap-1.5 text-[12px] text-ink-3 sm:text-[13px]" title={view.cwd || undefined}>
-                {runsOn && (
-                  <>
-                    <AgentMark agent={agent} />
-                    <span className="shrink-0">{runsOn}</span>
-                    {view.cwd && <span aria-hidden>·</span>}
-                  </>
-                )}
-                <span className="truncate" translate="no">
-                  {shortPath(view.cwd)}
-                </span>
-              </p>
+            {git?.branch && (
+              <span className="inline-flex h-5 max-w-[10rem] min-w-0 shrink-[8] items-center rounded-chip bg-field px-1.5 font-mono text-[11.5px] text-ink-3 max-sm:hidden @max-[48rem]:hidden" title={`Branch ${git.branch}`} translate="no">
+                <span className="truncate">{git.branch}</span>
+              </span>
             )}
           </div>
           {status}
-          {changes.length > 0 && (
+          <div role="group" aria-label="Panels" className={`mx-1 flex h-8 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-hairline pointer-coarse:h-11 max-sm:mx-0 max-sm:p-0 max-sm:shadow-none ${changes.length || showTerminal ? "" : "max-sm:hidden"}`}>
+            {changes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => togglePanel("changes")}
+                aria-pressed={changesOpen}
+                aria-label={`Changes: ${changes.length} ${changes.length === 1 ? "file" : "files"}`}
+                data-tip="Changes"
+                data-tip-pos="bottom"
+                className={`${SEGMENT} tabular-nums`}
+              >
+                <GitCompare width={16} height={16} strokeWidth={1.6} />
+                <span className="max-[379px]:sr-only">{changes.length}</span>
+              </button>
+            )}
+            {showTerminal && (
+              <button
+                type="button"
+                onClick={() => void openInteractive()}
+                disabled={launching}
+                aria-label="Open in terminal"
+                data-tip="Open in terminal"
+                data-tip-pos="bottom"
+                className={SEGMENT}
+              >
+                <Terminal width={16} height={16} strokeWidth={1.6} />
+                <span className="max-sm:sr-only @max-[44rem]:sr-only">{launching ? "Opening…" : "Terminal"}</span>
+              </button>
+            )}
+            {view.cwd && (
+              <button
+                type="button"
+                onClick={() => togglePanel("git")}
+                aria-pressed={gitOpen}
+                aria-label="Git and checkpoints"
+                data-tip="Git"
+                data-tip-pos="bottom"
+                className={`${SEGMENT} max-sm:hidden`}
+              >
+                <GitBranch width={16} height={16} strokeWidth={1.6} />
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => togglePanel("changes")}
-              aria-pressed={changesOpen}
-              aria-label={`Changes: ${changes.length} ${changes.length === 1 ? "file" : "files"}`}
-              data-tip="Changes"
+              onClick={() => togglePanel("usage")}
+              aria-pressed={usageOpen}
+              aria-label="Usage and cost"
+              data-tip="Usage"
               data-tip-pos="bottom"
-              className="icon-btn w-auto gap-1 px-2 text-[12.5px] font-medium tabular-nums"
+              className={`${SEGMENT} max-sm:hidden`}
             >
-              <GitCompare width={17} height={17} strokeWidth={1.8} />
-              <span className="max-[379px]:sr-only">{changes.length}</span>
+              <StatsReport width={16} height={16} strokeWidth={1.6} />
             </button>
-          )}
-          {view.status !== "missing" && (terminal || !busy) && (
-            <button
-              type="button"
-              onClick={() => void openInteractive()}
-              disabled={launching}
-              aria-label="Open in terminal"
-              data-tip="Open in terminal"
-              data-tip-pos="bottom"
-              className="icon-btn w-auto gap-1.5 px-2.5 text-[12.5px] font-medium disabled:opacity-60"
-            >
-              <Terminal width={17} height={17} strokeWidth={1.8} />
-              <span className="max-sm:sr-only">{launching ? "Opening…" : "Terminal"}</span>
-            </button>
-          )}
-          {view.cwd && (
-            <button
-              type="button"
-              onClick={() => togglePanel("git")}
-              aria-pressed={gitOpen}
-              aria-label="Git and checkpoints"
-              data-tip="Git"
-              data-tip-pos="bottom"
-              className="icon-btn max-sm:hidden"
-            >
-              <GitBranch width={17} height={17} strokeWidth={1.8} />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => togglePanel("usage")}
-            aria-pressed={usageOpen}
-            aria-label="Usage and cost"
-            data-tip="Usage"
-            data-tip-pos="bottom"
-            className="icon-btn max-sm:hidden"
-          >
-            <StatsReport width={17} height={17} strokeWidth={1.8} />
-          </button>
+          </div>
           <div className="relative shrink-0" data-session-menu>
             <button
               ref={menuButtonRef}
@@ -453,9 +465,9 @@ export function SessionScreen({
                   setMenuOpen(true);
                 }
               }}
-              className="icon-btn"
+              className="icon-btn pointer-fine:size-8"
             >
-              <MoreHoriz width={18} height={18} strokeWidth={1.8} />
+              <MoreHoriz width={17} height={17} strokeWidth={1.6} />
             </button>
             {menuOpen && (
               <div
@@ -621,6 +633,7 @@ export function SessionScreen({
           />
         )}
         bottomPad={composerH}
+        changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
         footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} /> : null}
         empty={
           view.status === "missing" ? (

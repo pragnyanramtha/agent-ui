@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stamp } from "@/components/claude/Thread";
+import { stamp } from "@/lib/client/stamp";
 
 const now = new Date(2026, 9, 19, 12, 0);
 const at = (y: number, m: number, d: number) => new Date(y, m, d, 14, 2).getTime();

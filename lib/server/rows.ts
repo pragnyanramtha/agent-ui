@@ -1,5 +1,6 @@
 import { getRun, lastFailure } from "./runner";
-import { listSessions } from "./sessions";
+import { listSessions, type ListingSeen } from "./sessions";
+import { newestFirst } from "./order";
 import { agentSummaries } from "./agents/bridge";
 import { allSessionMeta, type SessionMeta } from "./profiles";
 import type { SessionSummary } from "@/lib/types";
@@ -17,8 +18,8 @@ export function withMeta(s: SessionSummary, m: SessionMeta | undefined): Session
 }
 
 /** Every session the list shows, Claude and the other agents, newest first. Archived ones included, deleted ones not. */
-export async function sessionRows(): Promise<SessionSummary[]> {
-  const [sessions, others] = await Promise.all([listSessions(), agentSummaries().catch(() => [])]);
+export async function sessionRows(limit?: number, seen?: ListingSeen): Promise<SessionSummary[]> {
+  const [sessions, others] = await Promise.all([listSessions(limit, seen), agentSummaries().catch(() => [])]);
   const meta = allSessionMeta();
   return [
     ...sessions.map((s) => {
@@ -32,5 +33,5 @@ export async function sessionRows(): Promise<SessionSummary[]> {
   ]
     .filter((s) => !meta[s.id]?.deleted)
     .map((s) => withMeta(s, meta[s.id]))
-    .sort((a, b) => b.mtime - a.mtime);
+    .sort(newestFirst);
 }

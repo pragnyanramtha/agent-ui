@@ -24,6 +24,8 @@ export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode
     const el = ref.current;
     if (!el) return;
     e.preventDefault();
+    const handle = e.currentTarget;
+    handle.dataset.dragging = "";
     const startX = e.clientX;
     const startW = el.getBoundingClientRect().width;
     const room = (el.parentElement?.getBoundingClientRect().width ?? window.innerWidth) - MAIN_MIN;
@@ -33,6 +35,7 @@ export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode
       el.style.setProperty("--panel-w", `${last}px`);
     };
     const up = () => {
+      delete handle.dataset.dragging;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       document.body.style.cursor = "";
@@ -56,7 +59,7 @@ export function PanelSlot({ children, resetKey, onClose }: { children: ReactNode
           ref.current?.style.setProperty("--panel-w", `${DEFAULT}px`);
           localStorage.setItem(WIDTH_KEY, String(DEFAULT));
         }}
-        className="absolute inset-y-0 -left-1 z-30 hidden w-2 cursor-col-resize transition-colors hover:bg-accent/40 lg:block"
+        className="absolute inset-y-0 -left-[5px] z-30 hidden w-2.5 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent after:transition-colors after:duration-150 hover:after:bg-line-strong data-dragging:after:bg-accent lg:block"
       />
       <Boundary resetKey={resetKey} label="panel" fallback={(retry) => <PanelFallback retry={retry} onClose={onClose} />}>
         {children}
