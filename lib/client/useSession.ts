@@ -195,6 +195,12 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend", 
   };
 }
 
+/** a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
+function failDelivered(pending: Pending[], run: RunState | null): Pending[] {
+  if (run?.status !== "error" || !pending.some((p) => p.state === "sent" && p.via === "web")) return pending;
+  return pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: run.error ?? "Not delivered. The turn ended first." } : p));
+}
+
 export function reducer(state: SessionView, action: Action): SessionView {
   switch (action.type) {
     case "event": {
@@ -205,8 +211,11 @@ export function reducer(state: SessionView, action: Action): SessionView {
         const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append", !first);
         return {
           ...merged,
-          /* the server replays a running turn's live text after every history event */
-          streams: merged.streams.some((s) => isLive(s.msgId)) ? merged.streams.filter((s) => !isLive(s.msgId)) : merged.streams,
+          /* deltas sent while disconnected are gone, so text on screen can't be continued; other agents' servers
+           * replay a running turn's live text after every history event, and a finished block lands as an entry */
+          streams: merged.streams.length ? [] : merged.streams,
+          /* the run may have ended (or crashed) while the stream was down */
+          pending: failDelivered(merged.pending, e.run),
           status: "open",
           cursor: first ? e.cursor : state.cursor,
           terminal: e.terminal,
@@ -228,12 +237,7 @@ export function reducer(state: SessionView, action: Action): SessionView {
       }
       if (e.type === "run") {
         const ended = !e.run || e.run.status === "idle" || e.run.status === "closed" || e.run.status === "error";
-        /* a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
-        const failed = e.run?.status === "error";
-        const pending = failed
-          ? state.pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: e.run?.error ?? "Not delivered. The turn ended first." } : p))
-          : state.pending;
-        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending };
+        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending: failDelivered(state.pending, e.run) };
       }
       if (e.type === "delta") {
         const d = e.delta;

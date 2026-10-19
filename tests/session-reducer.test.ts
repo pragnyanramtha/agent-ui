@@ -183,3 +183,43 @@ describe("live text", () => {
     expect(s.entries).toHaveLength(1);
   });
 });
+
+describe("stream reconnects", () => {
+  const delta = (msgId: string, text: string): ServerEvent => ({ type: "delta", delta: { msgId, index: 0, kind: "text", text } });
+
+  it("clear Claude's leftover live text when the run ended during the outage", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("msg_1", "Half an ans"));
+    s = ev(s, history([], run("idle")));
+    expect(s.run?.status).toBe("idle");
+    expect(s.streams).toEqual([]);
+  });
+
+  it("don't glue deltas from before and after a gap", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("msg_1", "The quick "));
+    s = ev(s, history([], run("running")));
+    s = ev(s, delta("msg_1", "lazy dog"));
+    expect(s.streams.map((x) => x.text)).toEqual(["lazy dog"]);
+  });
+
+  it("clear other agents' live text too (their server replays it)", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("live:codex:t:1:0", "So far"));
+    s = ev(s, history([], run("running")));
+    expect(s.streams).toEqual([]);
+  });
+
+  it("turn delivered web bubbles into Retry when the run crashed while disconnected", () => {
+    let s = ev(withPending(pending("p1", "a"), pending("p2", "b", { via: "terminal" })), history([], run("running")), true);
+    s = ev(s, history([], run("error", "Claude exited")));
+    expect(s.pending.find((p) => p.localId === "p1")).toMatchObject({ state: "failed", resend: true, error: "Claude exited" });
+    expect(s.pending.find((p) => p.localId === "p2")!.state).toBe("sent");
+  });
+
+  it("leave bubbles alone when the run is fine", () => {
+    let s = ev(withPending(pending("p1", "a")), history([], run("running")), true);
+    s = ev(s, history([], run("idle")));
+    expect(s.pending[0].state).toBe("sent");
+  });
+});
