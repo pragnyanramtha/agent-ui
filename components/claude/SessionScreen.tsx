@@ -30,6 +30,9 @@ import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { useAutoOpenDiff } from "@/lib/client/useAutoOpenDiff";
+import { useEditorLink } from "@/lib/client/useEditorLink";
+import { OpenNewWindow } from "iconoir-react";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -157,6 +160,8 @@ export function SessionScreen({
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
+  useAutoOpenDiff(id, Boolean(busy && run), changes, () => setPanel((p) => p ?? "changes"));
+  const editorLink = useEditorLink();
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
   const turns = useMemo(() => view.entries.filter((e) => e.kind === "user").length, [view.entries]);
   const [gitRev, setGitRev] = useState(0);
@@ -613,6 +618,12 @@ export function SessionScreen({
                     <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
                     Browse files here
                   </button>
+                )}
+                {view.cwd && editorLink?.href(view.cwd) && (
+                  <a role="menuitem" href={editorLink.href(view.cwd)!} onClick={() => setTimeout(closeMenu)} className="menu-item pointer-coarse:hidden">
+                    <OpenNewWindow width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                    {editorLink.label}
+                  </a>
                 )}
                 {view.status === "open" && (
                   <button

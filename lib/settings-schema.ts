@@ -15,6 +15,7 @@ import type { AgentId } from "./types";
 import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
 import { TERMINAL_SCHEMES } from "./client/terminal-theme";
 import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, type Bases } from "./theme";
+import { SSH_HOST } from "./editor-links";
 
 export type Scope = "device" | "synced";
 
@@ -1196,6 +1197,31 @@ export const SETTINGS = {
     ],
   }),
 
+  /* workflow */
+  autoOpenDiff: boolean({
+    section: "git",
+    group: "Diffs",
+    label: "Open changes after a turn",
+    description: "When a turn sent from here edits files, the Changes panel opens on its own.",
+    keywords: ["diff", "panel", "auto open", "proactive", "review", "files changed", "last turn"],
+    scope: "synced",
+    default: false,
+  }),
+  diffFileState: choice({
+    section: "git",
+    group: "Diffs",
+    label: "Files in a diff",
+    description: "How each file starts out. Large files are over 400 lines.",
+    keywords: ["collapse", "expand", "fold", "large files", "diff"],
+    scope: "device",
+    default: "large",
+    control: "select",
+    options: [
+      { value: "large", label: "Collapse large files" },
+      { value: "expanded", label: "Expanded" },
+      { value: "collapsed", label: "Collapsed" },
+    ],
+  }),
   limitAction: choice({
     section: "agents",
     group: "Usage limits",
@@ -1232,6 +1258,35 @@ export const SETTINGS = {
     default: "",
     maxLength: 4000,
     placeholder: "haiku",
+  }),
+  editorLink: choice({
+    section: "general",
+    group: "Open in editor",
+    label: "Open files in",
+    description: "Adds Open in links to the session menu and file paths. Your editor connects to this server over SSH.",
+    keywords: ["vs code", "vscode", "cursor", "zed", "ssh", "remote", "ide", "editor"],
+    scope: "synced",
+    default: "none",
+    control: "select",
+    options: [
+      { value: "none", label: "Nowhere" },
+      { value: "vscode", label: "VS Code" },
+      { value: "cursor", label: "Cursor" },
+      { value: "zed", label: "Zed" },
+    ],
+  }),
+  editorHost: text({
+    section: "general",
+    group: "Open in editor",
+    label: "SSH host",
+    description: "How your computer reaches this server: a Host from ~/.ssh/config, or user@host.",
+    keywords: ["ssh", "remote", "hostname", "server", "editor"],
+    scope: "synced",
+    default: "",
+    maxLength: 255,
+    placeholder: "my-server",
+    pattern: SSH_HOST,
+    showIf: ["editorLink", ["vscode", "cursor", "zed"]],
   }),
 } as const satisfies Record<string, SettingDef>;
 
