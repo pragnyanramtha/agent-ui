@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
-import { resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
+import { OPEN_SETTINGS_SECTION_EVENT, resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
 import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
@@ -132,6 +132,19 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
     sessionStorage.setItem(LAST_KEY, id);
     contentRef.current?.scrollTo({ top: 0 });
   };
+
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail as SectionId;
+      if (!SECTIONS.some((x) => x.id === id)) return;
+      setSection(id);
+      setPaged(true);
+      setQuery("");
+      contentRef.current?.scrollTo({ top: 0 });
+    };
+    window.addEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
+    return () => window.removeEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
+  }, []);
 
   /* "/" or Ctrl/Cmd+F jumps to the search field */
   useEffect(() => {

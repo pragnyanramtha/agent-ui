@@ -16,6 +16,8 @@ export type AgentSession = {
   cwd: string;
   /** last activity, epoch ms */
   mtime: number;
+  /** when it started, epoch ms, if the agent's storage records it */
+  created?: number;
   /** bytes of history, for display only (0 if unknown) */
   size: number;
   model?: string | null;

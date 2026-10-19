@@ -18,7 +18,7 @@ import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, typ
 
 export type Scope = "device" | "synced";
 
-export type SectionId = "general" | "appearance" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
+export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
 
 export type SectionInfo = {
   id: SectionId;
@@ -35,6 +35,7 @@ export const SECTIONS: readonly SectionInfo[] = [
     ],
   },
   { id: "appearance", label: "Appearance", description: "Colors, fonts, sizes and spacing." },
+  { id: "sidebar", label: "Sidebar", description: "How the session list groups, sorts and shows sessions." },
   { id: "composer", label: "Composer", description: "How messages are written and sent." },
   { id: "conversation", label: "Conversation", description: "How sessions read." },
   { id: "terminal", label: "Terminal", description: "Terminals opened from a session or the menu." },
@@ -462,6 +463,96 @@ export const SETTINGS = {
     scope: "synced",
     default: false,
     dom: { attr: "data-timestamps" },
+  }),
+
+  /* sidebar */
+  sidebarGroup: choice({
+    section: "sidebar",
+    group: "List",
+    label: "Group sessions",
+    description: "A flat list shows Pinned, then Recent.",
+    keywords: ["projects", "folders", "flat", "recent", "session list"],
+    scope: "synced",
+    default: "project",
+    options: [
+      { value: "project", label: "By project" },
+      { value: "flat", label: "Flat list" },
+    ],
+  }),
+  sidebarSort: choice({
+    section: "sidebar",
+    group: "List",
+    label: "Sort by",
+    keywords: ["order", "newest", "alphabetical", "session list"],
+    scope: "synced",
+    default: "activity",
+    options: [
+      { value: "activity", label: "Last activity" },
+      { value: "created", label: "Created" },
+      { value: "title", label: "Title" },
+    ],
+  }),
+  sidebarProjectCap: choice({
+    section: "sidebar",
+    group: "List",
+    label: "Sessions per project",
+    description: "How many show before Show more.",
+    keywords: ["limit", "show more", "folders"],
+    scope: "synced",
+    default: "10",
+    options: [
+      { value: "5", label: "5" },
+      { value: "10", label: "10" },
+      { value: "20", label: "20" },
+      { value: "all", label: "All" },
+    ],
+    showIf: ["sidebarGroup", "project"],
+  }),
+  sidebarShowArchived: boolean({
+    section: "sidebar",
+    group: "List",
+    label: "Show archived",
+    description: "An Archived list at the end, folded until opened.",
+    keywords: ["hidden", "restore", "unarchive"],
+    scope: "synced",
+    default: true,
+  }),
+  sidebarAgentIcon: boolean({
+    section: "sidebar",
+    group: "Rows",
+    label: "Show agent on rows",
+    description: "A colored mark on sessions from agents other than Claude, when more than one has sessions.",
+    keywords: ["claude", "codex", "gemini", "icon", "badge"],
+    scope: "synced",
+    default: true,
+  }),
+  sidebarTime: choice({
+    section: "sidebar",
+    group: "Rows",
+    label: "Times",
+    description: "Relative reads 2h or Mon. Absolute reads the clock time today, else the date.",
+    keywords: ["relative", "absolute", "clock", "ago", "last activity"],
+    scope: "synced",
+    default: "relative",
+    options: [
+      { value: "relative", label: "Relative" },
+      { value: "absolute", label: "Absolute" },
+    ],
+  }),
+  sidebarConfirm: choice({
+    section: "sidebar",
+    group: "Rows",
+    label: "Confirm first",
+    description: "Archived sessions can be restored. Deleted ones can't.",
+    keywords: ["ask", "archive", "delete", "dialog", "undo"],
+    scope: "synced",
+    default: "delete",
+    control: "select",
+    options: [
+      { value: "delete", label: "Before deleting" },
+      { value: "both", label: "Before archiving or deleting" },
+      { value: "never", label: "Never" },
+    ],
   }),
 
   /* composer */

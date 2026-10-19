@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, Terminal } from "iconoir-react";
+import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
 import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@/lib/client/push";
 import { toast } from "@/lib/client/toast";
 import { sendTestNotification } from "@/lib/client/useNotifications";
@@ -21,6 +21,7 @@ export type SectionProps = { onAgents: () => void };
 export const SECTION_ICONS: Record<SectionId, ComponentType<{ width?: number; height?: number; strokeWidth?: number }>> = {
   general: SettingsIcon,
   appearance: Palette,
+  sidebar: SidebarExpand,
   composer: EditPencil,
   conversation: ChatLines,
   terminal: Terminal,

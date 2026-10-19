@@ -60,6 +60,7 @@ const toSession = (r: DevinSessionRow): AgentSession => ({
   title: r.title,
   cwd: r.cwd,
   mtime: r.lastActivity * 1000,
+  created: r.createdAt ? r.createdAt * 1000 : undefined,
   size: 0,
   model: r.model || null,
 });

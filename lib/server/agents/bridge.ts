@@ -51,6 +51,7 @@ export async function agentSummaries(): Promise<SessionSummary[]> {
             cwd: s.cwd,
             project: path.basename(s.cwd) || s.cwd,
             mtime: s.mtime,
+            ...(s.created ? { created: s.created } : {}),
             size: s.size,
             terminal: proc ? { pid: proc.pid, status: "unknown", name: null, multiplexer: await multiplexer(proc.pid) } : null,
             web: toRunState(key, a.runState(s.id), "default", s.model ?? null),

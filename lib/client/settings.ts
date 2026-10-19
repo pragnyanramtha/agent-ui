@@ -162,6 +162,10 @@ export function resetSettings(keys: readonly SettingKey[]) {
   changed();
 }
 
+/** Asks an open Settings screen to show a section (detail: its id); a Settings screen that mounts later reads the
+ * section it last showed from sessionStorage, which the sender sets too. */
+export const OPEN_SETTINGS_SECTION_EVENT = "agent-u:settings-section";
+
 export const resetSection = (section: SectionId) => resetSettings(settingsIn(section).map((d) => d.key));
 export const resetAllSettings = () => resetSettings(SETTING_KEYS);
 
