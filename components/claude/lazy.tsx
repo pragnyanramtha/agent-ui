@@ -41,7 +41,7 @@ export const WebTerminal = dynamic(() => import("./WebTerminal").then((m) => m.W
 export const ShortcutsDialog = dynamic(() => import("./ShortcutsDialog").then((m) => m.ShortcutsDialog), { ssr: false });
 export const FolderPicker = dynamic(() => import("./FolderPicker").then((m) => m.FolderPicker), { ssr: false });
 
-export const GitPanel = dynamic(() => import("./GitPanel").then((m) => m.GitPanel), { ssr: false, loading: () => <PanelWait label="Loading git…" /> });
+export const GitPanel = dynamic(() => import("./GitPanel").then((m) => m.GitPanel), { ssr: false, loading: () => <PanelWait label="Loading Git…" /> });
 export const UsagePanel = dynamic(() => import("./UsagePanel").then((m) => m.UsagePanel), { ssr: false, loading: () => <PanelWait label="Loading usage…" /> });
 export const HandoffDialog = dynamic(() => import("./HandoffDialog").then((m) => m.HandoffDialog), { ssr: false, loading: () => <PillWait label="Loading…" /> });
 export const TerminalPeek = dynamic(() => import("./TerminalPeek").then((m) => m.TerminalPeek), { ssr: false, loading: () => <PillWait label="Loading terminal preview…" /> });

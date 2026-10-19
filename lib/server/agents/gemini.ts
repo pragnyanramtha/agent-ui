@@ -45,7 +45,7 @@ const findChat = (id: string): ChatFile | null => chatFiles(roots()).get(id) ?? 
 
 function toSession(c: ChatFile): AgentSession {
   const s = chatSummary(c);
-  return { id: c.id, title: s.title || "Gemini chat", cwd: c.cwd || startedCwds.get(c.id) || "", mtime: c.mtime, size: c.size, model: s.model };
+  return { id: c.id, title: s.title || "Gemini session", cwd: c.cwd || startedCwds.get(c.id) || "", mtime: c.mtime, size: c.size, model: s.model };
 }
 
 async function list(): Promise<AgentSession[]> {

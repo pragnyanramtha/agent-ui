@@ -446,12 +446,12 @@ export function WebTerminal({
             return;
           }
           setConn("reconnecting");
-          setReason(opened ? "Connection lost. Reconnecting…" : "Can't reach the terminal server. Retrying…");
+          setReason(opened ? "Connection lost. Reconnecting…" : "Can't reach the terminal service. Retrying…");
           tries++;
           /* a refused upgrade looks like a network error: after a few, ask the app whether we're still signed in (api() sends us to login if not) */
           if (!opened && tries === 3)
             void api("/api/terminals").then(
-              () => !disposed && !ended && setReason("The app is up but the terminal server isn't answering. It may be restarting, or agent-u-pty is down. Retrying…"),
+              () => !disposed && !ended && setReason("The terminal service isn't answering. It may be restarting. Retrying…"),
               () => undefined,
             );
           timer = setTimeout(connect, Math.min(10_000, 400 * 2 ** Math.min(tries, 5)));

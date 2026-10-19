@@ -106,7 +106,7 @@ function session(id: string, dir: string): AgentSession | null {
   const sum = !meta?.title || !meta?.cwd ? storeSummary(dir, st.mtime) : summaries.get(dir);
   return {
     id,
-    title: meta?.title || sum?.title || "Cursor chat",
+    title: meta?.title || sum?.title || "Cursor session",
     cwd: meta?.cwd || sum?.cwd || startedCwds.get(id) || "",
     mtime: meta?.updatedAtMs ? Math.max(meta.updatedAtMs, st.mtime) : st.mtime,
     created: meta?.createdAtMs || undefined,

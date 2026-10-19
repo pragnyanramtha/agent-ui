@@ -5,7 +5,8 @@ import { EditPencil, Folder, List, MailIn, Plus, Settings, Terminal, Xmark } fro
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
-import { AGENT_TONE, AgentBadge, isBusy } from "./SessionList";
+import { AGENT_TONE, AgentBadge, isBusy, useModKey } from "./SessionList";
+import { comboFor, useBindings } from "@/lib/client/shortcuts";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
 import { scrollBehavior } from "@/lib/client/motion";
 
@@ -87,6 +88,9 @@ export function TabBar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
   const [dragging, setDragging] = useState<string | null>(null);
+  const mod = useModKey();
+  const bindings = useBindings();
+  const closeKey = comboFor("closeTab", mod === "⌘", { bindings });
 
   /* fade edges only where there's more to scroll */
   useLayoutEffect(() => {
@@ -202,7 +206,7 @@ export function TabBar({
                 <button
                   type="button"
                   aria-hidden
-                  title="Close (Alt+W)"
+                  title={closeKey ? `Close (${closeKey})` : "Close"}
                   tabIndex={-1}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onClose(t.id)}

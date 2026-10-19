@@ -20,7 +20,7 @@ import { copyText } from "./CodeCard";
 import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 import { Kbd } from "@/components/atoms/Kbd";
 import { OPEN_SETTINGS_SECTION_EVENT, useSetting } from "@/lib/client/settings";
-import { useBindings } from "@/lib/client/shortcuts";
+import { comboFor, useBindings } from "@/lib/client/shortcuts";
 import { keysFor } from "@/lib/keybindings";
 import type { Settings as SettingValues } from "@/lib/settings-schema";
 import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
@@ -84,6 +84,9 @@ export const nativeId = (id: string) => id.slice(id.indexOf(":") + 1);
 export const sessionLink = (id: string) => `${window.location.origin}/?s=${encodeURIComponent(id)}`;
 
 /** Ctrl or ⌘, read after mount so the server render matches. */
+/** A tooltip with the command's current keys after it, when it has any. */
+const withKeys = (label: string, keys: string) => (keys ? `${label}  ${keys}` : label);
+
 export function useModKey() {
   const [mod, setMod] = useState("Ctrl");
   useEffect(() => {
@@ -1212,7 +1215,7 @@ export const SessionList = memo(function SessionList({
       <div className="flex h-[52px] shrink-0 items-center gap-0.5 pr-2 pl-4">
         <span className="min-w-0 flex-1 truncate text-base font-semibold tracking-[-0.01em] text-ink">agent-u</span>
         {onCollapse && (
-          <IconButton label={collapseLabel} tip={`${collapseLabel}  ${mod} B`} tipPos="bottom-end" onClick={onCollapse}>
+          <IconButton label={collapseLabel} tip={withKeys(collapseLabel, comboFor("sidebar", mod === "⌘", { bindings }))} tipPos="bottom-end" onClick={onCollapse}>
             <SidebarCollapse width={18} height={18} strokeWidth={1.8} aria-hidden />
           </IconButton>
         )}
@@ -1508,13 +1511,15 @@ export function SessionRail({
   inbox?: number;
 }) {
   const mod = useModKey();
+  const bindings = useBindings();
+  const keys = (id: "sidebar" | "newSession" | "palette") => comboFor(id, mod === "⌘", { bindings });
   const now = Date.now();
   const live = (sessions ?? []).filter((s) => isLive(s) && !s.archived && !isAsleep(s, now));
   const shown = live.slice(0, RAIL_LIVE_CAP);
   return (
     <nav aria-label="Sessions" className="flex h-full w-full flex-col items-center">
       <div className="flex h-[52px] shrink-0 items-center">
-        <button type="button" aria-label="Open sidebar" data-tip={`Open sidebar  ${mod} B`} data-tip-pos="right" onClick={onExpand} className="icon-btn group/brand">
+        <button type="button" aria-label="Open sidebar" data-tip={withKeys("Open sidebar", keys("sidebar"))} data-tip-pos="right" onClick={onExpand} className="icon-btn group/brand">
           <span className="transition-opacity duration-150 group-hover/brand:opacity-0 group-focus-visible/brand:opacity-0">
             <Brand />
           </span>
@@ -1522,15 +1527,15 @@ export function SessionRail({
         </button>
       </div>
       <div className="flex flex-col items-center gap-1">
-        <IconButton label="New session" tip="New session  Alt T" tipPos="right" onClick={onNew}>
+        <IconButton label="New session" tip={withKeys("New session", keys("newSession"))} tipPos="right" onClick={onNew}>
           <EditPencil width={18} height={18} strokeWidth={1.8} aria-hidden />
         </IconButton>
-        <IconButton label="Search" tip={`Search  ${mod} K`} tipPos="right" onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}>
+        <IconButton label="Search" tip={withKeys("Search", keys("palette"))} tipPos="right" onClick={() => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT))}>
           <Search width={18} height={18} strokeWidth={1.8} aria-hidden />
         </IconButton>
         {onView && (
           <>
-            <IconButton label={inbox ? `Inbox, ${inbox} need you` : "Inbox"} tip="Inbox" tipPos="right" onClick={() => onView("@inbox")} className="relative">
+            <IconButton label={inbox ? `Inbox, ${inbox} waiting` : "Inbox"} tip="Inbox" tipPos="right" onClick={() => onView("@inbox")} className="relative">
               <MailIn width={18} height={18} strokeWidth={1.8} aria-hidden />
               {inbox > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-orange ring-2 ring-sidebar" aria-hidden />}
             </IconButton>

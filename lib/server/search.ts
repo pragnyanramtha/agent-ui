@@ -142,7 +142,7 @@ function geminiSources(): Source[] {
       agent: "gemini" as const,
       native: c.id,
       mtime: c.mtime,
-      describe: async () => ({ title: chatSummary(c).title || "Gemini chat", cwd: c.cwd }),
+      describe: async () => ({ title: chatSummary(c).title || "Gemini session", cwd: c.cwd }),
       said,
     }));
 }

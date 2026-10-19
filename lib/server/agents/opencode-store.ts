@@ -252,7 +252,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
           input: { description: str(p.data.description), prompt: str(p.data.prompt), subagent_type: str(p.data.agent) },
         });
       }
-      if (p.data.type === "compaction") out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Conversation compacted" });
+      if (p.data.type === "compaction") out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Context compacted" });
     }
     return out;
   }
@@ -298,7 +298,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
         break;
       }
       case "compaction":
-        out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Conversation compacted" });
+        out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Context compacted" });
         break;
     }
   }

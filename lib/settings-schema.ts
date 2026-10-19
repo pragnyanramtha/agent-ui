@@ -31,8 +31,8 @@ export type SectionInfo = {
 
 export const SECTIONS: readonly SectionInfo[] = [
   { id: "general", label: "General", description: "Theme and your account on this server.", items: [
-      { id: "sign-out", label: "Sign out", description: "Ends this browser's session.", keywords: ["log out", "logout", "account"] },
-      { id: "sign-out-everywhere", label: "Sign out everywhere", description: "Ends the session on every device.", keywords: ["log out", "logout", "revoke", "devices", "account"] },
+      { id: "sign-out", label: "Sign out", description: "Signs this browser out.", keywords: ["log out", "logout", "account"] },
+      { id: "sign-out-everywhere", label: "Sign out everywhere", description: "Signs out every device, this one too.", keywords: ["log out", "logout", "revoke", "devices", "account"] },
     ],
   },
   { id: "appearance", label: "Appearance", description: "Colors, fonts, sizes and spacing." },

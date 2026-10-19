@@ -20,7 +20,7 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    throw new Error("Terminal service isn't running (agent-u-pty).");
+    throw new Error("The terminal service isn't running. Run the health check under Agents to see why.");
   }
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new Error(data.error ?? `Terminal service error (${res.status}).`);

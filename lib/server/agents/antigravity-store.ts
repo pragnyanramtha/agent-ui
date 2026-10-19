@@ -361,5 +361,5 @@ export function readTranscript(id: string, dir = agyDir()): { entries: Entry[]; 
 export function summaryEntries(row: AgyRow): Entry[] {
   const ts = new Date(row.mtime || Date.now()).toISOString();
   const what = [row.title, row.preview].filter(Boolean).join(": ");
-  return [{ kind: "notice", id: `${row.id}:summary`, ts, tone: "info", text: what ? `Transcript not available. ${what}` : "Transcript not available for this conversation." }];
+  return [{ kind: "notice", id: `${row.id}:summary`, ts, tone: "info", text: what ? `Transcript not available. ${what}` : "Transcript not available for this session." }];
 }
