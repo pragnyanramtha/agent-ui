@@ -398,6 +398,12 @@ export async function agentControl(agent: AgentId, native: string, body: Record<
     const mode = parseMode(body.value);
     if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
     setMode(key, mode);
+    /* queued messages go out under the mode chosen now, not the one they were queued with */
+    const waiting = queues().get(key);
+    if (waiting?.length) {
+      for (const q of waiting) q.mode = mode;
+      saveQueues();
+    }
   } else if (body.action !== "model" && body.action !== "effort") return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
