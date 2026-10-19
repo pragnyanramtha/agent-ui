@@ -302,7 +302,7 @@ export function App() {
   const activeIndex = openTabs.findIndex((t) => t.id === active);
 
   return (
-    <main className="flex h-[calc(100dvh-var(--kb,0px))] bg-page text-ink lg:bg-sidebar lg:py-1.5 lg:pr-1.5">
+    <main className="flex h-[calc(100dvh-var(--kb,0px))] bg-page text-ink lg:bg-sidebar">
       <a
         href="#session-panel"
         onClick={(e) => {
@@ -349,6 +349,7 @@ export function App() {
         <div
           ref={drawerRef}
           tabIndex={-1}
+          data-drawer
           className="safe-top absolute inset-y-0 left-0 flex w-[86%] max-w-[320px] overscroll-contain bg-sidebar pl-[env(safe-area-inset-left)] shadow-overlay outline-none"
           style={{
             transform: drawer ? "translateX(0)" : "translateX(-104%)",

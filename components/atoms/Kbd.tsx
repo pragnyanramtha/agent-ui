@@ -12,10 +12,7 @@ export function Kbd({ keys, className = "" }: { keys: string[]; className?: stri
   return (
     <span className={`hidden shrink-0 items-center gap-0.5 pointer-fine:inline-flex ${className}`} aria-hidden>
       {keyLabels(keys, mac).map((k, i) => (
-        <kbd
-          key={i}
-          className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] border border-line bg-field px-1 font-sans text-[11px] leading-none text-ink-3 tabular-nums"
-        >
+        <kbd key={i} className="kbd">
           {k}
         </kbd>
       ))}

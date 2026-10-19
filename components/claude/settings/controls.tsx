@@ -55,7 +55,7 @@ export function Switch({ checked, onChange, label, disabled, id }: { checked: bo
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`tap relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 disabled:opacity-50 ${checked ? "bg-accent-solid" : "bg-line-strong"}`}
+      className={`tap relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 disabled:opacity-50 ${checked ? "bg-primary" : "bg-line-strong"}`}
     >
       <span className={`size-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${checked ? "translate-x-[18px]" : "translate-x-0.5"}`} />
     </button>
@@ -267,7 +267,7 @@ export function Swatches<T extends string>({ value, options, onChange, label }: 
 }
 
 export function SmallButton({ children, onClick, tone, disabled, type = "button" }: { children: ReactNode; onClick?: () => void; tone?: "danger" | "accent"; disabled?: boolean; type?: "button" | "submit" }) {
-  const color = tone === "danger" ? "text-red-ink shadow-btn hover:bg-hover" : tone === "accent" ? "bg-accent-solid text-white hover:bg-accent-solid-hover" : "text-ink shadow-btn hover:bg-hover";
+  const color = tone === "danger" ? "text-red-ink shadow-btn hover:bg-hover" : tone === "accent" ? "bg-primary text-primary-foreground hover:bg-primary-hover" : "text-ink shadow-btn hover:bg-hover";
   return (
     <button type={type} onClick={onClick} disabled={disabled} className={`tap relative inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control px-3 text-[12.5px] font-medium whitespace-nowrap disabled:opacity-50 ${color}`}>
       {children}
