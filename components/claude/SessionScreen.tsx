@@ -32,6 +32,7 @@ import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
 import { TaskPill } from "./TaskPill";
 import { latestTasks, showTasks } from "@/lib/client/tasks";
+import { summarizeTool } from "@/lib/client/tools";
 import type { PendingAsk } from "@/lib/types";
 
 function useMeasure<T extends HTMLElement>() {
@@ -52,6 +53,12 @@ const SEGMENT =
   "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
 type Panel = "changes" | "git" | "usage";
 const PANEL_KEY = "cui:panel";
+
+/** the composer chip while a denial note is written: "Denying Bash · npm test" */
+function noteLabel(ask: Extract<PendingAsk, { kind: "permission" }>) {
+  const s = summarizeTool(ask.toolName, ask.input ?? {});
+  return `Denying ${ask.toolName}${s.verb === ask.toolName || !s.chip ? "" : ` · ${s.chip}`}`;
+}
 
 /** the kind of the last thing said in the thread (usage and notices aside) */
 function lastSaid(entries: Entry[]) {
@@ -795,7 +802,7 @@ export function SessionScreen({
               placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
               history={sentTexts}
               onSend={send}
-              note={noteAsk ? { label: `Denying: ${noteAsk.title}`, placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : null}
+              note={noteAsk ? { label: noteLabel(noteAsk), placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : null}
               running={Boolean(busy && (run || terminal) && !noteAsk)}
               onStop={() => (live ? void control("interrupt") : void pressKey("Escape"))}
               slashCommands={run?.slashCommands ?? []}

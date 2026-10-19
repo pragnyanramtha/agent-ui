@@ -66,7 +66,7 @@ export function TaskPill({ progress, live }: { progress: TaskProgress; live: boo
           ·
         </span>
         <span className="min-w-0 truncate font-medium text-ink">{current}</span>
-        <NavArrowUp width={13} height={13} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${open ? "" : "rotate-180"}`} aria-hidden />
+        <NavArrowUp width={13} height={13} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${open ? "rotate-180" : ""}`} aria-hidden />
       </button>
     </div>
   );
