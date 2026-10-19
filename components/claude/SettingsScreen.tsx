@@ -9,6 +9,8 @@ import { SettingField } from "./settings/SettingField";
 import { SECTION_ICONS, SectionBody } from "./settings/sections";
 
 const LAST_KEY = "cui:settings-section";
+/** Opens a section (detail: its id) when Settings is already on screen; a fresh Settings screen reads LAST_KEY. */
+export const OPEN_SETTINGS_SECTION_EVENT = "agent-u:settings-section";
 
 function SectionHeader({ id }: { id: SectionId }) {
   const values = useSettings();
@@ -132,6 +134,19 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
     sessionStorage.setItem(LAST_KEY, id);
     contentRef.current?.scrollTo({ top: 0 });
   };
+
+  useEffect(() => {
+    const on = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail as SectionId;
+      if (!SECTIONS.some((x) => x.id === id)) return;
+      setSection(id);
+      setPaged(true);
+      setQuery("");
+      contentRef.current?.scrollTo({ top: 0 });
+    };
+    window.addEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
+    return () => window.removeEventListener(OPEN_SETTINGS_SECTION_EVENT, on);
+  }, []);
 
   /* "/" or Ctrl/Cmd+F jumps to the search field */
   useEffect(() => {

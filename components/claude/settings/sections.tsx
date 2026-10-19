@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, Terminal } from "iconoir-react";
+import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
 import { api } from "@/lib/client/api";
 import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/client/push";
 import { settingsIn, type SectionId } from "@/lib/settings-schema";
@@ -20,6 +20,7 @@ export type SectionProps = { onAgents: () => void };
 export const SECTION_ICONS: Record<SectionId, ComponentType<{ width?: number; height?: number; strokeWidth?: number }>> = {
   general: SettingsIcon,
   appearance: Palette,
+  sidebar: SidebarExpand,
   composer: EditPencil,
   conversation: ChatLines,
   terminal: Terminal,
