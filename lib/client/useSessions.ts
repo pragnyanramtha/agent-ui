@@ -87,7 +87,11 @@ export function shareRows(prev: SessionSummary[] | undefined, next: SessionSumma
 /** The listing at `url`, or null when the server says it's unchanged since `etag` (which follows each answer). */
 export async function getListing(url: string, etag: { current: string | null }): Promise<Listing | null> {
   const res = await fetch(url, { cache: "no-store", headers: etag.current ? { "If-None-Match": etag.current } : undefined });
-  if (res.status === 304) return null;
+  /* read even though it's empty: an unread body leaves the request marked as cancelled */
+  if (res.status === 304) {
+    await res.text().catch(() => "");
+    return null;
+  }
   if (res.status === 401) {
     window.location.href = "/login";
     throw new ApiError("Signed out", 401);
