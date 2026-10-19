@@ -21,6 +21,7 @@ import { FilesScreen, OPEN_FILES_EVENT } from "./FilesScreen";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
+import { Toaster } from "./Toaster";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
 import { hasMod, isMac } from "@/lib/client/shortcuts";
@@ -427,6 +428,7 @@ export function App() {
       <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} />
       <AskHost />
       <ShortcutsDialog />
+      <Toaster />
     </main>
   );
 }
