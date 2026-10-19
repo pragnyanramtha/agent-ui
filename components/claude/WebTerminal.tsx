@@ -6,6 +6,7 @@ import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
 import { comboFor, isCommand, isMac } from "@/lib/client/shortcuts";
 import { getSetting, setSetting, useSettings } from "@/lib/client/settings";
+import { DOM_ATTRS } from "@/lib/settings-schema";
 import { applyTerminalOptions, terminalFace, terminalOptions, NERD_FONT, type TerminalPrefs } from "@/lib/client/terminal-options";
 import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
 import { isDarkColor, oscColor, readTerminalTheme, schemeTheme } from "@/lib/client/terminal-theme";
@@ -540,7 +541,7 @@ export function WebTerminal({
       applyRef.current = apply;
       rendererRef.current = setRenderer;
       const themeWatch = new MutationObserver(() => void apply());
-      themeWatch.observe(document.documentElement, { attributes: true });
+      themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", ...DOM_ATTRS] });
       (term as unknown as { __send?: (d: string) => void }).__send = sendData;
       connect();
 
