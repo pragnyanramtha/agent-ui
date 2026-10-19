@@ -149,9 +149,11 @@ export function SessionScreen({
   const profileId = localProfile ?? view.profile ?? agent;
   const profileInfo = profiles?.find((p) => p.id === profileId);
   const agentModels = useAgentModels(agent, profileId);
-  /* the session's own, else the profile's default, else the one in Settings > Composer */
+  /* the session's own, else the profile's default, else the one in Settings > Composer; while the profiles load
+   * nothing is sent, so the server applies the profile's default instead of Settings overriding it */
   const settingsEffort = useDefaultEffort(agent);
-  const effort = localEffort || profileInfo?.defaultEffort || settingsEffort || "";
+  const fallbackEffort = profiles ? profileInfo?.defaultEffort || settingsEffort || "" : "";
+  const effort = localEffort || fallbackEffort;
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
@@ -229,7 +231,7 @@ export function SessionScreen({
       try {
         const res = await postReliably<{ id: string; via?: "terminal" | "web" | "queued"; cleared?: string | null }>(
           `/api/sessions/${id}/message`,
-          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined, effort: effortRef.current },
+          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined, effort: effortRef.current || undefined },
           clientId,
         );
         updatePending(localId, { state: "sent", via: res.via, sentAt: Date.now() });
@@ -378,7 +380,7 @@ export function SessionScreen({
   const pickEffort = (e: string) => {
     setLocalEffort(e);
     saveEffort(id, e);
-    effortRef.current = e || profileInfo?.defaultEffort || settingsEffort || "";
+    effortRef.current = e || fallbackEffort;
     if (live) void control("effort", effortRef.current);
   };
 
