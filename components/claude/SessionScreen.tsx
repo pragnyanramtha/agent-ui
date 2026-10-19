@@ -29,7 +29,7 @@ import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
-import { hasMod, isMac, isTyping } from "@/lib/client/shortcuts";
+import { hasMod, isMac } from "@/lib/client/shortcuts";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -98,7 +98,7 @@ export function SessionScreen({
     const onKey = (e: KeyboardEvent) => {
       if (!hasMod(e, mac) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
       /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts, so it's text there */
-      if (e.getModifierState?.("AltGraph") || (!mac && isTyping(e.target))) return;
+      if (!mac && e.getModifierState?.("AltGraph")) return;
       e.preventDefault();
       setPanel((cur) => {
         if (cur) return null;
