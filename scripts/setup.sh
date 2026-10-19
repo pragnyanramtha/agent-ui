@@ -101,7 +101,7 @@ credentials-file: $HOME/.cloudflared/$id.json
 no-autoupdate: true
 ingress:
   - hostname: $HOST
-    path: ^/pty
+    path: ^/pty\$
     service: http://127.0.0.1:3312
   - hostname: $HOST
     service: http://127.0.0.1:3311

@@ -620,12 +620,13 @@ function internalOk(req) {
 const strList = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
 const strMap = (v) => Object.fromEntries(Object.entries(v && typeof v === "object" ? v : {}).filter(([k, x]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k) && typeof x === "string" && !APP_SECRETS.includes(k)));
 
-async function internal(req, res, url) {
+/** `route` is the raw request path: a normalized one would let /pty/%2e%2e/internal/... (which the tunnel forwards) in */
+async function internal(req, res, route) {
   if (!internalOk(req)) return reply(res, 401, { error: "unauthorized" });
-  if (req.method === "GET" && url.pathname === "/internal/terminals") {
+  if (req.method === "GET" && route === "/internal/terminals") {
     return reply(res, 200, { terminals: [...[...terms.values()].map(describe), ...tmuxList()].sort((a, b) => b.createdAt - a.createdAt), tmux: Boolean(TMUX) });
   }
-  if (req.method === "POST" && url.pathname === "/internal/launch") {
+  if (req.method === "POST" && route === "/internal/launch") {
     let body;
     try {
       body = await readBody(req);
@@ -658,7 +659,7 @@ async function internal(req, res, url) {
       return reply(res, 500, { error: `Couldn't start: ${String(err?.stderr || err?.message || err).trim().slice(0, 300)}` });
     }
   }
-  if (req.method === "POST" && url.pathname === "/internal/kill") {
+  if (req.method === "POST" && route === "/internal/kill") {
     let body;
     try {
       body = await readBody(req);
@@ -686,9 +687,11 @@ async function internal(req, res, url) {
 
 const server = http.createServer((req, res) => {
   if (!hostOk(req)) return res.writeHead(421).end();
-  const url = new URL(req.url ?? "/", "http://local");
-  if (url.pathname.startsWith("/internal/")) {
-    internal(req, res, url).catch((err) => reply(res, 500, { error: String(err?.message ?? err) }));
+  const route = (req.url ?? "/").split("?")[0];
+  if (route.startsWith("/internal/")) {
+    /* only the app on this machine calls these; anything a proxy or the tunnel forwarded is refused */
+    if (req.headers["cf-ray"] || req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"]) return reply(res, 403, { error: "forbidden" });
+    internal(req, res, route).catch((err) => reply(res, 500, { error: String(err?.message ?? err) }));
     return;
   }
   res.writeHead(404).end();
@@ -702,7 +705,7 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
   };
   if (!hostOk(req)) return refuse(421, "Misdirected Request");
-  if (url.pathname !== "/pty") return refuse(404, "Not Found");
+  if ((req.url ?? "/").split("?")[0] !== "/pty") return refuse(404, "Not Found");
   if (!sameOrigin(req)) return refuse(403, "Bad Origin");
   /* past the origin check, refusals go over the socket: a browser only sees a raw HTTP refusal as a network error */
   const why = !validCookie(req.headers.cookie) ? [4401, "Signed out. Reload to sign in."] : sockets >= MAX_SOCKETS ? [4429, "Too many terminals are open. Close one first."] : null;

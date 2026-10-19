@@ -190,3 +190,22 @@ describe("web terminal backend: sign out everywhere", () => {
     }
   });
 });
+
+describe("web terminal backend: internal API", () => {
+  it("can't be reached through a /pty path that normalizes into /internal", async () => {
+    for (const p of ["/pty/%2e%2e/internal/terminals", "/pty/../internal/terminals", "/pty/%2E%2E/internal/terminals", "/x/%2e%2e/internal/terminals"]) {
+      const r = await request(p, { "x-agent-u-internal": INTERNAL });
+      expect(r.status, p).toBe(404);
+      expect(r.body).not.toContain("terminals");
+    }
+  });
+
+  it("refuses requests a proxy or the tunnel forwarded, even with the key", async () => {
+    for (const h of [{ "cf-ray": "8abc-LHR" }, { "cf-connecting-ip": "203.0.113.5" }, { "x-forwarded-for": "203.0.113.5" }]) {
+      expect((await request("/internal/terminals", { "x-agent-u-internal": INTERNAL, ...h })).status).toBe(403);
+    }
+    const ok = await request("/internal/terminals", { "x-agent-u-internal": INTERNAL });
+    expect(ok.status).toBe(200);
+    expect(Array.isArray(JSON.parse(ok.body).terminals)).toBe(true);
+  });
+});
