@@ -152,6 +152,19 @@ describe.each(engines)("searchMessages (%s)", (engine) => {
     for (const h of hits) expect(h.snippet.slice(...h.match).toLowerCase()).toBe("frobnicate");
   });
 
+  it("leaves out deleted sessions", async () => {
+    const { CONFIG_DIR, markSessionDeleted } = await import("@/lib/server/profiles");
+    const state = path.join(CONFIG_DIR, "state.json");
+    const before = fs.existsSync(state) ? fs.readFileSync(state) : null;
+    markSessionDeleted(ids.claudeOld);
+    try {
+      expect((await search("frobnicate")).hits.map((h) => h.key)).toEqual([`gemini:${ids.gemini}`, ids.claudeNew, `codex:${ids.codex}`]);
+    } finally {
+      if (before) fs.writeFileSync(state, before);
+      else fs.rmSync(state, { force: true });
+    }
+  });
+
   it("ignores tool calls, tool output, thinking, injected context, notices and subagents", async () => {
     expect((await search("zebracorn")).hits).toEqual([]);
     expect((await search("frobnicate env")).hits).toEqual([]);
