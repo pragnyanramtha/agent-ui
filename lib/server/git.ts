@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
+import { geminiRoot } from "./agents/gemini-store";
+import { getProfile, type ResolvedProfile } from "./profiles";
 import { childEnv } from "./child-env";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
@@ -560,15 +562,60 @@ export type GitStatus = {
   files: { path: string; state: string }[];
   remote: boolean;
   gh: boolean;
+  /** origin's HEAD branch, else main or master when one exists */
+  defaultBranch: string | null;
+  /** the open (or merged/closed) pull request for this branch; undefined when gh can't tell */
+  pr?: PullRequestInfo | null;
+  /** when the background fetch last finished, and why it failed if it did */
+  fetchedAt: number | null;
+  fetchError: string | null;
 };
+
+export type PullRequestInfo = { number: number; url: string; state: string };
 
 let ghPath: Promise<boolean> | null = null;
 const hasGh = () => (ghPath ??= git(os.homedir(), ["--version"], { bin: "gh", timeout: 5000 }).then(() => true, () => false));
 
+async function defaultBranchOf(root: string): Promise<string | null> {
+  const originHead = (await git(root, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]).catch(() => "")).trim();
+  if (originHead) return originHead.replace(/^origin\//, "");
+  for (const b of ["main", "master"]) {
+    for (const ref of [`refs/heads/${b}`, `refs/remotes/origin/${b}`]) {
+      if (await git(root, ["rev-parse", "--verify", "-q", ref]).then(() => true, () => false)) return b;
+    }
+  }
+  return null;
+}
+
+/* gh asks GitHub, so answers are kept a minute per branch */
+const PR_TTL_MS = 60_000;
+const prCache = new Map<string, { at: number; p: Promise<PullRequestInfo | null | undefined> }>();
+
+function prFor(root: string, branch: string): Promise<PullRequestInfo | null | undefined> {
+  const key = `${root}\0${branch}`;
+  const hit = prCache.get(key);
+  if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
+  const p = git(root, ["pr", "view", "--json", "number,url,state"], { bin: "gh", timeout: 10_000 }).then(
+    (out) => {
+      const j = JSON.parse(out) as Partial<PullRequestInfo>;
+      return typeof j.number === "number" && typeof j.url === "string" ? { number: j.number, url: j.url, state: String(j.state ?? "OPEN") } : undefined;
+    },
+    (err: Error) => (/no (open )?pull requests? found/i.test(err.message) ? null : undefined),
+  );
+  prCache.set(key, { at: Date.now(), p });
+  if (prCache.size > 200) prCache.delete(prCache.keys().next().value!);
+  return p;
+}
+
 export async function status(cwd: string): Promise<GitStatus | null> {
   const root = await repoRoot(cwd);
   if (!root) return null;
-  const [out, remotes, gh] = await Promise.all([git(root, ["status", "--porcelain=v1", "--branch", "-z", "--untracked-files=all"]), git(root, ["remote"]).catch(() => ""), hasGh()]);
+  const [out, remotes, gh, defaultBranch] = await Promise.all([
+    git(root, ["status", "--porcelain=v1", "--branch", "-z", "--untracked-files=all"]),
+    git(root, ["remote"]).catch(() => ""),
+    hasGh(),
+    defaultBranchOf(root),
+  ]);
   const parts = out.split("\0").filter(Boolean);
   let branch: string | null = null;
   let upstream: string | null = null;
@@ -594,7 +641,54 @@ export async function status(cwd: string): Promise<GitStatus | null> {
     /* a rename carries its old name as the next part */
     if (state[0] === "R" || state[0] === "C") i++;
   }
-  return { root, branch, upstream, ahead, behind, files, remote: Boolean(remotes.trim()), gh };
+  const remote = Boolean(remotes.trim());
+  const fetched = fetches.get(root);
+  const st: GitStatus = { root, branch, upstream, ahead, behind, files, remote, gh, defaultBranch, fetchedAt: fetched?.done ?? null, fetchError: fetched?.error ?? null };
+  if (gh && remote && branch && branch !== defaultBranch) {
+    if (upstream) st.pr = await prFor(root, branch);
+    /* an unpublished branch has no pull request yet, if origin is on GitHub at all */
+    else if (/github/i.test(await git(root, ["remote", "get-url", "origin"]).catch(() => ""))) st.pr = null;
+  }
+  return st;
+}
+
+/* ── background fetch ───────────────────────────────── */
+
+/** How often a repo someone is looking at gets fetched; 0 turns it off. */
+export const GIT_FETCH_INTERVAL_MS = 60_000;
+const FETCH_TIMEOUT_MS = 20_000;
+
+type FetchState = { started: number; done: number | null; error: string | null; p: Promise<void> | null };
+const fetches = new Map<string, FetchState>();
+
+/** Starts `git fetch` for a repo with a remote unless one ran within the interval or is still running.
+ * Never throws; a failure shows up as `fetchError` in its status. Resolves when the fetch (if any) is over. */
+export async function autoFetch(cwd: string, opts: { intervalMs?: number; timeoutMs?: number } = {}): Promise<void> {
+  const interval = opts.intervalMs ?? GIT_FETCH_INTERVAL_MS;
+  if (interval <= 0) return;
+  const root = await repoRoot(cwd);
+  if (!root) return;
+  const cur = fetches.get(root);
+  if (cur?.p) return cur.p;
+  if (cur && Date.now() - cur.started < interval) return;
+  if (!(await git(root, ["remote"]).catch(() => "")).trim()) return;
+  const again = fetches.get(root);
+  if (again?.p) return again.p;
+  if (again && again !== cur && Date.now() - again.started < interval) return;
+  const timeout = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const st: FetchState = { started: Date.now(), done: cur?.done ?? null, error: cur?.error ?? null, p: null };
+  st.p = git(root, ["fetch", "--quiet", "--no-tags"], { timeout, env: { GCM_INTERACTIVE: "never" } })
+    .then(
+      () => void (st.error = null),
+      (err: Error) => void (st.error = Date.now() - st.started >= timeout ? `Fetch timed out after ${Math.round(timeout / 1000)} s.` : err.message),
+    )
+    .finally(() => {
+      st.done = Date.now();
+      st.p = null;
+    });
+  fetches.set(root, st);
+  if (fetches.size > 500) fetches.delete(fetches.keys().next().value!);
+  return st.p;
 }
 
 export async function commitAll(cwd: string, message: string) {
@@ -622,6 +716,23 @@ export async function push(cwd: string) {
   return st.branch;
 }
 
+/** Fast-forwards the branch to its upstream; never merges or rebases. */
+export async function pull(cwd: string) {
+  const root = await needRoot(cwd);
+  const st = await status(root);
+  if (!st?.branch) throw new GitError("Not on a branch (detached HEAD).");
+  if (!st.upstream) throw new GitError("This branch doesn't track a remote branch yet.");
+  if (st.ahead && st.behind) throw new GitError(`${st.branch} and ${st.upstream} have both moved on. Merge or rebase in a terminal.`, 409);
+  try {
+    await git(root, ["pull", "--ff-only", "--no-rebase"], { timeout: 120_000 });
+  } catch (err) {
+    const m = (err as Error).message;
+    if (/would be overwritten/.test(m)) throw new GitError("Uncommitted changes would be overwritten. Commit them first.");
+    throw err;
+  }
+  return st.branch;
+}
+
 export async function pullRequest(cwd: string, title?: string) {
   const root = await needRoot(cwd);
   if (!(await hasGh())) throw new GitError("Install the GitHub CLI (gh) on the server.");
@@ -636,7 +747,182 @@ export async function pullRequest(cwd: string, title?: string) {
     if (existing) return existing;
     if (/auth login|not logged/i.test(m)) throw new GitError("gh isn't logged in. Run gh auth login on the server.");
     throw err;
+  } finally {
+    for (const k of prCache.keys()) if (k.startsWith(`${root}\0`)) prCache.delete(k);
   }
+}
+
+/* ── generated commit messages ──────────────────────── */
+
+const MESSAGE_DIFF_CAP = 60 * 1024;
+const MESSAGE_TIMEOUT_MS = 60_000;
+const SUBJECT_MAX = 72;
+
+export type MessageAgent = "claude" | "codex" | "gemini";
+export type CommitSuggestion = { message: string; source: MessageAgent | "summary"; staged: boolean };
+
+/** A commit message for what would be committed: the staged changes, or everything when nothing is staged.
+ * Asks a small model through the first installed agent CLI that answers, else summarizes the file list. */
+export async function suggestCommitMessage(cwd: string, opts: { timeoutMs?: number; agents?: MessageAgent[] } = {}): Promise<CommitSuggestion> {
+  const root = await needRoot(cwd);
+  const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
+  const base = head || (await emptyTree(root));
+  const flags = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M"];
+  let range = ["--cached", base];
+  let stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
+  const staged = stats.length > 0;
+  if (!staged) {
+    range = [base, await snapshotTree(root)];
+    stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", ...range]));
+  }
+  if (!stats.length) throw new GitError("No changes to describe.");
+  const [patch, log] = await Promise.all([
+    gitCapped(root, [...flags, "-U3", ...range], MESSAGE_DIFF_CAP),
+    head ? git(root, ["log", "-n", "10", "--no-merges", "--format=%s"]).catch(() => "") : Promise.resolve(""),
+  ]);
+  const prompt = commitPrompt({ patch: patch.out, cut: patch.cut, stats, subjects: log.split("\n").filter(Boolean) });
+  const deadline = Date.now() + (opts.timeoutMs ?? MESSAGE_TIMEOUT_MS);
+  for (const agent of opts.agents ?? (["claude", "codex", "gemini"] as const)) {
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    const profile = getProfile(agent);
+    if (!profile?.binPath) continue;
+    const message = cleanCommitMessage((await askOnce(agent, profile, prompt, left)) ?? "");
+    if (message) return { message, source: agent, staged };
+  }
+  return { message: summaryMessage(stats), source: "summary", staged };
+}
+
+export function commitPrompt(o: { patch: string; cut: boolean; stats: { path: string; status: PatchStatus; additions: number; deletions: number }[]; subjects: string[] }) {
+  const files = o.stats.map((s) => `${s.status} ${s.path} (+${s.additions} -${s.deletions})`).join("\n");
+  return [
+    "Write a git commit message for the changes below.",
+    `Reply with the message only: a subject line of at most ${SUBJECT_MAX} characters in the imperative mood, then optionally a blank line and a short body saying why. No quotes, no code fences, no preamble.`,
+    o.subjects.length ? `Match the style of this repository's recent commit subjects:\n${o.subjects.map((s) => `- ${s}`).join("\n")}` : "",
+    `Files changed:\n${files}`,
+    `Diff${o.cut ? " (cut off)" : ""}:\n${o.patch}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** a model id from the profile that looks cheap, if it lists any */
+const cheapModel = (p: ResolvedProfile) => p.models?.find((m) => /haiku|mini|flash|lite|nano|small|low/i.test(m));
+
+function messageArgs(agent: MessageAgent, p: ResolvedProfile, o: { lastMessageFile: string; sessionId: string }): string[] {
+  const model = cheapModel(p);
+  if (agent === "claude") return [...p.args, "-p", "--output-format", "text", "--model", model ?? (p.models?.length ? (p.defaultModel ?? p.models[0]) : "haiku"), "--max-turns", "1", "--no-session-persistence"];
+  if (agent === "codex")
+    return [...p.args, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", 'model_reasoning_effort="low"', ...(model ? ["--model", model] : []), "--output-last-message", o.lastMessageFile, "-"];
+  return [...p.args, "-p", "", "--output-format", "text", "--skip-trust", "--session-id", o.sessionId, ...(model ? ["-m", model] : [])];
+}
+
+/* runs start in an empty folder of their own, away from the repo, so the agent doesn't wander its files or file
+ * the run under the user's project; one fixed folder keeps agents' per-project bookkeeping to a single entry */
+const messageCwd = () => path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "agent-u", "commit-message");
+
+/** Gemini CLI has no way to skip saving a chat, so the one-shot's chat is removed after it ran. */
+async function forgetGeminiChat(p: ResolvedProfile, cwd: string, id: string) {
+  const root = geminiRoot(p.env.GEMINI_CLI_HOME || process.env.GEMINI_CLI_HOME || os.homedir());
+  let slug = path.basename(cwd).toLowerCase();
+  try {
+    const j = JSON.parse(await fs.readFile(path.join(root, "projects.json"), "utf8")) as { projects?: Record<string, unknown> };
+    const s = j.projects?.[cwd];
+    if (typeof s === "string" && s && !s.includes("/")) slug = s;
+  } catch {}
+  const chats = path.join(root, "tmp", slug, "chats");
+  const names = await fs.readdir(chats).catch(() => [] as string[]);
+  for (const n of names) if (n.startsWith("session-") && (n.endsWith(`-${id.slice(0, 8)}.jsonl`) || n.endsWith(`-${id.slice(0, 8)}.json`))) await fs.rm(path.join(chats, n), { force: true }).catch(() => undefined);
+}
+
+/** one print-mode run with the prompt on stdin; its answer, or null when it fails or runs out of time */
+async function askOnce(agent: MessageAgent, p: ResolvedProfile, prompt: string, timeoutMs: number): Promise<string | null> {
+  const cwd = messageCwd();
+  await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-u-commit-msg-"));
+  const out = path.join(dir, "last-message.txt");
+  const sessionId = crypto.randomUUID();
+  try {
+    const stdout = await new Promise<string | null>((resolve) => {
+      /* its own process group, so a timeout also stops whatever the CLI started */
+      const child = spawn(p.binPath!, messageArgs(agent, p, { lastMessageFile: out, sessionId }), { cwd, env: childEnv(p.env, { NO_COLOR: "1" }), stdio: ["pipe", "pipe", "ignore"], detached: true });
+      let text = "";
+      const timer = setTimeout(() => {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+        resolve(null);
+      }, timeoutMs);
+      child.stdout.on("data", (b: Buffer) => void (text.length < 64 * 1024 && (text += b.toString())));
+      child.on("error", () => (clearTimeout(timer), resolve(null)));
+      child.on("close", (code) => (clearTimeout(timer), resolve(code === 0 ? text : null)));
+      child.stdin.on("error", () => undefined);
+      child.stdin.end(prompt);
+    });
+    if (stdout === null) return null;
+    if (agent === "codex") return (await fs.readFile(out, "utf8").catch(() => "")) || stdout;
+    return stdout;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    if (agent === "gemini") await forgetGeminiChat(p, cwd, sessionId).catch(() => undefined);
+  }
+}
+
+/** A model's reply as a commit message: a subject of at most 72 characters and an optional body; "" when nothing usable. */
+export function cleanCommitMessage(raw: string): string {
+  let text = raw.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r\n?/g, "\n");
+  const fenced = /```[^\n]*\n([\s\S]*?)(?:```|$)/.exec(text);
+  if (fenced) text = fenced[1];
+  const lines = text.split("\n").map((l) => l.trimEnd());
+  while (lines.length && (!lines[0].trim() || /^(sure|okay|ok|here(?:'s| is| are)\b|commit message\b).*:\s*$/i.test(lines[0].trim()))) lines.shift();
+  if (!lines.length) return "";
+  const subject = shortenSubject(
+    lines[0]
+      .trim()
+      .replace(/^#+\s*/, "")
+      .replace(/^(commit message|subject|title)\s*:\s*/i, "")
+      .replace(/^(\*\*|__)|(\*\*|__)$/g, "")
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/\.$/, "")
+      .trim(),
+  );
+  if (!subject) return "";
+  const body = lines
+    .slice(1)
+    .filter((l) => !/^\s*(co-authored-by:|generated (with|by)\b|🤖)/i.test(l))
+    .join("\n")
+    .replace(/^\s*(body\s*:\s*)?/i, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .replace(/["'`]+$/, "")
+    .trim()
+    .slice(0, 2000);
+  return body ? `${subject}\n\n${body}` : subject;
+}
+
+function shortenSubject(s: string): string {
+  if (s.length <= SUBJECT_MAX) return s;
+  const cut = s.slice(0, SUBJECT_MAX + 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > 30 ? cut.slice(0, space) : s.slice(0, SUBJECT_MAX)).replace(/[\s,;:.-]+$/, "");
+}
+
+/** "Update GitPanel.tsx and git.ts": what a commit touches, when no model can say more */
+export function summaryMessage(stats: { path: string; status: PatchStatus }[]): string {
+  if (!stats.length) return "Update files";
+  const verb = stats.every((s) => s.status === "added") ? "Add" : stats.every((s) => s.status === "deleted") ? "Remove" : stats.every((s) => s.status === "renamed") ? "Rename" : "Update";
+  const names = [...new Set(stats.map((s) => path.posix.basename(s.path)))];
+  const list = (shown: string[], more: number) =>
+    more > 0 ? `${shown.join(", ")} and ${more} more ${more === 1 ? "file" : "files"}` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+  for (const n of names.length <= 3 ? [names.length, 2, 1] : [2, 1]) {
+    if (n > names.length) continue;
+    const line = `${verb} ${list(names.slice(0, n), names.length - n)}`;
+    if (line.length <= SUBJECT_MAX) return line;
+  }
+  return `${verb} ${names.length} ${names.length === 1 ? "file" : "files"}`;
 }
 
 /* ── worktrees ──────────────────────────────────────── */
