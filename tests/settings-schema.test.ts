@@ -59,6 +59,7 @@ describe("settings registry", () => {
       "rememberDrafts",
       "effortClaude",
       "effortCodex",
+      "composerCollapseOnScroll",
     ]);
     expect(settingsIn("conversation").map((d) => d.key)).toEqual([
       "conversationWidth",

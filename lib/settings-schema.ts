@@ -95,6 +95,8 @@ type Common<T> = {
   keywords?: readonly string[];
   scope: Scope;
   default: T;
+  /** device settings only: the default on touch screens (coarse pointer) until the user picks a value */
+  touchDefault?: T;
   /** device settings only: the localStorage key (default `cui:set:<key>`) and how its stored text reads.
    * Older keys keep their own format so earlier choices survive. */
   storage?: { key: string; parse(raw: string): T | undefined; format(value: T): string; plain?: boolean };
@@ -1123,6 +1125,7 @@ export const SETTINGS = {
     keywords: ["soft wrap", "overflow", "diff"],
     scope: "device",
     default: false,
+    touchDefault: true,
     storage: { key: "agent-u:diff-wrap", parse: (raw) => raw === "on", format: (v) => (v ? "on" : "off") },
   }),
   diffColors: choice({
@@ -1194,6 +1197,25 @@ export const SETTINGS = {
       { value: "conventional", label: "Conventional commits" },
       { value: "plain", label: "Plain sentence" },
     ],
+  }),
+  composerCollapseOnScroll: boolean({
+    section: "composer",
+    group: "Typing",
+    label: "Shrink while reading back",
+    description: "On phones, the message box folds to one line while you scroll up. Tap it to write.",
+    keywords: ["collapse", "hide", "scroll", "phone", "mobile", "reading room", "pill"],
+    scope: "device",
+    default: false,
+    touchDefault: true,
+  }),
+  touchGestures: boolean({
+    section: "general",
+    group: "Touch",
+    label: "Swipe gestures",
+    description: "Swipe from the left edge for sessions, swipe a session left to archive or right to pin, and swipe the title to switch tabs.",
+    keywords: ["swipe", "gesture", "touch", "phone", "mobile", "drawer", "archive", "pin", "tabs"],
+    scope: "device",
+    default: true,
   }),
 } as const satisfies Record<string, SettingDef>;
 
