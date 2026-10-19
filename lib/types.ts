@@ -85,6 +85,8 @@ export type SessionSummary = {
   cwd: string;
   project: string;
   mtime: number;
+  /** when the session started (epoch ms), where the agent's storage tells; sorting falls back to mtime */
+  created?: number;
   size: number;
   terminal: TerminalInfo | null;
   web: RunState | null;

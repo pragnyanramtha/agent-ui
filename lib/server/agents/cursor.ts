@@ -109,6 +109,7 @@ function session(id: string, dir: string): AgentSession | null {
     title: meta?.title || sum?.title || "Cursor chat",
     cwd: meta?.cwd || sum?.cwd || startedCwds.get(id) || "",
     mtime: meta?.updatedAtMs ? Math.max(meta.updatedAtMs, st.mtime) : st.mtime,
+    created: meta?.createdAtMs || undefined,
     size: st.size,
     model: sum?.model ?? null,
   };

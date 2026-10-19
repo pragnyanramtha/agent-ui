@@ -108,7 +108,7 @@ export async function liveTerminals(maxAgeMs = 1500): Promise<Map<string, Termin
 
 export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "web">[]> {
   const projects = await fs.readdir(PROJECTS_DIR, { withFileTypes: true }).catch(() => []);
-  const files: { file: string; id: string; mtime: number; size: number }[] = [];
+  const files: { file: string; id: string; mtime: number; created: number; size: number }[] = [];
   await Promise.all(
     projects
       .filter((d) => d.isDirectory() && !HIDDEN_PROJECTS.some((h) => d.name.includes(h)))
@@ -122,7 +122,7 @@ export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "w
             if (!stat || stat.size === 0) return;
             const id = n.slice(0, -6);
             pathIndex.set(id, file);
-            files.push({ file, id, mtime: stat.mtimeMs, size: stat.size });
+            files.push({ file, id, mtime: stat.mtimeMs, created: stat.birthtimeMs, size: stat.size });
           }),
         );
       }),
@@ -131,12 +131,13 @@ export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "w
   pruneMeta(PROJECTS_DIR, new Set(files.map((f) => f.file)));
   const terminals = await liveTerminals();
   const rows = await Promise.all(
-    files.slice(0, limit).map(async ({ file, id, mtime, size }) => {
+    files.slice(0, limit).map(async ({ file, id, mtime, created, size }) => {
       const meta = await sessionMeta(file, mtime, size);
       const title = metaTitle(meta);
       if (!title) return null;
       const cwd = meta.cwd ?? "";
-      return { id, agent: "claude" as const, title, cwd, project: path.basename(cwd) || cwd, mtime, size, terminal: terminals.get(id) ?? null };
+      /* birthtime is 0 where the filesystem doesn't keep it */
+      return { id, agent: "claude" as const, title, cwd, project: path.basename(cwd) || cwd, mtime, ...(created > 0 ? { created } : {}), size, terminal: terminals.get(id) ?? null };
     }),
   );
   return rows.filter((r): r is NonNullable<typeof r> => r !== null);
