@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { SessionSummary, TerminalInfo } from "@/lib/types";
 import { HIDDEN_PROJECTS, LIVE_SESSIONS_DIR, PROJECTS_DIR } from "./config";
+import { newestFirst } from "./order";
 import { emptyMeta, metaTitle, readEdges, scanMeta, type Meta } from "./transcript";
 
 type Cached = { mtime: number; size: number; meta: Meta };
@@ -111,7 +112,7 @@ export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "w
         );
       }),
   );
-  files.sort((a, b) => b.mtime - a.mtime);
+  files.sort(newestFirst);
   const terminals = await liveTerminals();
   const rows = await Promise.all(
     files.slice(0, limit).map(async ({ file, id, mtime, size }) => {

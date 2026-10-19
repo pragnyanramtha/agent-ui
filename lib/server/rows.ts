@@ -1,5 +1,6 @@
 import { getRun } from "./runner";
 import { listSessions } from "./sessions";
+import { newestFirst } from "./order";
 import { agentSummaries } from "./agents/bridge";
 import { allSessionMeta, type SessionMeta } from "./profiles";
 import type { SessionSummary } from "@/lib/types";
@@ -22,5 +23,5 @@ export async function sessionRows(): Promise<SessionSummary[]> {
     ...others,
   ]
     .map((s) => withMeta(s, meta[s.id]))
-    .sort((a, b) => b.mtime - a.mtime);
+    .sort(newestFirst);
 }
