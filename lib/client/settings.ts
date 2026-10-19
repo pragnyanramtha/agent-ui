@@ -11,6 +11,7 @@ import {
   SETTING_KEYS,
   SETTINGS,
   SYNCED_CACHE_KEY,
+  THEME_CACHE_KEY,
   decodeStored,
   diffSettings,
   domState,
@@ -21,6 +22,7 @@ import {
   serializeSettings,
   settingsIn,
   storageKey,
+  themeCache,
   type SectionId,
   type SettingChange,
   type SettingDef,
@@ -198,16 +200,17 @@ export const prefersDark = () => typeof window !== "undefined" && window.matchMe
 
 const COLOR_ATTRS = ["data-palette", "data-accent", "data-contrast"];
 
-/** Puts the current settings on <html>: theme class, data attributes, CSS variables and the browser chrome color.
- * A change of colors swaps every token in one repaint instead of hundreds of mismatched fades. */
-export function applyAppearance(values: Settings = snapshot()) {
+/** Puts settings on <html>: theme class, data attributes, CSS variables and the browser chrome color.
+ * A change of colors swaps every token in one repaint instead of hundreds of mismatched fades.
+ * With `preview`, the values show without being remembered for the next page load (the theme pickers). */
+export function applyAppearance(values: Settings = snapshot(), { preview = false }: { preview?: boolean } = {}) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   const next = domState(values, prefersDark());
   const recolor =
     root.classList.contains("dark") !== next.dark ||
     COLOR_ATTRS.some((a) => root.getAttribute(a) !== (next.attrs[a] ?? null)) ||
-    root.style.getPropertyValue("--ah") !== (next.vars["--ah"] ?? "");
+    DOM_VARS.some((name) => name !== "--ui-scale" && name !== "--code-size" && root.style.getPropertyValue(name) !== (next.vars[name] ?? ""));
   if (recolor) root.classList.add("theme-switching");
   root.classList.toggle("dark", next.dark);
   for (const attr of DOM_ATTRS) {
@@ -221,6 +224,7 @@ export function applyAppearance(values: Settings = snapshot()) {
     else root.style.setProperty(name, v);
   }
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next.themeColor);
+  if (!preview) lsSet(THEME_CACHE_KEY, JSON.stringify(themeCache(values)));
   if (recolor) requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
 }
 

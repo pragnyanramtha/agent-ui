@@ -10,6 +10,8 @@
  * Adding one: add an entry to SETTINGS below. The Settings screen lists it in its section with a control picked
  * from its type; search, reset, export and import pick it up too. */
 
+import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, type Bases } from "./theme";
+
 export type Scope = "device" | "synced";
 
 export type SectionId = "general" | "appearance" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
@@ -84,13 +86,23 @@ export type BooleanSetting = Common<boolean> & { type: "boolean" };
 export type EnumOption<T extends string = string> = { value: T; label: string; hint?: string };
 export type EnumSetting<T extends string = string> = Common<T> & { type: "enum"; options: readonly EnumOption<T>[]; control?: "segmented" | "select" | "swatches" | "palette" };
 export type NumberSetting = Common<number> & { type: "number"; min: number; max: number; step: number; unit?: string; control?: "slider" | "segmented" | "hue" };
-export type StringSetting = Common<string> & { type: "string"; maxLength: number; placeholder?: string; pattern?: RegExp };
+export type StringSetting = Common<string> & {
+  type: "string";
+  maxLength: number;
+  placeholder?: string;
+  pattern?: RegExp;
+  /** a finer check than a pattern: null when the value is fine, else why not ("isn't a valid ...") */
+  check?: (value: string) => string | null;
+  control?: "theme-json";
+};
 export type ColorSetting = Common<string> & { type: "color" };
 export type SettingDef = BooleanSetting | EnumSetting | NumberSetting | StringSetting | ColorSetting;
 
 const boolean = (d: Omit<BooleanSetting, "type">): BooleanSetting => ({ type: "boolean", ...d });
 const choice = <const T extends string>(d: Omit<EnumSetting<T>, "type">): EnumSetting<T> => ({ type: "enum", ...d });
 const number = (d: Omit<NumberSetting, "type">): NumberSetting => ({ type: "number", ...d });
+const text = (d: Omit<StringSetting, "type">): StringSetting => ({ type: "string", ...d });
+const color = (d: Omit<ColorSetting, "type">): ColorSetting => ({ type: "color", ...d });
 
 /* ── palettes ─────────────────────────────────────────────── */
 
@@ -103,8 +115,14 @@ export const PALETTES = [
   {
     id: "default",
     label: "Default",
-    light: { page: "#fcfcfd", sidebar: "#f6f7f9", surface: "#ffffff", line: "#e6e8eb", ink: "#26282d", ink3: "#6e7178", accent: "#2f74e0" },
-    dark: { page: "#151619", sidebar: "#111214", surface: "#1d1e21", line: "#2b2c30", ink: "#f2f3f5", ink3: "#8f9196", accent: "#5fa0f7" },
+    light: { page: "#fdfdfd", sidebar: "#fafafa", surface: "#ffffff", line: "#e4e4e7", ink: "#27272a", ink3: "#71717b", accent: "#2f74e0" },
+    dark: { page: "#0a0a0a", sidebar: "#050505", surface: "#121212", line: "#1c1c1c", ink: "#f2f2f2", ink3: "#808080", accent: "#5fa0f7" },
+  },
+  {
+    id: "slate",
+    label: "Slate",
+    light: { page: "#fbfdff", sidebar: "#f5f7fa", surface: "#ffffff", line: "#e6e8eb", ink: "#1e1f22", ink3: "#6c6f73", accent: "#2f74e0" },
+    dark: { page: "#151617", sidebar: "#0f1012", surface: "#1b1c1e", line: "#27282a", ink: "#eff0f3", ink3: "#88898c", accent: "#5fa0f7" },
   },
   {
     id: "graphite",
@@ -152,6 +170,11 @@ export const PALETTES = [
 
 export type PaletteId = (typeof PALETTES)[number]["id"];
 
+/** Swatch colors per palette, for checking custom themes and placing a custom accent on its page. */
+export const PALETTE_BASES: Bases = Object.fromEntries(PALETTES.map((p) => [p.id, { light: p.light, dark: p.dark }]));
+
+const paletteOptions = PALETTES.map((p) => ({ value: p.id, label: p.label }));
+
 /** Accent swatches: an oklch hue and a chroma factor (0 is neutral gray). */
 export const ACCENTS = [
   { value: "blue", label: "Blue", hue: 256, chroma: 1 },
@@ -191,12 +214,36 @@ export const SETTINGS = {
     group: "Theme",
     label: "Palette",
     description: "Each has a light and a dark version.",
-    keywords: ["colors", "color theme", "nord", "solarized", "catppuccin", "rose pine", "github", "midnight", "graphite"],
+    keywords: ["colors", "color theme", "nord", "solarized", "catppuccin", "rose pine", "github", "midnight", "graphite", "slate", "custom theme"],
     scope: "synced",
     default: "default",
     control: "palette",
-    options: PALETTES.map((p) => ({ value: p.id, label: p.label })),
+    options: [...paletteOptions, { value: "custom", label: "Custom" }],
     dom: { attr: "data-palette" },
+  }),
+  customTheme: text({
+    section: "appearance",
+    group: "Theme",
+    label: "Custom theme",
+    description: "Token overrides as JSON, on top of a base palette. Saved and exported with your settings.",
+    keywords: ["json", "tokens", "colors", "import theme", "paste"],
+    scope: "synced",
+    default: "",
+    maxLength: 8000,
+    control: "theme-json",
+    showIf: ["palette", "custom"],
+    check: (v) => (v === "" || parseCustomTheme(v, PALETTE_BASES).ok ? null : "isn't a valid custom theme"),
+  }),
+  lightPalette: choice({
+    section: "appearance",
+    group: "Theme",
+    label: "Palette in light mode",
+    description: "Use a different palette while the theme is light.",
+    keywords: ["colors", "light mode", "day", "separate"],
+    scope: "synced",
+    default: "same",
+    control: "select",
+    options: [{ value: "same", label: "Same as dark" }, ...paletteOptions, { value: "custom", label: "Custom" }],
   }),
   accent: choice({
     section: "appearance",
@@ -210,19 +257,15 @@ export const SETTINGS = {
     options: [{ value: "auto", label: "Palette" }, ...ACCENTS.map((a) => ({ value: a.value, label: a.label })), { value: "custom", label: "Custom" }],
     dom: { attr: "data-accent" },
   }),
-  accentHue: number({
+  accentColor: color({
     section: "appearance",
     group: "Theme",
-    label: "Custom hue",
+    label: "Custom color",
+    description: "Links and focus rings are adjusted to stay readable; button labels turn dark on light colors.",
+    keywords: ["hex", "brand", "accent"],
     scope: "synced",
-    default: 256,
-    min: 0,
-    max: 360,
-    step: 1,
-    unit: "°",
-    control: "hue",
+    default: "#f76b15",
     showIf: ["accent", "custom"],
-    dom: { cssVar: "--ah", when: ["accent", "custom"] },
   }),
 
   /* appearance: type */
@@ -335,6 +378,16 @@ export const SETTINGS = {
       { value: "round", label: "Round" },
     ],
     dom: { attr: "data-corners" },
+  }),
+  translucentSidebar: boolean({
+    section: "appearance",
+    group: "Layout",
+    label: "Translucent sidebar",
+    description: "A soft wash of the accent shows through the sidebar, and the phone drawer blurs the page behind it.",
+    keywords: ["vibrancy", "glass", "blur", "transparent", "frosted"],
+    scope: "synced",
+    default: false,
+    dom: { attr: "data-translucent" },
   }),
 
   /* appearance: accessibility */
@@ -479,7 +532,9 @@ export function parseValue(def: SettingDef, value: unknown): Parsed<unknown> {
     case "string": {
       if (typeof value !== "string") return { ok: false, error: "must be text" };
       const v = value.slice(0, def.maxLength);
-      return def.pattern && !def.pattern.test(v) ? { ok: false, error: "isn't in the expected format" } : { ok: true, value: v };
+      if (def.pattern && !def.pattern.test(v)) return { ok: false, error: "isn't in the expected format" };
+      const problem = def.check?.(v);
+      return problem ? { ok: false, error: problem } : { ok: true, value: v };
     }
     case "color": {
       if (typeof value !== "string") return { ok: false, error: "must be a color" };
@@ -608,8 +663,20 @@ export function diffSettings(current: Settings, next: Partial<Settings>): Settin
 
 export type DomState = { dark: boolean; attrs: Record<string, string>; vars: Record<string, string>; themeColor: string };
 
+/** The palette in effect: the light-mode choice while the theme is light, else the main one. */
+export const activePalette = (values: Settings, dark: boolean): string => (!dark && values.lightPalette !== "same" ? values.lightPalette : values.palette);
+
+const swatch = (id: string, dark: boolean) => {
+  const p = PALETTES.find((x) => x.id === id) ?? PALETTES[0];
+  return dark ? p.dark : p.light;
+};
+
 /** What the settings put on <html>: the same rules the pre-paint script follows. */
 export function domState(values: Settings, prefersDark: boolean): DomState {
+  return paint(values, values.theme === "system" ? prefersDark : values.theme === "dark");
+}
+
+function paint(values: Settings, dark: boolean): DomState {
   const attrs: Record<string, string> = {};
   const vars: Record<string, string> = {};
   for (const key of SETTING_KEYS) {
@@ -622,20 +689,48 @@ export function domState(values: Settings, prefersDark: boolean): DomState {
     if (dom.attr) attrs[dom.attr] = value === true ? "on" : String(value);
     if (dom.cssVar) vars[dom.cssVar] = `${typeof value === "number" && dom.factor ? Number((value * dom.factor).toFixed(4)) : value}${dom.unit ?? ""}`;
   }
-  const dark = values.theme === "system" ? prefersDark : values.theme === "dark";
-  const palette = PALETTES.find((p) => p.id === values.palette) ?? PALETTES[0];
-  return { dark, attrs, vars, themeColor: (dark ? palette.dark : palette.light).page };
+  /* a custom theme starts from its base palette's stylesheet and overrides tokens inline; a named accent keeps its say */
+  const chosen = activePalette(values, dark);
+  let base = chosen;
+  if (chosen === "custom") {
+    const parsed = values.customTheme ? parseCustomTheme(values.customTheme, PALETTE_BASES) : null;
+    base = parsed?.ok ? (parsed.theme.base ?? "default") : "default";
+    if (parsed?.ok) {
+      for (const [k, v] of Object.entries(themeVars(parsed.theme, dark, swatch(base, dark).page))) {
+        if (values.accent === "auto" || !ACCENT_TOKENS.includes(k.slice(2) as (typeof ACCENT_TOKENS)[number])) vars[k] = v;
+      }
+    }
+  }
+  if (base === "default") delete attrs["data-palette"];
+  else attrs["data-palette"] = base;
+  const page = vars["--page"] ?? swatch(base, dark).page;
+  if (values.accent === "custom") Object.assign(vars, accentVars(values.accentColor, page, dark));
+  return { dark, attrs, vars, themeColor: page };
 }
 
 /** Every attribute or variable any setting may set, so stale ones can be cleared. */
 export const DOM_ATTRS = SETTING_KEYS.flatMap((k) => ((SETTINGS[k] as SettingDef).dom?.attr ? [(SETTINGS[k] as SettingDef).dom!.attr!] : []));
-export const DOM_VARS = SETTING_KEYS.flatMap((k) => ((SETTINGS[k] as SettingDef).dom?.cssVar ? [(SETTINGS[k] as SettingDef).dom!.cssVar!] : []));
+export const DOM_VARS = [...SETTING_KEYS.flatMap((k) => ((SETTINGS[k] as SettingDef).dom?.cssVar ? [(SETTINGS[k] as SettingDef).dom!.cssVar!] : [])), ...THEME_VARS];
+
+/** localStorage copy of what the theme settings work out to in each mode (palette attribute, chrome color, token
+ * variables), so the pre-paint script can apply custom themes and accents without parsing them. */
+export const THEME_CACHE_KEY = "cui:theme";
+type CacheEntry = [palette: string, themeColor: string, vars: Record<string, string>];
+
+export function themeCache(values: Settings): { l: CacheEntry; d: CacheEntry } {
+  const entry = (dark: boolean): CacheEntry => {
+    const s = paint(values, dark);
+    const vars = Object.fromEntries(Object.entries(s.vars).filter(([k]) => (THEME_VARS as readonly string[]).includes(k)));
+    return [s.attrs["data-palette"] ?? "", s.themeColor, vars];
+  };
+  return { l: entry(false), d: entry(true) };
+}
 
 /* The pre-paint script, as a self-contained function so it can be both serialized into the page and unit tested.
  * Everything it reads is validated against the registry rows passed in; anything odd falls back to the default. */
 type ScriptRow = [key: string, storage: string | 0, plain: 0 | 1, def: unknown, check: unknown[] | [number, number], attr: string | 0, cssVar: string | 0, unit: string, factor: number, when: [string, string] | 0];
 
-function prePaint(rows: ScriptRow[], pages: Record<string, [string, string]>, syncedKey: string) {
+function prePaint(rows: ScriptRow[], pages: Record<string, [string, string]>, syncedKey: string, themeKey: string) {
   var d = document.documentElement;
   var get = function (k: string) {
     try {
@@ -678,8 +773,18 @@ function prePaint(rows: ScriptRow[], pages: Record<string, [string, string]>, sy
     if (r[6]) d.style.setProperty(r[6], (r[8] ? Math.round((x as number) * r[8] * 1e4) / 1e4 : x) + r[7]);
   }
   var p = pages[String(v.palette)] || pages["default"];
+  var color = p[dark ? 1 : 0];
+  try {
+    var e = (JSON.parse(get(themeKey) || "{}") || {})[dark ? "d" : "l"];
+    if (e) {
+      if (pages[e[0]] && e[0] !== "default") d.setAttribute("data-palette", e[0]);
+      else d.removeAttribute("data-palette");
+      color = String(e[1]);
+      for (var k in e[2]) if (/^--[a-z0-9-]+$/.test(k)) d.style.setProperty(k, String(e[2][k]));
+    }
+  } catch (e) {}
   var m = document.querySelector('meta[name="theme-color"]');
-  if (m) m.setAttribute("content", p[dark ? 1 : 0]);
+  if (m) m.setAttribute("content", color);
 }
 
 /** The inline script for <head>: applies the stored theme and appearance before first paint. */
@@ -693,5 +798,5 @@ export function prePaintScript(): string {
     return [row];
   });
   const pages = Object.fromEntries(PALETTES.map((p) => [p.id, [p.light.page, p.dark.page]]));
-  return `try{(${prePaint.toString()})(${JSON.stringify(rows)},${JSON.stringify(pages)},${JSON.stringify(SYNCED_CACHE_KEY)})}catch(e){}`;
+  return `try{(${prePaint.toString()})(${JSON.stringify(rows)},${JSON.stringify(pages)},${JSON.stringify(SYNCED_CACHE_KEY)},${JSON.stringify(THEME_CACHE_KEY)})}catch(e){}`;
 }

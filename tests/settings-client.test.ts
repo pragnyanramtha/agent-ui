@@ -98,14 +98,16 @@ describe("client settings store", () => {
     (g.window as EventTarget).addEventListener("agent-u:settings", seen);
     s.setSetting("palette", "nord");
     s.setSetting("accent", "custom");
-    s.setSetting("accentHue", 140);
+    s.setSetting("accentColor", "#3a9e5f");
     expect(s.getSetting("palette")).toBe("nord");
     expect(seen).toHaveBeenCalled();
     expect(root.attrs.get("data-palette")).toBe("nord");
-    expect(root.vars.get("--ah")).toBe("140");
-    expect(JSON.parse(ls().getItem("cui:synced")!)).toEqual({ palette: "nord", accent: "custom", accentHue: 140 });
+    expect(root.vars.get("--primary")).toBe("#3a9e5f");
+    expect(JSON.parse(ls().getItem("cui:synced")!)).toEqual({ palette: "nord", accent: "custom", accentColor: "#3a9e5f" });
+    /* the next page load paints the same colors before any script runs */
+    expect(JSON.parse(ls().getItem("cui:theme")!).d[2]["--primary"]).toBe("#3a9e5f");
     await s.flush();
-    expect(server.readSynced().settings).toEqual({ palette: "nord", accent: "custom", accentHue: 140 });
+    expect(server.readSynced().settings).toEqual({ palette: "nord", accent: "custom", accentColor: "#3a9e5f" });
     expect(ls().getItem("cui:synced-pending")).toBeNull();
     /* one merged request, not one per change */
     expect((g.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(1);
