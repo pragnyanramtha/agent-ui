@@ -5,6 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
+import { Boundary } from "./Boundary";
 import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
@@ -337,7 +338,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
       <p className="text-[12px] text-ink-3">Reasoning hidden.</p>
     );
   }
-  const input = item.input;
+  const input: Record<string, unknown> = item.input ?? {};
   const s = (k: string) => (typeof input[k] === "string" ? (input[k] as string) : "");
   switch (item.name) {
     case "Edit":
@@ -350,8 +351,13 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     case "MultiEdit":
       return (
         <Stack>
-          {((input.edits as { old_string?: string; new_string?: string }[]) ?? []).map((e, i) => (
-            <DiffBlock key={i} before={e.old_string ?? ""} after={e.new_string ?? ""} file={i === 0 ? s("file_path") : undefined} />
+          {(Array.isArray(input.edits) ? (input.edits as { old_string?: unknown; new_string?: unknown }[]) : []).map((e, i) => (
+            <DiffBlock
+              key={i}
+              before={typeof e?.old_string === "string" ? e.old_string : ""}
+              after={typeof e?.new_string === "string" ? e.new_string : ""}
+              file={i === 0 ? s("file_path") : undefined}
+            />
           ))}
           {result?.isError && <Output result={result} />}
         </Stack>
@@ -372,7 +378,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
         </Stack>
       );
     case "TodoWrite":
-      return <TodoList todos={(input.todos as []) ?? []} live={active} />;
+      return <TodoList todos={Array.isArray(input.todos) ? input.todos.filter((t) => t && typeof t === "object") : []} live={active} />;
     case "Bash":
       return (
         <Stack>
@@ -465,7 +471,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
       const qs = Array.isArray(input.questions) ? (input.questions as { question?: string }[]) : [];
       return (
         <Stack>
-          {qs.map((q, i) => q.question && <TextBlock key={i} text={q.question} max="max-h-24" />)}
+          {qs.map((q, i) => typeof q?.question === "string" && q.question && <TextBlock key={i} text={q.question} max="max-h-24" />)}
           <Output result={result} />
         </Stack>
       );
@@ -482,7 +488,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
 
 const Row = memo(function Row({ item, result, active }: { item: RunItem; result?: ToolResult; active: boolean }) {
   const [open, setOpen] = useState(false);
-  const summary = item.kind === "thinking" ? { verb: "Thought", chip: item.text.split("\n")[0], mono: false, icon: "think" as const } : summarizeTool(item.name, item.input);
+  const summary = item.kind === "thinking" ? { verb: "Thought", chip: item.text.split("\n")[0], mono: false, icon: "think" as const } : summarizeTool(item.name, item.input ?? {});
   const failed = result?.isError;
   const waiting = item.kind === "tool" && !result && active;
   const iconProps = { width: 14, height: 14, strokeWidth: 1.8 };
@@ -523,7 +529,9 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
       </button>
       <Collapse open={open}>
         <div className="mt-0.5 mb-2 ml-[7px] min-w-0 border-l border-line py-1 pl-3.5">
-          <Detail item={item} result={result} active={active} />
+          <Boundary resetKey={result ?? item} entry={result ? { item, result } : item}>
+            <Detail item={item} result={result} active={active} />
+          </Boundary>
         </div>
       </Collapse>
     </div>
@@ -590,7 +598,7 @@ export const ToolRun = memo(function ToolRun({
   const onScreen = useOnScreen(rootRef, active);
   const open = manual ?? active;
   const last = items[items.length - 1];
-  const lastSummary = last?.kind === "tool" ? summarizeTool(last.name, last.input) : null;
+  const lastSummary = last?.kind === "tool" ? summarizeTool(last.name, last.input ?? {}) : null;
   const live = thinking?.trim() ? thinking : undefined;
   /* an open run's live thinking row carries the shimmer itself, so the header stays quiet while it streams */
   const shimmer = active && !(live && open);
