@@ -11,6 +11,7 @@ import type { Finished } from "@/lib/client/useFinished";
 import { terminalBusy } from "@/lib/status";
 import { sessionStatus, STATUS_LABEL, type SessionStatus } from "@/lib/client/session-status";
 import { snoozePresets, wakeFull, wakeLabel } from "@/lib/client/snooze";
+import { toast, type ToastInput } from "@/lib/client/toast";
 import { OPEN_PALETTE_EVENT } from "./CommandPalette";
 import { Pulse } from "./Pulse";
 import { ThemeToggle } from "./ThemeToggle";
@@ -785,7 +786,6 @@ const PROJECT_CAP = 6;
 const RECENT_STEP = 40;
 
 type SectionKey = "pinned" | "projects" | "recents";
-const UNDO_MS = 5000;
 const NONE_FINISHED: Finished = {};
 const SETTINGS_SECTION_KEY = "cui:settings-section";
 
@@ -926,13 +926,31 @@ export const SessionList = memo(function SessionList({
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   const [archiving, setArchiving] = useState<SessionSummary | null>(null);
-  const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast((cur) => (cur === toast ? null : cur)), UNDO_MS);
-    return () => clearTimeout(t);
-  }, [toast]);
-  const say = (text: string, undo?: () => void) => setToast((cur) => ({ text, undo, n: (cur?.n ?? 0) + 1 }));
+  /** One sidebar toast at a time; a new one replaces the last. Undo puts focus back on the row if it was in the toast. */
+  const say = (title: string, opts: Omit<ToastInput, "title" | "key" | "action"> & { undo?: { id: string; run: () => void } } = {}) => {
+    const { undo, ...rest } = opts;
+    toast({
+      key: "sidebar",
+      title,
+      ...rest,
+      action: undo && {
+        label: "Undo",
+        run: () => {
+          const fromToast = !document.activeElement || document.activeElement === document.body || Boolean(document.activeElement.closest("[data-toaster]"));
+          undo.run();
+          if (fromToast) refocus(undo.id);
+        },
+      },
+    });
+  };
+  const fail = (what: string, err: unknown) => say(what, { tone: "error", body: err instanceof Error ? err.message : String(err) });
+  /** Focuses a row once it's back in the list (it comes back on the next render or two). */
+  const refocus = (id: string, tries = 10) =>
+    requestAnimationFrame(() => {
+      const el = listRef.current?.querySelector<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`);
+      if (el) focusNav(el);
+      else if (tries > 0) refocus(id, tries - 1);
+    });
 
   /* ── roving focus: the list is one tab stop; arrows, Home and End move between rows and labels ── */
   const lastNav = useRef<string | null>(null);
@@ -970,17 +988,17 @@ export const SessionList = memo(function SessionList({
   };
 
   const change = (s: SessionSummary, c: SessionChange) =>
-    patchSession(s.id, c).catch((err: unknown) => say(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`));
+    patchSession(s.id, c).catch((err: unknown) => fail("Couldn't save the change", err));
   const archiveNow = (s: SessionSummary) => {
     handOff(s.id);
     const wasPinned = Boolean(s.pinned);
     void change(s, { archived: true });
-    say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
+    say("Session archived", { undo: { id: s.id, run: () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }) } });
   };
   const afterDelete = (s: SessionSummary, transcript: boolean) => {
     if (finished[s.id]) onUnread?.(s, false);
     onDeleted?.(s.id);
-    say(transcript ? "Session and transcript deleted." : "Session deleted.");
+    say(transcript ? "Session and transcript deleted" : "Session deleted");
   };
   const requestArchive = (s: SessionSummary) => (confirmFirst === "both" ? setArchiving(s) : archiveNow(s));
   const requestDelete = (s: SessionSummary) => {
@@ -989,7 +1007,7 @@ export const SessionList = memo(function SessionList({
     handOff(s.id);
     deleteSession(s.id, false).then(
       () => afterDelete(s, false),
-      (err: unknown) => say(`Couldn't delete: ${err instanceof Error ? err.message : String(err)}`),
+      (err: unknown) => fail("Couldn't delete the session", err),
     );
   };
   const startRename = (id: string) => {
@@ -1025,17 +1043,17 @@ export const SessionList = memo(function SessionList({
     if (typeof action === "object") {
       const was = s.snoozedUntil && s.snoozedUntil > Date.now() ? s.snoozedUntil : null;
       void change(s, { snoozedUntil: action.snooze });
-      say(`Snoozed until ${wakeLabel(action.snooze, Date.now())}.`, () => void change(s, { snoozedUntil: was }));
+      say(`Snoozed until ${wakeLabel(action.snooze, Date.now())}`, { undo: { id: s.id, run: () => void change(s, { snoozedUntil: was }) } });
     } else if (action === "wake") void change(s, { snoozedUntil: null });
     else if (action === "pin") void change(s, { pinned: !s.pinned });
     else if (action === "read") onUnread?.(s, !finished[s.id]);
     else if (action === "archive") void change(s, { archived: false });
     else if (action === "link") {
-      void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied." : "Couldn't copy the link."));
+      void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied" : "Couldn't copy the link", { tone: ok ? "success" : "error" }));
     } else if (action === "path") {
-      void copyText(s.cwd).then((ok) => say(ok ? "Folder path copied." : "Couldn't copy the folder path."));
+      void copyText(s.cwd).then((ok) => say(ok ? "Folder path copied" : "Couldn't copy the folder path", { tone: ok ? "success" : "error" }));
     } else if (action === "id") {
-      void copyText(nativeId(s.id)).then((ok) => say(ok ? "Session ID copied." : "Couldn't copy the session ID."));
+      void copyText(nativeId(s.id)).then((ok) => say(ok ? "Session ID copied" : "Couldn't copy the session ID", { tone: ok ? "success" : "error" }));
     }
   };
 
@@ -1444,32 +1462,6 @@ export const SessionList = memo(function SessionList({
         />
       )}
       {menu && <RowMenu key={menu.id} s={byId.get(menu.id) ?? menu.s} at={menu.at} unread={Boolean(finished[menu.id])} onClose={closeMenu} onAction={onAction} />}
-
-      <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
-        {toast && (
-          <div
-            key={toast.n}
-            className="pointer-events-auto flex max-w-full items-center gap-3 rounded-[10px] bg-ink py-1.5 pr-1.5 pl-3 text-sm text-page shadow-overlay"
-            style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both" }}
-          >
-            <span className="min-w-0 truncate">{toast.text}</span>
-            {toast.undo ? (
-              <button
-                type="button"
-                onClick={() => {
-                  toast.undo?.();
-                  setToast(null);
-                }}
-                className="shrink-0 rounded-control px-2 py-1 font-medium hover:bg-white/15 focus-visible:outline-offset-0"
-              >
-                Undo
-              </button>
-            ) : (
-              <span className="w-1.5" aria-hidden />
-            )}
-          </div>
-        )}
-      </div>
 
       <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <ThemeToggle />

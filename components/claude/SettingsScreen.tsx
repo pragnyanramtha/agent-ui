@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
 import { OPEN_SETTINGS_SECTION_EVENT, resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
+import { toast } from "@/lib/client/toast";
 import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
 import { Row, SmallButton } from "./settings/controls";
 import { SettingField } from "./settings/SettingField";
@@ -14,41 +15,23 @@ function SectionHeader({ id }: { id: SectionId }) {
   const values = useSettings();
   const info = sectionInfo(id);
   const own = settingsIn(id);
-  const [undo, setUndo] = useState<Partial<Settings> | null>(null);
-  useEffect(() => setUndo(null), [id]);
-  useEffect(() => {
-    if (!undo) return;
-    const t = setTimeout(() => setUndo(null), 6000);
-    return () => clearTimeout(t);
-  }, [undo]);
   const atDefault = sectionIsDefault(values, id);
+  const reset = () => {
+    const before = Object.fromEntries(own.map((d) => [d.key, values[d.key]])) as Partial<Settings>;
+    resetSection(id);
+    toast({ key: "reset-section", tone: "success", title: `${info.label} settings reset`, action: { label: "Undo", run: () => setSettings(before) } });
+  };
   return (
     <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
       <div className="min-w-0 flex-1">
         <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
         <p className="mt-0.5 text-sm text-ink-3">{info.description}</p>
       </div>
-      {own.length > 0 &&
-        (undo ? (
-          <SmallButton
-            onClick={() => {
-              setSettings(undo);
-              setUndo(null);
-            }}
-          >
-            Undo reset
-          </SmallButton>
-        ) : (
-          <SmallButton
-            disabled={atDefault}
-            onClick={() => {
-              setUndo(Object.fromEntries(own.map((d) => [d.key, values[d.key]])) as Partial<Settings>);
-              resetSection(id);
-            }}
-          >
-            Reset to defaults
-          </SmallButton>
-        ))}
+      {own.length > 0 && (
+        <SmallButton disabled={atDefault} onClick={reset}>
+          Reset to defaults
+        </SmallButton>
+      )}
     </div>
   );
 }

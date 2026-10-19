@@ -77,6 +77,7 @@ export function Toaster() {
   return (
     <section
       aria-label="Notifications"
+      data-toaster
       style={lift ? { bottom: lift } : undefined}
       className="pointer-events-none fixed inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-[70] flex justify-center px-3 md:inset-x-auto md:top-auto md:right-4 md:bottom-4 md:px-0"
     >

@@ -83,7 +83,7 @@ export function TerminalMenu({
       className="z-[60] w-56 rounded-[12px] bg-surface p-1 shadow-overlay"
       style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", ...place, visibility: placed ? "visible" : "hidden" }}
     >
-      {item("chat", "Send selection to chat", <ChatPlusIn {...icon} />, { disabled: !hasSelection })}
+      {item("chat", "Add selection to message", <ChatPlusIn {...icon} />, { disabled: !hasSelection })}
       {item("copy", "Copy", <Copy {...icon} />, { disabled: !hasSelection })}
       {item("paste", "Paste", <ClipboardCheck {...icon} />)}
       {item("select-all", "Select all", <SelectWindow {...icon} />)}

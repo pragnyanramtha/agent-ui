@@ -15,6 +15,7 @@ import { TerminalFind } from "./TerminalFind";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
 import { findPathLinks, parseOsc7, resolveTerminalPath } from "@/lib/client/terminal-links";
 import { deviceBoxTrusted } from "@/lib/client/terminal-render";
+import { toast, type ToastTone } from "@/lib/client/toast";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string; newTab?: boolean };
@@ -646,14 +647,7 @@ export function WebTerminal({
     if (!t) return;
     setSetting("terminalFontSize", Math.min(SIZE_MAX, Math.max(SIZE_MIN, (t.options.fontSize ?? prefs.terminalFontSize) + delta)));
   };
-  const [notice, setNotice] = useState<string | null>(null);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const flash = (text: string) => {
-    clearTimeout(noticeTimer.current);
-    setNotice(text);
-    noticeTimer.current = setTimeout(() => setNotice(null), 3200);
-  };
-  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  const flash = (title: string, tone: ToastTone = "info", body?: string) => void toast({ key: "terminal", title, body, tone, duration: tone === "success" ? 2500 : undefined });
   const paste = async () => {
     let text: string | null = null;
     try {
@@ -661,7 +655,7 @@ export function WebTerminal({
     } catch {
       text = null;
     }
-    if (text === null) return flash(`The browser blocked paste. Use ${isMac() ? "⌘V" : "Ctrl+Shift+V"} instead.`);
+    if (text === null) return flash("The browser blocked paste", "warning", `Use ${isMac() ? "⌘V" : "Ctrl+Shift+V"} instead.`);
     if (text) termRef.current?.paste(text);
     termRef.current?.focus();
   };
@@ -698,7 +692,7 @@ export function WebTerminal({
     const selection = t.getSelection();
     if (!selection) return void paste();
     void copyText(selection).then((ok) => {
-      flash(ok ? "Copied." : "Couldn't copy. Use your copy shortcut instead.");
+      flash(ok ? "Copied" : "Couldn't copy", ok ? "success" : "error", ok ? undefined : "Use your copy shortcut instead.");
       t.clearSelection();
       t.focus();
     });
@@ -767,12 +761,15 @@ export function WebTerminal({
       if (!selection.trim()) return;
       if (sendToComposer(fenceBlock(selection))) {
         t.clearSelection();
-        flash("Added to the chat.");
-      } else flash("Open a session to send this to chat.");
+        flash("Added to your message", "success");
+      } else flash("Open a session first", "warning", "The selection goes into its message.");
       return;
     }
     if (action === "copy") {
-      if (selection) flash((await copyText(selection)) ? "Copied." : "Couldn't copy. Use your copy shortcut instead.");
+      if (selection) {
+        const ok = await copyText(selection);
+        flash(ok ? "Copied" : "Couldn't copy", ok ? "success" : "error", ok ? undefined : "Use your copy shortcut instead.");
+      }
     } else if (action === "paste") return void paste();
     else if (action === "select-all") t.selectAll();
     else if (action === "clear") t.clear();
@@ -864,11 +861,6 @@ export function WebTerminal({
           {bell > 0 && <div key={bell} aria-hidden className="pointer-events-none absolute inset-0 bg-ink/10" style={{ animation: "fade-in 220ms ease-out reverse both" }} />}
           {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-xs text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
           {find && search && <TerminalFind search={search} dark={find.dark} focusKey={find.n} onClose={closeFind} />}
-          {notice && (
-            <p role="status" className="pointer-events-none absolute bottom-3 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-xs text-page shadow-overlay" style={{ animation: "fade-up 180ms cubic-bezier(0.23,1,0.32,1) both" }}>
-              {notice}
-            </p>
-          )}
           {menu && <TerminalMenu at={menu} hasSelection={menu.selection} findKey={findKey} onAction={(a) => void act(a)} onClose={closeMenu} />}
         </div>
         <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-t border-line px-2 py-1.5 [mask-image:linear-gradient(to_right,black_88%,transparent)] lg:hidden" role="toolbar" aria-label="Terminal keys">
