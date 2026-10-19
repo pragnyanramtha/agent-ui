@@ -7,6 +7,8 @@ Watch live sessions, type into the terminal they run in, start/resume sessions f
 ## Commands
 - `pnpm install` / `pnpm dev` (127.0.0.1:3311) / `pnpm build` / `pnpm start`
 - `pnpm typecheck` before every commit
+- `pnpm test` (vitest); `pnpm e2e:offline` runs the built app in a throwaway HOME against the Gemini CLI replaying canned
+ responses (no keys; needs `gemini` on PATH or `GEMINI_BIN`, reuses `.next` unless `E2E_REBUILD=1`). CI runs all of these.
 - `printf 'password\n' | node scripts/hash-password.mjs` prints a `UI_PASSWORD_HASH=` line
 - `scripts/deploy.sh` ships the committed code (`git archive HEAD`) to the server, builds, restarts (reads `.env.deploy`)
 - `scripts/setup.sh` does the whole server setup below and is safe to rerun (see "Setting up for a user")
