@@ -183,16 +183,16 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
             />
           </form>
         ) : (
-          <nav aria-label="Path" className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto font-mono text-[12.5px] whitespace-nowrap" onDoubleClick={() => setTyped(dir)}>
+          <nav aria-label="Path" className="no-scrollbar flex min-w-0 flex-1 items-center self-stretch overflow-x-auto font-mono text-[12.5px] whitespace-nowrap" onDoubleClick={() => setTyped(dir)}>
             {crumbs.map((c, i) => (
               <span key={c.path} className="flex items-center">
                 {i > 1 && <span className="px-0.5 text-ink-3">/</span>}
-                <button type="button" onClick={() => void open(c.path)} className={`rounded-[6px] px-1 py-0.5 hover:bg-hover ${i === crumbs.length - 1 ? "text-ink" : "text-ink-3"}`} translate="no">
+                <button type="button" onClick={() => void open(c.path)} className={`tap relative min-h-6 min-w-6 rounded-[6px] px-1 py-0.5 hover:bg-hover ${i === crumbs.length - 1 ? "text-ink" : "text-ink-3"}`} translate="no">
                   {c.name}
                 </button>
               </span>
             ))}
-            <button type="button" onClick={() => setTyped(dir)} className="ml-1 rounded-[6px] px-1.5 py-0.5 text-ink-3 hover:bg-hover" aria-label="Type a path">
+            <button type="button" onClick={() => setTyped(dir)} className="tap relative ml-1 inline-flex min-h-6 items-center rounded-[6px] px-1.5 py-0.5 text-ink-3 hover:bg-hover" aria-label="Type a path">
               <EditPencil width={13} height={13} strokeWidth={1.8} />
             </button>
           </nav>
