@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Sheet } from "./Sheet";
-import { OPEN_SHORTCUTS_EVENT } from "./CommandPalette";
+import { OPEN_SHORTCUTS_EVENT } from "@/lib/client/events";
 import { Kbd } from "@/components/atoms/Kbd";
 import { COMMAND_GROUPS, COMMANDS, isCustom, keysFor, type CommandId } from "@/lib/keybindings";
 import { isCommand, isTyping, useBindings } from "@/lib/client/shortcuts";

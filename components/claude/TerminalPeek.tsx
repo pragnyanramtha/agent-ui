@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Xmark } from "iconoir-react";
-import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
+import { OPEN_TERMINAL_EVENT } from "@/lib/client/events";
 
 type Prompt = { ok: true } | { ok: false; code: "agent_focus"; agent: string } | { ok: false; code: "has_text"; text: string } | { ok: false; code: "no_prompt" };
 
