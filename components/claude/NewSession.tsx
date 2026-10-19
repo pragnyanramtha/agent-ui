@@ -88,7 +88,8 @@ export function NewSession({
   };
   const profileInfo = profiles?.find((p) => p.id === profile);
   const settingsEffort = useDefaultEffort(agent);
-  const sentEffort = effort || profileInfo?.defaultEffort || settingsEffort || "";
+  /* until profiles load, the profile's own default is unknown: send none rather than one it would override */
+  const sentEffort = effort || (profiles ? profileInfo?.defaultEffort || settingsEffort || "" : "");
   const agentModels = useAgentModels(agent, profile);
 
   const pickAgent = (a: AgentId) => {
