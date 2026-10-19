@@ -12,7 +12,7 @@ import { setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
 import { useSetting } from "@/lib/client/settings";
 import { clockTime } from "@/lib/time-format";
 import { copyText } from "./CodeCard";
-import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
+import { OPEN_TERMINAL_EVENT } from "@/lib/client/events";
 import { FolderPicker } from "./FolderPicker";
 import { Select } from "./Select";
 import { AGENT_TONE } from "./SessionList";
