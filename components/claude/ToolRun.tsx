@@ -5,6 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
+import { Boundary } from "./Boundary";
 import { CodeCard } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
@@ -528,7 +529,9 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
       </button>
       <Collapse open={open}>
         <div className="mt-0.5 mb-2 ml-[7px] min-w-0 border-l border-line py-1 pl-3.5">
-          <Detail item={item} result={result} active={active} />
+          <Boundary resetKey={result ?? item} entry={result ? { item, result } : item}>
+            <Detail item={item} result={result} active={active} />
+          </Boundary>
         </div>
       </Collapse>
     </div>
