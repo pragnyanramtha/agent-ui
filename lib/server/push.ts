@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import webpush from "web-push";
+import type { NotifyMessage } from "@/lib/notify-events";
 import { CONFIG_DIR } from "./profiles";
 
 /* Web Push: one VAPID key pair for this server, and the browsers that asked for notifications. Kept next to the
@@ -92,7 +93,7 @@ export function unsubscribeAll() {
   write();
 }
 
-export type PushMessage = { title: string; body: string; tag: string; url: string; kind: "done" | "needs" | "failed" | "test" };
+export type PushMessage = NotifyMessage;
 
 /** Sends to every subscribed browser; ones the push service says are gone are dropped. */
 export async function pushAll(msg: PushMessage, only?: string) {
