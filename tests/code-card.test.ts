@@ -21,7 +21,9 @@ describe("CodeCard", () => {
     expect(html).toContain("Show all 100 lines");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("v30");
-    expect(html).not.toContain("v31");
+    const [shown, rest] = html.split("data-code-rest");
+    expect(shown).not.toContain("v31");
+    expect(rest).toContain("v31");
     expect(html).toContain(`>${Array.from({ length: 30 }, (_, i) => i + 1).join("\n")}</span>`);
   });
 

@@ -32,6 +32,9 @@ export async function copyText(text: string) {
 const LINE = "leading-[20.625px]";
 const PREVIEW_LINES = 30;
 
+/** Dispatched on a code block's root (`[data-code-card]`) to show all of it, so find can show a match inside. */
+export const EXPAND_CODE_EVENT = "cui:expand-code";
+
 /** Colored lines joined by newlines, for one `<code>`: no element per line, only per token. */
 function codeBody(lines: string[], plain: boolean): ReactNode {
   if (plain) return lines.join("\n");
@@ -47,7 +50,7 @@ function codeBody(lines: string[], plain: boolean): ReactNode {
 function wrappedBody(lines: string[], plain: boolean, gutter: string | null): ReactNode {
   return lines.map((line, i) => (
     <div key={i} className="grid items-start" style={{ gridTemplateColumns: gutter ? `${gutter} minmax(0,1fr)` : "minmax(0,1fr)" }}>
-      {gutter && <span className={`border-r border-line pr-2 text-right text-[11px] text-ink-3 tabular-nums select-none ${LINE}`}>{i + 1}</span>}
+      {gutter && <span className={`border-r border-line pr-2 text-right text-2xs text-ink-3 tabular-nums select-none ${LINE}`}>{i + 1}</span>}
       <code className={`${gutter ? "pl-2" : "pl-3.5"} pr-4 whitespace-pre-wrap [overflow-wrap:anywhere] ${LINE}`}>{plain ? line : highlight(line)}</code>
     </div>
   ));
@@ -66,7 +69,15 @@ export const CodeCard = memo(function CodeCard({ code, label, collapsible = fals
   const [wrap] = useSetting("codeWrap");
   const [collapseAt] = useSetting("codeCollapse");
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const expand = () => setExpanded(true);
+    el.addEventListener(EXPAND_CODE_EVENT, expand);
+    return () => el.removeEventListener(EXPAND_CODE_EVENT, expand);
+  }, []);
   const lines = useMemo(() => code.replace(/\n$/, "").split("\n"), [code]);
   const limit = collapsible && collapseAt !== "off" ? Number(collapseAt) : 0;
   const long = limit > 0 && lines.length > limit;
@@ -87,7 +98,7 @@ export const CodeCard = memo(function CodeCard({ code, label, collapsible = fals
     });
 
   return (
-    <div className="not-prose w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-card">
+    <div ref={root} data-code-card className="not-prose w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-card">
       <div className="flex h-9 items-center gap-2 border-b border-line pr-1.5 pl-3 text-xs">
         {label?.includes("/") ? <PathLabel path={label} /> : <span className="truncate font-mono text-ink-3">{label || "text"}</span>}
         <button
@@ -125,12 +136,18 @@ export const CodeCard = memo(function CodeCard({ code, label, collapsible = fals
           </div>
         )}
       </div>
+      {/* the lines a collapsed block leaves out stay in the page as one hidden text run, so find reaches them */}
+      {shown < lines.length && (
+        <div hidden data-code-rest>
+          {lines.slice(shown).join("\n")}
+        </div>
+      )}
       {long && (
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          className="flex h-8 w-full items-center justify-center border-t border-line text-[12px] font-medium text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink"
+          className="flex h-8 w-full items-center justify-center border-t border-line text-xs font-medium text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink"
         >
           {expanded ? "Show less" : `Show all ${lines.length} lines`}
         </button>

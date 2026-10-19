@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { NavArrowDown, NavArrowUp, Xmark } from "iconoir-react";
 import { isCommand, modalOpen } from "@/lib/client/shortcuts";
-import { RELEASE_PIN_EVENT } from "./Thread";
+import { matchOffsets, nthWithin } from "@/lib/client/find";
+import { EXPAND_CODE_EVENT } from "./CodeCard";
+import { RELEASE_PIN_EVENT, SHOW_ALL_EVENT, SHOWN_ALL_EVENT } from "./Thread";
 import { EXPAND_FOLD_EVENT } from "./TurnFold";
 
 const MAX = 2000;
@@ -14,17 +16,15 @@ const makeHighlight = (ranges: Range[]) => new (window as unknown as { Highlight
 
 /** Text ranges in `root` matching `q` (case-insensitive), in document order. */
 function findRanges(root: Element, q: string): Range[] {
-  const needle = q.toLowerCase();
   const out: Range[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => (n.parentElement?.closest("[aria-hidden='true'], script, style") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
   for (let n = walker.nextNode(); n && out.length < MAX; n = walker.nextNode()) {
-    const text = (n.nodeValue ?? "").toLowerCase();
-    for (let i = text.indexOf(needle); i !== -1 && out.length < MAX; i = text.indexOf(needle, i + needle.length)) {
+    for (const i of matchOffsets(n.nodeValue ?? "", q, MAX - out.length)) {
       const r = document.createRange();
       r.setStart(n, i);
-      r.setEnd(n, i + needle.length);
+      r.setEnd(n, i + q.length);
       out.push(r);
     }
   }
@@ -34,7 +34,8 @@ function findRanges(root: Element, q: string): Range[] {
 /**
  * Find in the loaded messages of a session (Ctrl/Cmd+F). Matches are painted with the CSS
  * Custom Highlight API, so React's DOM is never touched. Collapsed tool output isn't searched;
- * folded turns are, and the one holding the current match opens.
+ * folded turns and collapsed code blocks are, and the one holding the current match opens. Opening find
+ * renders the whole thread (a long one renders its newest part first).
  */
 export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   const [open, setOpen] = useState(false);
@@ -44,6 +45,10 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   const ranges = useRef<Range[]>([]);
   const indexRef = useRef(index);
   indexRef.current = index;
+  const qRef = useRef(q);
+  qRef.current = q;
+  /* the reader hasn't moved off the first match yet, so it may still change while the thread fills in */
+  const pristine = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const opener = useRef<HTMLElement | null>(null);
   const supported = typeof window !== "undefined" && Boolean(highlights());
@@ -58,6 +63,7 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       const at = document.activeElement;
       if (!input.current) opener.current = at instanceof HTMLElement && at !== document.body ? at : null;
       setOpen(true);
+      scope.current.querySelector('[role="log"]')?.dispatchEvent(new Event(SHOW_ALL_EVENT));
       requestAnimationFrame(() => input.current?.select());
     };
     window.addEventListener("keydown", onKey);
@@ -72,15 +78,43 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
     else h.delete("find-current");
   }, []);
 
+  const show = useCallback(
+    (list: Range[], i: number) => {
+      ranges.current = list;
+      setCount(list.length);
+      setIndex(i);
+      paint(list, i);
+    },
+    [paint],
+  );
+
   const reveal = useCallback(
     (r: Range | undefined, tries = 0) => {
       const log = scope.current?.querySelector<HTMLElement>('[role="log"]');
       if (!r || !log) return;
+      const at = r.startContainer.parentElement;
       /* a match inside a collapsed turn: open it, then scroll once it has laid out */
-      const fold = r.startContainer.parentElement?.closest<HTMLElement>("[data-fold]:not([data-open])");
+      const fold = at?.closest<HTMLElement>("[data-fold]:not([data-open])");
       if (fold && tries < 3) {
         fold.dispatchEvent(new Event(EXPAND_FOLD_EVENT));
         requestAnimationFrame(() => requestAnimationFrame(() => reveal(r, tries + 1)));
+        return;
+      }
+      /* in the hidden rest of a collapsed code block: open it, then find the same match among its rendered lines */
+      const card = at?.closest("[data-code-rest]")?.closest<HTMLElement>("[data-code-card]");
+      if (card && tries < 3) {
+        const inCard = (x: Range) => card.contains(x.startContainer);
+        const nth = ranges.current.filter(inCard).indexOf(r);
+        card.dispatchEvent(new Event(EXPAND_CODE_EVENT));
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const list = findRanges(log, qRef.current.trim());
+            const i = nthWithin(list, inCard, nth);
+            if (i === -1) return;
+            show(list, i);
+            reveal(list[i], tries + 1);
+          }),
+        );
         return;
       }
       const box = r.getBoundingClientRect();
@@ -89,7 +123,7 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       log.dispatchEvent(new Event(RELEASE_PIN_EVENT));
       log.scrollBy({ top: box.top - view.top - view.height / 3 });
     },
-    [scope],
+    [scope, show],
   );
 
   /* search again as the query changes (showing the first match) or new messages arrive (keeping the current one).
@@ -100,12 +134,12 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
     if (!log) return;
     const run = (fresh: boolean) => {
       const list = q.trim() ? findRanges(log, q.trim()) : [];
-      ranges.current = list;
       const i = !fresh && indexRef.current < list.length ? indexRef.current : 0;
-      setCount(list.length);
-      setIndex(i);
-      paint(list, i);
-      if (fresh) reveal(list[0]);
+      show(list, i);
+      if (fresh) {
+        pristine.current = true;
+        reveal(list[0]);
+      }
     };
     run(true);
     let t: ReturnType<typeof setTimeout> | undefined;
@@ -114,11 +148,19 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       t = setTimeout(() => run(false), 250);
     });
     mo.observe(log, { childList: true, subtree: true, characterData: true });
+    /* earlier messages rendered above: the first match may be one of them */
+    const filled = () => {
+      if (!pristine.current) return;
+      clearTimeout(t);
+      run(true);
+    };
+    log.addEventListener(SHOWN_ALL_EVENT, filled);
     return () => {
       mo.disconnect();
       clearTimeout(t);
+      log.removeEventListener(SHOWN_ALL_EVENT, filled);
     };
-  }, [open, q, scope, paint, reveal]);
+  }, [open, q, scope, show, reveal]);
 
   useEffect(() => {
     if (!open) return;
@@ -150,6 +192,7 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
     const n = ranges.current.length;
     if (!n) return;
     const next = (index + d + n) % n;
+    pristine.current = false;
     setIndex(next);
     reveal(ranges.current[next]);
   };
