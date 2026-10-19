@@ -198,7 +198,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
   const tail = menuOpen ? "invisible" : "pointer-fine:group-hover/item:invisible pointer-fine:group-focus-within/item:invisible";
   return (
     <div
-      className="group/item relative"
+      className="group/item relative touch-pan-y touch-pinch-zoom"
       onContextMenu={(e) => {
         e.preventDefault();
         /* the context-menu key reports no position: anchor to the row */
@@ -214,7 +214,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts="F2 Delete"
         title={tip}
-        className={`side-row touch-pan-y touch-pinch-zoom gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
+        className={`side-row gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
       >
         <span className="flex w-1.5 shrink-0 justify-center" aria-hidden>
           {status && <span className={`size-1.5 rounded-full ${STATUS_DOT[status]}`} />}
