@@ -11,6 +11,7 @@ import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
 import { TerminalFind } from "./TerminalFind";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
 import { findPathLinks, resolveTerminalPath } from "@/lib/client/terminal-links";
+import { deviceBoxTrusted } from "@/lib/client/terminal-render";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -253,6 +254,7 @@ export function WebTerminal({
       term.open(hostRef.current);
       /* the GPU renderer draws box art and Nerd Font icons cell-exact; fall back to the DOM renderer without WebGL */
       try {
+        if (!(await deviceBoxTrusted())) throw new Error("device pixel boxes are off");
         const { WebglAddon } = await import("@xterm/addon-webgl");
         const gl = new WebglAddon();
         gl.onContextLoss(() => gl.dispose());
