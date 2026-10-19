@@ -96,4 +96,9 @@ describe("transcript tail", () => {
     offLate();
     offNear();
   });
+
+  it("today's client ignores the gap event", () => {
+    const s = initial();
+    expect(reducer(s, { type: "event", event: { type: "gap", from: 0, to: 10 } })).toBe(s);
+  });
 });
