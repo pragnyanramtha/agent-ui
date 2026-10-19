@@ -33,12 +33,22 @@ function detail(s: SessionSummary): string {
  * (rows also reappear when a slow agent's list times out once) */
 const FRESH_MS = 60_000;
 
+/** the maps that have had their first poll (an empty map can be a watcher that has simply seen no sessions yet) */
+const seeded = new WeakSet<Map<string, Seen>>();
+
+/** Clears the state so the next poll only seeds it again. */
+export function forgetSeen(seen: Map<string, Seen>) {
+  seen.clear();
+  seeded.delete(seen);
+}
+
 /** One poll: the notifications this change of state calls for, and the state to remember. The first poll only seeds
  * the state; a session that appears later is new, so it can need you, fail or finish like any other. */
 export function step(seen: Map<string, Seen>, rows: SessionSummary[], now: number): NotifyMessage[] {
   const out: NotifyMessage[] = [];
   const live = new Set<string>();
-  const first = seen.size === 0;
+  const first = !seeded.has(seen);
+  seeded.add(seen);
   for (const s of rows) {
     live.add(s.id);
     const phase = phaseOf(s);
