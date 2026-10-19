@@ -67,7 +67,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
       ref={ref}
       tabIndex={-1}
       aria-label="Changes"
-      className="absolute inset-0 z-20 flex flex-col bg-page outline-none lg:static lg:inset-auto lg:w-[440px] lg:shrink-0 lg:border-l lg:border-line xl:w-[520px]"
+      className="absolute inset-0 z-20 flex flex-col bg-page outline-none [--add-ink:oklch(0.52_0.13_150.883)] dark:[--add-ink:var(--green)] lg:static lg:inset-auto lg:w-[440px] lg:shrink-0 lg:border-l lg:border-line xl:w-[520px]"
       style={{ animation: "fade-up 220ms cubic-bezier(0.23,1,0.32,1) both" }}
     >
       <div className="safe-top flex shrink-0 items-center gap-2 border-b border-line px-3 sm:px-4">
@@ -77,7 +77,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
             {changes.length} {changes.length === 1 ? "file" : "files"}
           </span>
           <span className="font-mono text-[12px] tabular-nums">
-            <span className="text-green">+{totals.added}</span> <span className="text-red">-{totals.removed}</span>
+            <span className="text-(color:--add-ink)">+{totals.added}</span> <span className="text-red-ink">-{totals.removed}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close changes" className="tap relative ml-auto flex size-9 items-center justify-center rounded-[9px] text-ink-3 hover:bg-hover hover:text-ink">
             <Xmark width={16} height={16} strokeWidth={2} />
@@ -104,7 +104,7 @@ export function ChangesPanel({ changes, cwd, partial, onClose }: { changes: File
                   <PathLabel path={rel(f.path)} className="min-w-0 flex-1" />
                   <span className="shrink-0 text-[11.5px] text-ink-3">{f.edits.length > 1 ? `${f.edits.length} edits` : f.edits[0]?.kind === "write" ? "written" : "1 edit"}</span>
                   <span className="shrink-0 tabular-nums">
-                    <span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span>
+                    <span className="text-(color:--add-ink)">+{f.added}</span> <span className="text-red-ink">-{f.removed}</span>
                   </span>
                 </button>
                 {expanded && (
