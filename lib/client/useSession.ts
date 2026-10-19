@@ -4,6 +4,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { AgentId, Entry, PermissionMode, RunState, ServerEvent, StreamDelta, TerminalInfo, ToolResult } from "@/lib/types";
 import { api, ApiError } from "./api";
 import { carryOver, load, save } from "./storage";
+import { frameBatch } from "./frame-batch";
 
 type Stream = { msgId: string; index: number; kind: StreamDelta["kind"]; text: string };
 /** A message the user sent that isn't in the transcript yet. Kept in sessionStorage so it survives remounts. */
@@ -108,6 +109,8 @@ export type SessionView = {
 
 export type Action =
   | { type: "event"; event: ServerEvent; initial?: boolean }
+  /** stream events that arrived within one frame, applied in order */
+  | { type: "events"; events: ServerEvent[] }
   | { type: "older"; entries: Entry[]; cursor: number | null }
   | { type: "loadingOlder" }
   | { type: "olderFailed" }
@@ -273,6 +276,8 @@ export function reducer(state: SessionView, action: Action): SessionView {
     }
     case "dropPending":
       return { ...state, pending: state.pending.filter((p) => p.localId !== action.localId) };
+    case "events":
+      return action.events.reduce((s, event) => reducer(s, { type: "event", event }), state);
   }
 }
 
@@ -287,6 +292,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     if (!id) return;
     dispatch({ type: "status", status: "connecting" });
     const abort = new AbortController();
+    const stream = frameBatch<ServerEvent>((events) => dispatch({ type: "events", events }));
     /* a phone back from sleep, or a network that changed, usually holds a stream that is already dead; drop it now
      * instead of waiting out the stall timer */
     let kick: (() => void) | undefined;
@@ -372,18 +378,20 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
                 carryOver(id, event.sessionId, pendingNow.current);
                 redirectRef.current(event.sessionId);
               }
-              else if (event.type !== "ping") dispatch({ type: "event", event });
+              else if (event.type !== "ping") stream.push(event);
             }
           }
         } catch {
           if (abort.signal.aborted) return;
         }
+        stream.flush();
         dispatch({ type: "status", status: "reconnecting" });
         await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
       }
     })();
     return () => {
       abort.abort();
+      stream.cancel();
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onOnline);
     };
