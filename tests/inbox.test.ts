@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nextFinished } from "@/lib/client/useFinished";
-import { inboxCount } from "@/components/claude/InboxScreen";
+import { inboxCount, inboxGroups } from "@/components/claude/InboxScreen";
+import { runFailed } from "@/lib/status";
 import type { RunState, SessionSummary } from "@/lib/types";
 
 const run = (status: RunState["status"], pending = 0): RunState => ({
@@ -53,5 +54,27 @@ describe("finished turns for the inbox", () => {
   it("counts approvals, failures and finished turns", () => {
     expect(inboxCount([row("a", run("running", 2)), row("b", run("error")), row("c", null)], { c: 1 })).toBe(3);
     expect(inboxCount(null, {})).toBe(0);
+  });
+});
+
+describe("failed turns", () => {
+  const idleWithError = (): RunState => ({ ...run("idle"), error: "Credit balance is too low" });
+
+  it("a run back at the prompt with its last turn's error kept counts as failed", () => {
+    expect(runFailed(run("error"))).toBe(true);
+    expect(runFailed(idleWithError())).toBe(true);
+    expect(runFailed(run("idle"))).toBe(false);
+    expect(runFailed(run("running"))).toBe(false);
+    expect(runFailed({ ...run("running"), error: "stale" })).toBe(false);
+    expect(runFailed(null)).toBe(false);
+  });
+
+  it("lists it under Failed with its error, not under Finished, and counts it once", () => {
+    const sessions = [row("a", idleWithError()), row("b", run("idle"))];
+    const g = inboxGroups(sessions, { a: 1, b: 2 });
+    expect(g.failed.map((s) => s.id)).toEqual(["a"]);
+    expect(g.failed[0].web?.error).toBe("Credit balance is too low");
+    expect(g.done.map((s) => s.id)).toEqual(["b"]);
+    expect(inboxCount([row("a", idleWithError())], {})).toBe(1);
   });
 });

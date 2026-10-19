@@ -43,6 +43,7 @@ export type ApprovalLabels = {
   send: string;
   customPlaceholder: string;
   sentMessage: string;
+  sendingMessage: string;
 };
 
 const DEFAULT_LABELS: ApprovalLabels = {
@@ -51,6 +52,7 @@ const DEFAULT_LABELS: ApprovalLabels = {
   send: "Send",
   customPlaceholder: "Something else…",
   sentMessage: "Answers sent",
+  sendingMessage: "Sending…",
 };
 
 const ROLL_MS = 400;
@@ -150,8 +152,9 @@ export default function ApprovalCard({
 }: {
   questions?: ApprovalQuestion[];
   labels?: Partial<ApprovalLabels>;
-  /** answers by question index, plus any free-text "something else" answers */
-  onSubmitted?: (answers: Record<number, number[]>, custom: Record<number, string>) => void;
+  /** answers by question index, plus any free-text "something else" answers. A returned promise that
+   * rejects reopens the card with its error, answers kept, so it can be sent again. */
+  onSubmitted?: (answers: Record<number, number[]>, custom: Record<number, string>) => void | Promise<unknown>;
   onAnswerChange?: (questionIndex: number, answer: number[]) => void;
   /** when set, the close button calls this instead of collapsing the card */
   onDismiss?: () => void;
@@ -164,7 +167,8 @@ export default function ApprovalCard({
   const [qi, setQi] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<boolean | "sending">(false);
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(true);
 
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -214,8 +218,17 @@ export default function ApprovalCard({
 
   const send = () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
-    setSent(true);
-    onSubmitted?.(answers, custom);
+    setError(null);
+    const done = onSubmitted?.(answers, custom);
+    if (!done) return setSent(true);
+    setSent("sending");
+    done.then(
+      () => setSent(true),
+      (err: unknown) => {
+        setSent(false);
+        setError(err instanceof Error && err.message ? err.message : "Couldn't send the answers.");
+      },
+    );
   };
 
   const advance = () => {
@@ -250,6 +263,7 @@ export default function ApprovalCard({
     setAnswers({});
     setCustom({});
     setSent(false);
+    setError(null);
     setOpen(true);
     measured.current = false;
   };
@@ -265,13 +279,19 @@ export default function ApprovalCard({
   if (sent) {
     return (
       <div className="flex w-full max-w-80 items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-green">
-          <span className="flex size-4.5 items-center justify-center rounded-full bg-green text-white">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+        {sent === "sending" ? (
+          <span role="status" className="inline-flex items-center rounded-full bg-hover px-2.5 py-1 text-[12.5px] font-medium text-ink-2">
+            {t.sendingMessage}
           </span>
-          {t.sentMessage}
-        </span>
-        {resettable && (
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-green">
+            <span className="flex size-4.5 items-center justify-center rounded-full bg-green text-white">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+            </span>
+            {t.sentMessage}
+          </span>
+        )}
+        {resettable && sent === true && (
           <button type="button" onClick={reset} className="text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink">
             Start over
           </button>
@@ -384,6 +404,12 @@ export default function ApprovalCard({
             </div>
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="mx-3 mb-1 text-[12.5px] text-red-ink [overflow-wrap:anywhere]">
+            {error}
+          </p>
+        )}
 
         {/* footer: step nav (rolling counter) + pill actions */}
         <div className="primitive-card-footer flex items-center justify-between gap-3">

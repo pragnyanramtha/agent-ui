@@ -2,14 +2,24 @@
 
 import { useState, type ReactNode } from "react";
 import { Menu } from "iconoir-react";
-import { api, timeAgo } from "@/lib/client/api";
+import { timeAgo } from "@/lib/client/api";
+import { answerAsk, failureText } from "@/lib/client/send";
 import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
+import { runFailed } from "@/lib/status";
 
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 
 export const inboxCount = (sessions: SessionSummary[] | null, finished: Finished) =>
-  (sessions ?? []).filter((s) => s.web?.pending.length || s.web?.status === "error").length + Object.keys(finished).length;
+  (sessions ?? []).filter((s) => s.web?.pending.length || runFailed(s.web)).length + Object.keys(finished).length;
+
+/** sessions waiting on an answer, ones whose last turn failed, and ones that finished while you were elsewhere */
+export function inboxGroups(sessions: SessionSummary[], finished: Finished) {
+  const needs = sessions.filter((s) => s.web?.pending.length);
+  const failed = sessions.filter((s) => runFailed(s.web) && !s.web?.pending.length);
+  const done = sessions.filter((s) => finished[s.id] && !s.web?.pending.length && !runFailed(s.web)).sort((a, b) => finished[b.id] - finished[a.id]);
+  return { needs, failed, done };
+}
 
 /** Everything waiting on you across sessions: approvals to answer right here, failed turns, and turns that finished. */
 export function InboxScreen({
@@ -29,10 +39,7 @@ export function InboxScreen({
   onMenu: () => void;
   extra?: ReactNode;
 }) {
-  const all = sessions ?? [];
-  const needs = all.filter((s) => s.web?.pending.length);
-  const failed = all.filter((s) => s.web?.status === "error" && !s.web.pending.length);
-  const done = all.filter((s) => finished[s.id] && !s.web?.pending.length && s.web?.status !== "error").sort((a, b) => finished[b.id] - finished[a.id]);
+  const { needs, failed, done } = inboxGroups(sessions ?? [], finished);
   const empty = sessions !== null && !needs.length && !failed.length && !done.length;
 
   return (
@@ -150,10 +157,10 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
     setBusy(choice);
     setError(null);
     try {
-      await api(`/api/sessions/${encodeURIComponent(session)}/respond`, { requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" });
+      await answerAsk(session, { requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(failureText(err));
       setBusy(null);
     }
   };

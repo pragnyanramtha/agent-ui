@@ -25,15 +25,16 @@ type Block =
 
 const GAP_MS = 30 * 60_000;
 
-/** "Today 14:02", "Yesterday 09:10", "Mon, Oct 6 · 14:02" */
-function stamp(ms: number) {
+/** "Today 14:02", "Yesterday 09:10", "Mon, Oct 6 · 14:02", and "Mon, Oct 6, 2025 · 14:02" from another year */
+export function stamp(ms: number, now = new Date(), locale?: string) {
   const d = new Date(ms);
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((day(new Date()) - day(d)) / 86_400_000);
+  const diff = Math.round((day(now) - day(d)) / 86_400_000);
   if (diff === 0) return `Today ${time}`;
   if (diff === 1) return `Yesterday ${time}`;
-  return `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · ${time}`;
+  const year = d.getFullYear() !== now.getFullYear() ? "numeric" : undefined;
+  return `${d.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric", year })} · ${time}`;
 }
 
 /** A time divider before a user turn that starts a new day or comes after a long pause. */

@@ -43,7 +43,7 @@ export function PendingBubble({
   }, [pending.state]);
 
   const { text: body, paths } = splitAttachments(pending.text);
-  const slow = pending.state === "sent" && !queued && pending.via !== "queued" && now - pending.at > SLOW_MS;
+  const slow = pending.state === "sent" && !queued && pending.via !== "queued" && now - (pending.sentAt ?? pending.at) > SLOW_MS;
   const status =
     pending.state === "sending"
       ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: "Sending…", tone: "text-ink-3" }

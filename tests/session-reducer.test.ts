@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initial, lostQueued, reducer, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
+import { initial, lostQueued, parseEvent, reducer, RESET, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
 import type { Entry, RunState, ServerEvent } from "@/lib/types";
 
 const now = Date.parse("2026-10-15T10:00:00Z");
@@ -69,9 +69,32 @@ describe("pending bubbles", () => {
     expect(s.pending.map((p) => p.localId)).toEqual(["p2"]);
   });
 
-  it("an older identical message (earlier in history) doesn't clear a new bubble", () => {
-    const s = ev(withPending(pending("p1", "continue")), { type: "entries", entries: [user("u0", "continue", now - 10 * 60_000)] });
+  it("an older identical message in a full history load doesn't clear a new bubble", () => {
+    const s = ev(withPending(pending("p1", "continue")), history([user("u0", "continue", now - 10 * 60_000)]), true);
     expect(s.pending).toHaveLength(1);
+  });
+
+  it("a send retried through an outage clears when its entry arrives, however late the reply came", () => {
+    let s = ev(initial(), history([]), true);
+    /* the server took it at `now`; the reply was lost and the retry's replay came back 75s later */
+    s = reducer(s, { type: "pending", pending: pending("p1", "deploy it", { state: "sending" }) });
+    s = reducer(s, { type: "updatePending", localId: "p1", patch: { state: "sent", via: "web", sentAt: now + 75_000 } });
+    expect(s.pending[0].at).toBe(now);
+    /* the stream catches up with the user record written at the first attempt */
+    s = ev(s, { type: "entries", entries: [user("u1", "deploy it", now + 500)] });
+    expect(s.entries.map((e) => e.id)).toEqual(["u1"]);
+    expect(s.pending).toEqual([]);
+  });
+
+  it("an entry on the live stream clears the bubble even if the clocks disagree by more than a minute", () => {
+    const s = ev(withPending(pending("p1", "go")), { type: "entries", entries: [user("u1", "go", now - 5 * 60_000)] });
+    expect(s.pending).toEqual([]);
+  });
+
+  it("restoring a saved bubble ignores an identical message from before it was made", () => {
+    const s0 = ev(initial(), history([user("u0", "continue", now - 10 * 60_000)]), true);
+    const s = reducer(s0, { type: "restorePending", pending: [pending("p1", "continue")] });
+    expect(s.pending.map((p) => p.localId)).toEqual(["p1"]);
   });
 
   it("loading older pages never clears a bubble", () => {
@@ -189,5 +212,66 @@ describe("live text", () => {
     s = ev(s, { type: "entries", entries: [{ kind: "text", id: "t1", ts: iso(now), msgId: "m9", text: "The answer is 42 and that is final." }] });
     expect(s.streams).toEqual([]);
     expect(s.entries).toHaveLength(1);
+  });
+});
+
+describe("stream reconnects", () => {
+  const delta = (msgId: string, text: string): ServerEvent => ({ type: "delta", delta: { msgId, index: 0, kind: "text", text } });
+
+  it("clear Claude's leftover live text when the run ended during the outage", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("msg_1", "Half an ans"));
+    s = ev(s, history([], run("idle")));
+    expect(s.run?.status).toBe("idle");
+    expect(s.streams).toEqual([]);
+  });
+
+  it("don't glue deltas from before and after a gap", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("msg_1", "The quick "));
+    s = ev(s, history([], run("running")));
+    s = ev(s, delta("msg_1", "lazy dog"));
+    expect(s.streams.map((x) => x.text)).toEqual(["lazy dog"]);
+  });
+
+  it("clear other agents' live text too (their server replays it)", () => {
+    let s = ev(initial(), history([], run("running")), true);
+    s = ev(s, delta("live:codex:t:1:0", "So far"));
+    s = ev(s, history([], run("running")));
+    expect(s.streams).toEqual([]);
+  });
+
+  it("turn delivered web bubbles into Retry when the run crashed while disconnected", () => {
+    let s = ev(withPending(pending("p1", "a"), pending("p2", "b", { via: "terminal" })), history([], run("running")), true);
+    s = ev(s, history([], run("error", "Claude exited")));
+    expect(s.pending.find((p) => p.localId === "p1")).toMatchObject({ state: "failed", resend: true, error: "Claude exited" });
+    expect(s.pending.find((p) => p.localId === "p2")!.state).toBe("sent");
+  });
+
+  it("leave bubbles alone when the run is fine", () => {
+    let s = ev(withPending(pending("p1", "a")), history([], run("running")), true);
+    s = ev(s, history([], run("idle")));
+    expect(s.pending[0].state).toBe("sent");
+  });
+});
+
+describe("stream frames", () => {
+  it("malformed frames and ones without a type are skipped instead of dropping the connection", () => {
+    expect(parseEvent("{not json")).toBeNull();
+    expect(parseEvent("null")).toBeNull();
+    expect(parseEvent('"text"')).toBeNull();
+    expect(parseEvent('{"entries":[]}')).toBeNull();
+    expect(parseEvent('{"type":"title","title":"x"}')).toEqual({ type: "title", title: "x" });
+  });
+
+  it("a reset or gap marker asks for a fresh load", () => {
+    expect(parseEvent('{"type":"reset"}')).toBe(RESET);
+    expect(parseEvent('{"type":"gap","reason":"rewritten"}')).toBe(RESET);
+  });
+
+  it("event types this client doesn't know leave the view as it was", () => {
+    const s = ev(initial(), history([user("a", "x")]), true);
+    const unknown = parseEvent('{"type":"somethingNew","payload":1}') as ServerEvent;
+    expect(reducer(s, { type: "event", event: unknown })).toBe(s);
   });
 });
