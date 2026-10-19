@@ -1,22 +1,21 @@
 "use client";
 
 import { AskHost } from "./Ask";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useSessions } from "@/lib/client/useSessions";
 import { CommandPalette, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "./CommandPalette";
-import { WebTerminal, type TerminalTarget } from "./WebTerminal";
+import type { TerminalTarget } from "./WebTerminal";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
 import { SessionScreen } from "./SessionScreen";
+import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
-import { SettingsScreen } from "./SettingsScreen";
-import { ShortcutsDialog } from "./ShortcutsDialog";
 import { applyTheme, useSetting } from "@/lib/client/settings";
 import { InboxScreen, inboxCount } from "./InboxScreen";
 import { useFinished } from "@/lib/client/useFinished";
-import { AgentsScreen } from "./AgentsScreen";
-import { FilesScreen, OPEN_FILES_EVENT } from "./FilesScreen";
+import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, ShortcutsDialog, WebTerminal } from "./lazy";
+import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
@@ -27,9 +26,13 @@ import { hasMod, isMac } from "@/lib/client/shortcuts";
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
 
+/* the open session stays put while the list, tabs or drawer change around it */
+const OpenSession = memo(SessionScreen);
+
 const SIDEBAR_KEY = "cui:sidebar";
+/** null until checked (the server render and the first client render), so callers can keep both layouts until then */
 function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
+  const [matches, setMatches] = useState<boolean | null>(null);
   useEffect(() => {
     const mq = window.matchMedia(query);
     const on = () => setMatches(mq.matches);
@@ -68,7 +71,7 @@ export function App() {
   const sidebar = useSidebar();
   const [sheet, setSheet] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
-  const { sessions, projects, error, refresh } = useSessions();
+  const { sessions, projects, error, refresh, loadMore } = useSessions();
   useKeyboardInset();
   const [terminal, setTerminal] = useState<TerminalTarget | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -83,7 +86,8 @@ export function App() {
     mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, [theme]);
-  const desktop = useMediaQuery("(min-width: 1024px)");
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const desktop = wide === true;
   const docked = desktop && dockPref;
   useEffect(() => {
     const open = (e: Event) => {
@@ -102,6 +106,11 @@ export function App() {
   const infos = useMemo(() => openTabs.map((t) => describeTab(t, byId.get(t.id), sessions !== null)), [openTabs, byId, sessions]);
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
   const { finished, dismiss } = useFinished(sessions, sessionId);
+  useEffect(() => {
+    if (!sessionId) return;
+    preloadMarkdown();
+    preloadSessionChunks();
+  }, [sessionId]);
   const inbox = inboxCount(sessions, finished);
 
   useEffect(() => {
@@ -281,12 +290,27 @@ export function App() {
 
   const dismissSheet = useCallback(() => setSheet(false), []);
   const closeDrawer = useCallback(() => setDrawer(false), []);
+  const openDrawer = useCallback(() => setDrawer(true), []);
+  /* a session list scrolled near its end asks for older sessions; its own Show more then has rows to reveal */
+  const nearListEnd = useCallback(
+    (e: UIEvent<HTMLElement>) => {
+      const el = e.target as HTMLElement;
+      if (el.scrollHeight - el.scrollTop - el.clientHeight < 400) loadMore();
+    },
+    [loadMore],
+  );
+  const navigate = useCallback(
+    (next: string) => {
+      if (sessionId) replace(sessionId, next);
+    },
+    [replace, sessionId],
+  );
   const list = (onCollapse: () => void) => (
     <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} />
   );
-  const tabsButton = (
-    <TabsButton count={infos.length} attention={infos.some((t) => t.needsYou && t.id !== active)} onClick={() => setSheet(true)} />
-  );
+  const tabCount = infos.length;
+  const tabAttention = infos.some((t) => t.needsYou && t.id !== active);
+  const tabsButton = useMemo(() => <TabsButton count={tabCount} attention={tabAttention} onClick={() => setSheet(true)} />, [tabCount, tabAttention]);
   const activeIndex = openTabs.findIndex((t) => t.id === active);
 
   return (
@@ -297,11 +321,14 @@ export function App() {
         data-anim={sidebar.anim || undefined}
         data-collapsed={sidebar.collapsed || undefined}
       >
+        {/* phones never show the sidebar, so its list isn't mounted there (nor the drawer's on a desktop) */}
         <div className="shell-face absolute inset-0 overflow-hidden" data-hidden={sidebar.collapsed || undefined} inert={sidebar.collapsed}>
-          <div className="h-full w-[260px]">{list(sidebar.toggle)}</div>
+          <div className="h-full w-[260px]" onScrollCapture={nearListEnd}>
+            {wide !== false && list(sidebar.toggle)}
+          </div>
         </div>
         <div className="shell-face absolute inset-y-0 left-0 w-[52px]" data-hidden={!sidebar.collapsed || undefined} inert={!sidebar.collapsed}>
-          <SessionRail sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onExpand={sidebar.toggle} onView={openView} inbox={inbox} />
+          {wide !== false && <SessionRail sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onExpand={sidebar.toggle} onView={openView} inbox={inbox} />}
         </div>
       </aside>
 
@@ -328,8 +355,9 @@ export function App() {
             transition: `transform 300ms cubic-bezier(0.23, 1, 0.32, 1)${drawer ? "" : ", visibility 0s linear 300ms"}`,
           }}
           inert={!drawer}
+          onScrollCapture={nearListEnd}
         >
-          {list(closeDrawer)}
+          {wide !== true && list(closeDrawer)}
         </div>
       </div>
 
@@ -367,14 +395,7 @@ export function App() {
           ) : active === AGENTS_TAB ? (
             <AgentsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onOpenSession={openSession} projects={projects} />
           ) : sessionId ? (
-            <SessionScreen
-              key={sessionId}
-              id={sessionId}
-              onMenu={() => setDrawer(true)}
-              onNavigate={(next) => replace(sessionId, next)}
-              onNew={newTab}
-              extra={tabsButton}
-            />
+            <OpenSession key={sessionId} id={sessionId} onMenu={openDrawer} onNavigate={navigate} onNew={newTab} extra={tabsButton} />
           ) : (
             <NewSession projects={projects} sessions={sessions} onMenu={() => setDrawer(true)} onOpen={openSession} extra={tabsButton} />
           )}

@@ -5,7 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
-import { CodeCard, copyText } from "./CodeCard";
+import { CodeCard, COLLAPSE_LINES, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
 import { PathLabel } from "./PathLabel";
@@ -359,7 +359,7 @@ function Detail({ item, result, active }: { item: RunItem; result?: ToolResult; 
     case "Write":
       return (
         <Stack>
-          <CodeCard code={s("content")} label={s("file_path")} />
+          <CodeCard code={s("content")} label={s("file_path")} collapseAfter={COLLAPSE_LINES} />
           {result?.isError && <Output result={result} />}
         </Stack>
       );

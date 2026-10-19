@@ -8,7 +8,7 @@ import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/c
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { Composer, MODELS, type AgentOption } from "./Composer";
-import { FolderPicker } from "./FolderPicker";
+import { FolderPicker } from "./lazy";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
 

@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   /* the SDK spawns the claude binary from its own package dir; bundling it would break that lookup */
   serverExternalPackages: ["@anthropic-ai/claude-agent-sdk"],
   experimental: { optimizePackageImports: ["iconoir-react"] },
+  webpack(config, { isServer }) {
+    /* rehype-raw (parse5 and entities) only rides along with Streamdown's default plugins; see the stub */
+    if (!isServer) config.resolve.alias = { ...config.resolve.alias, "rehype-raw$": `${process.cwd()}/lib/client/rehype-raw-stub.ts` };
+    return config;
+  },
   async headers() {
     const common = [
       { key: "X-Frame-Options", value: "DENY" },

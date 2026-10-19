@@ -9,6 +9,7 @@ import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
 import { applyTheme } from "@/lib/client/settings";
 import { comboFor } from "@/lib/client/shortcuts";
+import { matchSession, queryWords, score } from "@/lib/session-match";
 
 /** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
 export const OPEN_PALETTE_EVENT = "open-palette";
@@ -23,35 +24,6 @@ export const OPEN_SHORTCUTS_EVENT = "open-shortcuts";
 export const OPEN_TERMINAL_EVENT = "open-terminal";
 
 const isLive = (s: SessionSummary) => Boolean(s.terminal) || (s.web !== null && s.web.status !== "closed");
-
-/**
- * How well `q` matches `text`: prefix > word start > substring > in-order
- * characters (so "agu" finds "agent-u"). 0 means no match.
- */
-function score(text: string, q: string) {
-  const t = text.toLowerCase();
-  const i = t.indexOf(q);
-  if (i === 0) return 100;
-  if (i > 0) return /[\s/_.-]/.test(t[i - 1]) ? 80 : 60;
-  let at = 0;
-  for (const ch of q) {
-    at = t.indexOf(ch, at);
-    if (at < 0) return 0;
-    at++;
-  }
-  return q.length > 1 ? 20 : 0;
-}
-
-/** Every word of the query has to land somewhere; the title counts most. */
-function matchSession(s: SessionSummary, words: string[]) {
-  let total = 0;
-  for (const w of words) {
-    const best = Math.max(score(s.title, w) * 1.5, score(s.project, w), score(s.cwd, w) * 0.8);
-    if (!best) return 0;
-    total += best;
-  }
-  return total;
-}
 
 type Item = {
   id: string;
@@ -68,7 +40,7 @@ const SESSION_CAP_IDLE = 8;
 const SESSION_CAP_SEARCH = 50;
 
 export function CommandPalette({
-  sessions,
+  sessions: listed,
   activeId,
   onOpen,
   onNew,
@@ -145,6 +117,7 @@ export function CommandPalette({
   }, [open]);
 
   const close = () => setOpen(false);
+  const sessions = useFoundSessions(listed, query, open);
 
   const toggleTheme = useCallback(() => {
     const next = !document.documentElement.classList.contains("dark");
@@ -526,4 +499,36 @@ export function CommandPalette({
 
 function Key({ children }: { children: ReactNode }) {
   return <kbd className="rounded-[4px] bg-field px-1 py-px font-sans text-[11px] text-ink-2 shadow-hairline">{children}</kbd>;
+}
+
+type Found = { q: string; sessions: SessionSummary[] };
+
+/** `listed` plus the sessions the server finds for the query (the list only holds the most recent pages). */
+function useFoundSessions(listed: SessionSummary[] | null, query: string, open: boolean) {
+  const q = queryWords(query).join(" ");
+  const wanted = open && q.length > 0 && q.length <= 200;
+  const [found, setFound] = useState<Found | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/sessions?q=${encodeURIComponent(q)}`, { cache: "no-store", signal: ctl.signal })
+        .then((res) => (res.ok ? (res.json() as Promise<{ sessions?: SessionSummary[] }>) : { sessions: [] }))
+        .then((data) => setFound({ q, sessions: data.sessions ?? [] }))
+        .catch(() => undefined);
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [q, wanted]);
+  return useMemo(() => mergeFound(listed, wanted && found?.q === q ? found.sessions : null), [listed, wanted, found, q]);
+}
+
+/** The listed rows (they're fresher), then found ones the list doesn't have. */
+export function mergeFound(listed: SessionSummary[] | null, found: SessionSummary[] | null): SessionSummary[] | null {
+  if (!listed || !found?.length) return listed;
+  const have = new Set(listed.map((s) => s.id));
+  const extra = found.filter((s) => !have.has(s.id));
+  return extra.length ? [...listed, ...extra] : listed;
 }
