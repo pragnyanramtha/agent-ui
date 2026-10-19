@@ -8,7 +8,7 @@ import { flashAttention, setAttention, setBadgeStyle } from "./attention";
 import { pushStatus, testPush } from "./push";
 import { getSettings, useSettings } from "./settings";
 import { armSounds, playTone } from "./sounds";
-import { setToastsAway, toast, type ToastTone } from "./toast";
+import { dismissToast, peekToasts, setToastsAway, toast, type ToastTone } from "./toast";
 import { onSessionsPoll } from "./useSessions";
 
 /* Finished turns, approvals and failures in sessions you aren't looking at: a toast, a tone and the tab badge, as
@@ -90,6 +90,14 @@ export function useNotifications(o: { sessions: SessionSummary[] | null; activeI
   const [failedSeen, setFailedSeen] = useState<FailedSeen>({});
   useEffect(() => setFailedSeen(readFailedSeen()), []);
   const onScreen = looking ? activeId : null;
+  /* a session's toasts are old news once you're looking at it */
+  useEffect(() => {
+    if (!onScreen) return;
+    const ids = peekToasts()
+      .filter((t) => t.key === `done:${onScreen}` || t.key === `act:${onScreen}`)
+      .map((t) => t.id);
+    if (ids.length) dismissToast(...ids);
+  }, [onScreen]);
   useEffect(() => {
     if (!sessions) return;
     setFailedSeen((prev) => {

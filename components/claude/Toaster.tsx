@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useState } from "react";
 import { CheckCircle, InfoCircle, WarningCircle, WarningTriangle, Xmark } from "iconoir-react";
 import { dismissToast, holdToasts, useToasts, type Toast } from "@/lib/client/toast";
 
@@ -49,11 +50,34 @@ function Item({ t }: { t: Toast }) {
   );
 }
 
+/** the stack's width plus its gap from the right edge (md:w-[360px], md:right-4) */
+const STACK_PX = 376;
+
+/** On wide screens, how far to raise the stack so it sits above a composer it would cover. */
+function useLift(active: boolean) {
+  const [lift, setLift] = useState(0);
+  useLayoutEffect(() => {
+    if (!active) return;
+    const wide = window.matchMedia("(min-width: 768px)");
+    const measure = () => {
+      const r = document.querySelector("#session-panel [data-composer]")?.getBoundingClientRect();
+      const covers = wide.matches && r && r.height > 0 && r.right > window.innerWidth - STACK_PX && r.bottom > window.innerHeight - 160;
+      setLift(covers ? Math.round(window.innerHeight - r.top + 12) : 0);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [active]);
+  return lift;
+}
+
 export function Toaster() {
   const toasts = useToasts();
+  const lift = useLift(toasts.length > 0);
   return (
     <section
       aria-label="Notifications"
+      style={lift ? { bottom: lift } : undefined}
       className="pointer-events-none fixed inset-x-0 top-[max(0.5rem,env(safe-area-inset-top))] z-[70] flex justify-center px-3 md:inset-x-auto md:top-auto md:right-4 md:bottom-4 md:px-0"
     >
       <ol

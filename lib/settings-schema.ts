@@ -408,7 +408,6 @@ export const SETTINGS = {
   /* notifications: what notifies is synced (push reaches every device and follows it), how this device alerts isn't */
   notifyDnd: boolean({
     section: "notifications",
-    group: "Do not disturb",
     label: "Do not disturb",
     description: "Pauses alerts, sounds and push on every device. Tab badges still count.",
     keywords: ["mute", "quiet", "silence", "pause", "focus"],
