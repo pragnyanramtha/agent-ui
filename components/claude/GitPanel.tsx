@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GitBranch, NavArrowDown, Xmark } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
+import { COMMIT, needsDefaultBranchConfirm, otherActions, primaryAction, STEP_LABEL, type GitAction, type GitState, type GitStep } from "@/lib/client/git-actions";
 import { confirmAsk } from "./Ask";
 import { DiffView, type DiffScope } from "./DiffView";
 import { modalOpen } from "@/lib/client/shortcuts";
@@ -16,6 +17,8 @@ type Status = {
   files: { path: string; state: string }[];
   remote: boolean;
   gh: boolean;
+  defaultBranch: string | null;
+  pr?: { number: number; url: string; state: string } | null;
 };
 type Checkpoint = { id: string; commit: string; at: number; label: string };
 type FileStat = { path: string; added: number; removed: number; binary: boolean };
@@ -23,10 +26,90 @@ type Data = { repo: Status | null; cwd: string; checkpoints?: Checkpoint[] };
 
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 const primary = `${btn} bg-ink text-surface`;
-const quiet = `${btn} text-ink-2 shadow-btn hover:bg-hover hover:text-ink`;
-
 const STATE: Record<string, string> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "copied", "?": "new", U: "conflict" };
 const stateOf = (s: string) => STATE[s.trim()[0] ?? ""] ?? s.trim();
+const aheadBehind = (s: { ahead: number; behind: number }) =>
+  [s.ahead ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} to push` : "", s.behind ? `${s.behind} to pull` : ""].filter(Boolean).join(", ");
+
+/** The action the branch's state calls for, with everything else in a menu beside it. */
+function ActionBar({
+  state,
+  step,
+  working,
+  hasMessage,
+  menu,
+  setMenu,
+  run,
+}: {
+  state: GitState;
+  step: GitStep | null;
+  working: boolean;
+  hasMessage: boolean;
+  menu: boolean;
+  setMenu: (v: boolean | ((v: boolean) => boolean)) => void;
+  run: (a: GitAction) => Promise<void>;
+}) {
+  const main = primaryAction(state);
+  const rest = otherActions(state);
+  const needsMessage = main.steps.includes("commit") && !hasMessage;
+  const busy = working || step !== null;
+  const hint = main.disabled ?? (needsMessage ? "Write a commit message first." : undefined);
+  return (
+    <div data-git-menu className="relative">
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => void run(main)}
+          disabled={busy || Boolean(hint)}
+          title={hint}
+          className={`${primary} ${rest.length ? "rounded-r-none pr-3" : ""} min-w-0 max-w-full`}
+        >
+          <span className="truncate">{step ? STEP_LABEL[step] : main.label}</span>
+        </button>
+        {rest.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMenu((v) => !v)}
+            disabled={busy}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            aria-label="More git actions"
+            className={`${primary} rounded-l-none border-l border-surface/25 px-2.5`}
+          >
+            <NavArrowDown width={14} height={14} strokeWidth={2.2} />
+          </button>
+        )}
+      </div>
+      {main.disabled && <p className="mt-1.5 text-[12px] leading-snug text-ink-3">{main.disabled}</p>}
+      {menu && (
+        <div
+          role="menu"
+          aria-label="Git actions"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            e.preventDefault();
+            setMenu(false);
+          }}
+          className="absolute top-10 left-0 z-30 w-72 max-w-[calc(100vw-2rem)] rounded-[12px] bg-surface p-1 shadow-overlay"
+        >
+          {rest.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="menuitem"
+              disabled={Boolean(a.disabled) || (a.steps.includes("commit") && !hasMessage)}
+              onClick={() => void run(a)}
+              className="menu-item flex-col items-start! gap-0! py-1.5 disabled:opacity-100"
+            >
+              <span className={a.disabled || (a.steps.includes("commit") && !hasMessage) ? "text-ink-3" : "text-ink"}>{a.label}</span>
+              {(a.disabled || (a.steps.includes("commit") && !hasMessage)) && <span className="text-[11.5px] leading-snug text-ink-3">{a.disabled ?? "Write a commit message first."}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** The session folder's git: branch, commit / push / pull request, and checkpoints to rewind the files to. */
 export function GitPanel({ session, busy, onClose, view: initialView = "diff" }: { session: string; busy: boolean; onClose: () => void; view?: "diff" | "commit" }) {
@@ -40,6 +123,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const [message, setMessage] = useState("");
   const [showFiles, setShowFiles] = useState(false);
   const [since, setSince] = useState<{ id: string; files: FileStat[] | null } | null>(null);
+  const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -66,6 +150,13 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     if (!busy) void load();
   }, [busy, load]);
 
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: PointerEvent) => !(e.target as Element).closest?.("[data-git-menu]") && setMenu(false);
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [menu]);
+
   const act = async (action: string, extra: Record<string, unknown> = {}) => {
     setWorking(action);
     setNote(null);
@@ -89,22 +180,50 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const repo = data?.repo ?? null;
   const cps = data?.checkpoints ?? [];
   const dirty = repo?.files.length ?? 0;
-  const mainline = repo?.branch === "main" || repo?.branch === "master";
+  const gitState: GitState | null = repo && { ...repo, dirty };
+  const running = useRef(false);
+  const [step, setStep] = useState<GitStep | null>(null);
 
-  const commit = async () => {
-    const r = await act("commit", { message });
-    if (r?.commit) {
-      setMessage("");
-      setNote({ text: `Committed ${String(r.commit)}.` });
+  /** runs an action's steps in order, stopping at the first that fails */
+  const run = async (a: GitAction) => {
+    setMenu(false);
+    if (!repo || !gitState || running.current) return;
+    if (a.href) return void window.open(a.href, "_blank", "noopener,noreferrer");
+    if (a.steps.includes("commit") && !message.trim()) return setError("Write a commit message first.");
+    if (needsDefaultBranchConfirm(gitState, a)) {
+      const ok = await confirmAsk({
+        title: `Push to ${repo.branch}?`,
+        body: `${repo.branch} is the default branch, so this goes to ${repo.upstream ?? "origin"} without a pull request.`,
+        confirm: "Push",
+      });
+      if (!ok) return;
     }
-  };
-  const pushNow = async () => {
-    const r = await act("push");
-    if (r?.branch) setNote({ text: `Pushed ${String(r.branch)}.` });
-  };
-  const pr = async () => {
-    const r = await act("pr");
-    if (r?.url) setNote({ text: "Pull request ready.", href: String(r.url) });
+    running.current = true;
+    const done: string[] = [];
+    let href: string | undefined;
+    try {
+      for (const s of a.steps) {
+        setStep(s);
+        const r = await act(s, s === "commit" ? { message } : {});
+        if (!r) break;
+        if (s === "commit") {
+          setMessage("");
+          done.push(`committed ${String(r.commit)}`);
+        } else if (s === "push") done.push(`pushed ${String(r.branch)}`);
+        else if (s === "pull") done.push(`pulled ${String(r.branch)}`);
+        else if (s === "pr" && r.url) {
+          href = String(r.url);
+          done.push("pull request ready");
+        }
+      }
+    } finally {
+      running.current = false;
+      setStep(null);
+    }
+    if (done.length) {
+      const text = done.join(", ");
+      setNote({ text: `${text[0].toUpperCase()}${text.slice(1)}.`, href });
+    }
   };
   const showSince = async (id: string) => {
     if (since?.id === id) return setSince(null);
@@ -139,6 +258,13 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
             <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-inset px-2 py-0.5 font-mono text-[12px] text-ink-2 shadow-hairline" translate="no">
               <GitBranch width={12} height={12} strokeWidth={2} className="shrink-0" aria-hidden />
               <span className="truncate">{repo.branch}</span>
+            </span>
+          )}
+          {repo?.upstream && (repo.ahead > 0 || repo.behind > 0) && (
+            <span className="shrink-0 font-mono text-[12px] text-ink-3 tabular-nums" aria-label={aheadBehind(repo)} title={aheadBehind(repo)}>
+              {repo.ahead > 0 && <span>↑{repo.ahead}</span>}
+              {repo.ahead > 0 && repo.behind > 0 && " "}
+              {repo.behind > 0 && <span>↓{repo.behind}</span>}
             </span>
           )}
           <button type="button" onClick={onClose} aria-label="Close git" className="tap relative ml-auto flex size-9 items-center justify-center rounded-[9px] text-ink-3 hover:bg-hover hover:text-ink">
@@ -231,28 +357,14 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                   <input
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && message.trim() && void commit()}
+                    onKeyDown={(e) => e.key === "Enter" && message.trim() && void run(COMMIT)}
                     placeholder="Commit message"
                     aria-label="Commit message"
                     className="h-9 min-w-0 flex-1 rounded-full bg-field px-3.5 text-[16px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8 sm:text-[13px]"
                   />
-                  <button type="button" onClick={() => void commit()} disabled={!message.trim() || working !== null} className={primary}>
-                    {working === "commit" ? "Committing…" : "Commit all"}
-                  </button>
                 </div>
               )}
-              <div className="flex flex-wrap gap-2">
-                {repo.remote && repo.branch && (repo.ahead > 0 || !repo.upstream) && (
-                  <button type="button" onClick={() => void pushNow()} disabled={working !== null} className={quiet}>
-                    {working === "push" ? "Pushing…" : "Push"}
-                  </button>
-                )}
-                {repo.remote && repo.gh && repo.branch && !mainline && (
-                  <button type="button" onClick={() => void pr()} disabled={working !== null || dirty > 0} title={dirty ? "Commit the changes first" : undefined} className={quiet}>
-                    {working === "pr" ? "Opening pull request…" : "Create pull request"}
-                  </button>
-                )}
-              </div>
+              {gitState && <ActionBar state={gitState} step={step} working={working !== null} hasMessage={Boolean(message.trim())} menu={menu} setMenu={setMenu} run={run} />}
             </section>
 
             <section aria-label="Checkpoints">

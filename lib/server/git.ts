@@ -389,15 +389,57 @@ export type GitStatus = {
   files: { path: string; state: string }[];
   remote: boolean;
   gh: boolean;
+  /** origin's HEAD branch, else main or master when one exists */
+  defaultBranch: string | null;
+  /** the open (or merged/closed) pull request for this branch; undefined when gh can't tell */
+  pr?: PullRequestInfo | null;
 };
+
+export type PullRequestInfo = { number: number; url: string; state: string };
 
 let ghPath: Promise<boolean> | null = null;
 const hasGh = () => (ghPath ??= git(os.homedir(), ["--version"], { bin: "gh", timeout: 5000 }).then(() => true, () => false));
 
+async function defaultBranchOf(root: string): Promise<string | null> {
+  const originHead = (await git(root, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"]).catch(() => "")).trim();
+  if (originHead) return originHead.replace(/^origin\//, "");
+  for (const b of ["main", "master"]) {
+    for (const ref of [`refs/heads/${b}`, `refs/remotes/origin/${b}`]) {
+      if (await git(root, ["rev-parse", "--verify", "-q", ref]).then(() => true, () => false)) return b;
+    }
+  }
+  return null;
+}
+
+/* gh asks GitHub, so answers are kept a minute per branch */
+const PR_TTL_MS = 60_000;
+const prCache = new Map<string, { at: number; p: Promise<PullRequestInfo | null | undefined> }>();
+
+function prFor(root: string, branch: string): Promise<PullRequestInfo | null | undefined> {
+  const key = `${root}\0${branch}`;
+  const hit = prCache.get(key);
+  if (hit && Date.now() - hit.at < PR_TTL_MS) return hit.p;
+  const p = git(root, ["pr", "view", "--json", "number,url,state"], { bin: "gh", timeout: 10_000 }).then(
+    (out) => {
+      const j = JSON.parse(out) as Partial<PullRequestInfo>;
+      return typeof j.number === "number" && typeof j.url === "string" ? { number: j.number, url: j.url, state: String(j.state ?? "OPEN") } : undefined;
+    },
+    (err: Error) => (/no (open )?pull requests? found/i.test(err.message) ? null : undefined),
+  );
+  prCache.set(key, { at: Date.now(), p });
+  if (prCache.size > 200) prCache.delete(prCache.keys().next().value!);
+  return p;
+}
+
 export async function status(cwd: string): Promise<GitStatus | null> {
   const root = await repoRoot(cwd);
   if (!root) return null;
-  const [out, remotes, gh] = await Promise.all([git(root, ["status", "--porcelain=v1", "--branch", "-z", "--untracked-files=all"]), git(root, ["remote"]).catch(() => ""), hasGh()]);
+  const [out, remotes, gh, defaultBranch] = await Promise.all([
+    git(root, ["status", "--porcelain=v1", "--branch", "-z", "--untracked-files=all"]),
+    git(root, ["remote"]).catch(() => ""),
+    hasGh(),
+    defaultBranchOf(root),
+  ]);
   const parts = out.split("\0").filter(Boolean);
   let branch: string | null = null;
   let upstream: string | null = null;
@@ -423,7 +465,14 @@ export async function status(cwd: string): Promise<GitStatus | null> {
     /* a rename carries its old name as the next part */
     if (state[0] === "R" || state[0] === "C") i++;
   }
-  return { root, branch, upstream, ahead, behind, files, remote: Boolean(remotes.trim()), gh };
+  const remote = Boolean(remotes.trim());
+  const st: GitStatus = { root, branch, upstream, ahead, behind, files, remote, gh, defaultBranch };
+  if (gh && remote && branch && branch !== defaultBranch) {
+    if (upstream) st.pr = await prFor(root, branch);
+    /* an unpublished branch has no pull request yet, if origin is on GitHub at all */
+    else if (/github/i.test(await git(root, ["remote", "get-url", "origin"]).catch(() => ""))) st.pr = null;
+  }
+  return st;
 }
 
 export async function commitAll(cwd: string, message: string) {
@@ -451,6 +500,23 @@ export async function push(cwd: string) {
   return st.branch;
 }
 
+/** Fast-forwards the branch to its upstream; never merges or rebases. */
+export async function pull(cwd: string) {
+  const root = await needRoot(cwd);
+  const st = await status(root);
+  if (!st?.branch) throw new GitError("Not on a branch (detached HEAD).");
+  if (!st.upstream) throw new GitError("This branch doesn't track a remote branch yet.");
+  if (st.ahead && st.behind) throw new GitError(`${st.branch} and ${st.upstream} have both moved on. Merge or rebase in a terminal.`, 409);
+  try {
+    await git(root, ["pull", "--ff-only", "--no-rebase"], { timeout: 120_000 });
+  } catch (err) {
+    const m = (err as Error).message;
+    if (/would be overwritten/.test(m)) throw new GitError("Uncommitted changes would be overwritten. Commit them first.");
+    throw err;
+  }
+  return st.branch;
+}
+
 export async function pullRequest(cwd: string, title?: string) {
   const root = await needRoot(cwd);
   if (!(await hasGh())) throw new GitError("Install the GitHub CLI (gh) on the server.");
@@ -465,6 +531,8 @@ export async function pullRequest(cwd: string, title?: string) {
     if (existing) return existing;
     if (/auth login|not logged/i.test(m)) throw new GitError("gh isn't logged in. Run gh auth login on the server.");
     throw err;
+  } finally {
+    for (const k of prCache.keys()) if (k.startsWith(`${root}\0`)) prCache.delete(k);
   }
 }
 
