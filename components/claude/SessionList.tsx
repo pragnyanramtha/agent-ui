@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
@@ -16,14 +16,21 @@ import { ThemeToggle } from "./ThemeToggle";
 import { NotifyButton } from "./NotifyButton";
 import { copyText } from "./CodeCard";
 import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
+import { Kbd } from "@/components/atoms/Kbd";
+import { OPEN_SETTINGS_SECTION_EVENT } from "./SettingsScreen";
+import { useSetting } from "@/lib/client/settings";
+import type { Settings as SettingValues } from "@/lib/settings-schema";
+import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
- * A quiet, ChatGPT-like list: brand row with search and the
- * collapse toggle, "New session", then Pinned, Active, Projects,
- * Recent and Archived. Rows are one line; detail lives in the
- * hover title, actions in the row menu (right-click or "...").
- * Grouping and the agent filter sit in the Recent overflow.
+ * A thread list: New session and Search up top, Inbox, Agents
+ * and Files in one row, then Pinned and either the project
+ * groups or one flat Recent list (Settings > Sidebar). Each
+ * session shows once, as one line: status dot, title, time.
+ * Actions live in the row menu (right-click, "..." or the
+ * context-menu key); F2 renames, Delete archives. The list is
+ * one tab stop that arrow keys move through.
  * Collapsed on desktop, SessionRail stands in for it.
  * ───────────────────────────────────────────────────────── */
 
@@ -145,149 +152,94 @@ function Brand() {
 
 type MenuAt = { x: number; y: number } | HTMLElement;
 
-/** Which list a row sits in: a session shows in Projects and in Pinned, Active or Recent at once. */
-type RowWhere = "match" | "pinned" | "live" | "project" | "recent" | "snoozed" | "archived";
+/** Which list a row sits in. A session shows once: in Pinned, its project or Recent, Snoozed or Archived. */
+type RowWhere = "match" | "pinned" | "project" | "recent" | "snoozed" | "archived";
 
-/* Pinned, Active and Recent never list a session twice: a rename follows its row between them when the poll moves it */
-const MAIN_LISTS: RowWhere[] = ["pinned", "live", "recent"];
-
-/** What a row needs to open its menu (keyed by `${where}:${id}`) and to rename in place. */
-type RowControl = {
-  menuFor: string | null;
-  renaming: { id: string; where: RowWhere } | null;
-  /** the text typed so far, so a field that moved with its row carries on */
-  draft: { current: string | null };
-  openMenu: (s: SessionSummary, at: MenuAt, where: RowWhere) => void;
-  rename: (s: SessionSummary, where: RowWhere, title: string | null, viaKey: boolean) => void;
-  /** finished a turn this device hasn't opened since */
-  unread: (id: string) => boolean;
+const STATUS_DOT: Record<SessionStatus, string> = {
+  approval: "bg-orange",
+  input: "bg-orange",
+  working: "bg-accent motion-safe:animate-pulse",
+  failed: "bg-red",
+  unread: "bg-green",
 };
 
-/** Focus a row after a re-render: the same list if it's still there, else wherever it moved. */
-const focusRow = (id: string, where?: RowWhere) =>
-  requestAnimationFrame(() => {
-    const all = [...document.querySelectorAll<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`)].filter((el) => el.offsetParent !== null);
-    (all.find((el) => el.dataset.rowWhere === where) ?? all[0])?.focus({ preventScroll: true });
-  });
+/** Focus a session's row after a re-render, in this list. */
+const focusRow = (list: HTMLElement | null, id: string) =>
+  requestAnimationFrame(() => list?.querySelector<HTMLElement>(`[data-session-row="${CSS.escape(id)}"]`)?.focus({ preventScroll: false }));
 
-function Row({
-  s,
-  active,
-  onPick,
-  now,
-  lead,
-  indent,
-  showAgent = true,
-  ctl,
-  where,
-  trail,
-}: {
-  s: SessionSummary;
+type RowProps = {
+  id: string;
+  title: string;
+  /** the hover title: full name, folder, when */
+  tip: string;
+  status: SessionStatus | null;
+  /** last activity (or start, or when a snoozed session wakes), already formatted */
+  time: string;
+  /** set when rows show their agent */
+  agent: AgentId | null;
   active: boolean;
-  onPick: (id: string) => void;
-  now: number;
-  lead?: ReactNode;
-  indent?: boolean;
-  showAgent?: boolean;
-  ctl: RowControl;
   where: RowWhere;
-  /** stands in for the agent's name at the end of a quiet row */
-  trail?: string;
-}) {
-  const status = sessionStatus(s, ctl.unread(s.id));
-  const key = `${where}:${s.id}`;
-  const r = ctl.renaming;
-  if (r?.id === s.id && (r.where === where || (MAIN_LISTS.includes(r.where) && MAIN_LISTS.includes(where))))
-    return <RenameRow s={s} lead={lead} indent={indent} draft={ctl.draft} onDone={(t, viaKey) => ctl.rename(s, where, t, viaKey)} />;
-  const menuOpen = ctl.menuFor === key;
-  /* the "..." button takes the trailing label's place on hover */
-  const tail = menuOpen ? "hidden" : "pointer-fine:group-hover/item:hidden pointer-fine:group-focus-within/item:hidden";
-  const agentLabel = trail ? (
-    <span className={`shrink-0 text-[12px] text-ink-3 tabular-nums ${tail}`}>{trail}</span>
-  ) : (
-    showAgent && s.agent !== "claude" && <span className={`shrink-0 text-[12px] text-ink-3 ${tail}`}>{AGENT_LABEL[s.agent]}</span>
-  );
+  menuOpen: boolean;
+  renaming: boolean;
+  /** the text typed so far, so a field that re-mounts carries on */
+  draft: { current: string | null };
+  onPick: (id: string) => void;
+  onMenu: (id: string, at: MenuAt) => void;
+  onRenamed: (id: string, title: string | null, viaKey: boolean) => void;
+};
+
+/** One session: status dot, title, time. The "..." button covers the time on hover or focus, so nothing reflows.
+ * Props are plain values and stable callbacks: a poll that changes one session re-renders only its row. */
+const Row = memo(function Row({ id, title, tip, status, time, agent, active, where, menuOpen, renaming, draft, onPick, onMenu, onRenamed }: RowProps) {
+  if (renaming) return <RenameRow title={title} draft={draft} onDone={(t, viaKey) => onRenamed(id, t, viaKey)} />;
+  const tail = menuOpen ? "invisible" : "pointer-fine:group-hover/item:invisible pointer-fine:group-focus-within/item:invisible";
   return (
     <div
       className="group/item relative"
       onContextMenu={(e) => {
         e.preventDefault();
         /* the context-menu key reports no position: anchor to the row */
-        ctl.openMenu(s, e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : e.currentTarget, where);
+        onMenu(id, e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : e.currentTarget);
       }}
     >
       <button
         type="button"
-        data-session-row={s.id}
+        data-session-row={id}
+        data-nav={`row:${id}`}
         data-row-where={where}
-        onClick={() => onPick(s.id)}
+        onClick={() => onPick(id)}
         aria-current={active ? "page" : undefined}
-        title={rowTitle(s, now)}
-        className={`side-row pointer-coarse:pr-12 pointer-fine:group-focus-within/item:pr-9 pointer-fine:group-hover/item:pr-9 ${menuOpen ? "pr-9" : ""} ${indent ? "pl-[34px]" : ""}`}
+        aria-keyshortcuts="F2 Delete"
+        title={tip}
+        className={`side-row gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
       >
-        {lead}
-        <span className="min-w-0 flex-1 truncate">{s.title}</span>
-        {status === "unread" ? (
-          <>
-            {agentLabel}
-            <span className={`flex size-4 shrink-0 items-center justify-center ${tail}`}>
-              <span className="size-1.5 rounded-full bg-green" aria-hidden />
-              <span className="sr-only">, {STATUS_LABEL.unread.toLowerCase()}</span>
-            </span>
-          </>
-        ) : status ? (
-          <StatusPill status={status} className={tail} />
-        ) : (
-          agentLabel
-        )}
+        <span className="flex w-1.5 shrink-0 justify-center" aria-hidden>
+          {status && <span className={`size-1.5 rounded-full ${STATUS_DOT[status]}`} />}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {status && <span className="sr-only">, {STATUS_LABEL[status]}</span>}
+        {agent && <span role="img" aria-label={AGENT_LABEL[agent]} className={`size-2 shrink-0 rounded-[2.5px] opacity-80 ${AGENT_TONE[agent]}`} />}
+        <span className={`min-w-7 shrink-0 text-right text-[12px] text-ink-3 tabular-nums ${tail}`}>{time}</span>
       </button>
       <button
         type="button"
-        aria-label={`Options for ${s.title}`}
+        tabIndex={-1}
+        aria-label={`Options for ${title}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
-        onClick={(e) => ctl.openMenu(s, e.currentTarget, where)}
-        className={`absolute top-1/2 right-1 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-3 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-active hover:text-ink focus-visible:opacity-100 group-hover/item:opacity-100 group-focus-within/item:opacity-100 pointer-coarse:size-9 pointer-coarse:opacity-100 ${menuOpen ? "bg-sidebar-active text-ink opacity-100" : "opacity-0"}`}
+        onClick={(e) => onMenu(id, e.currentTarget)}
+        className={`absolute top-1/2 right-1.5 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-3 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-active hover:text-ink group-hover/item:opacity-100 group-focus-within/item:opacity-100 pointer-coarse:right-0 pointer-coarse:size-11 pointer-coarse:opacity-100 ${menuOpen ? "bg-sidebar-active text-ink opacity-100" : "opacity-0"}`}
       >
         <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
       </button>
     </div>
   );
-}
-
-const PILL_TONE: Record<Exclude<SessionStatus, "unread">, { text: string; dot: string }> = {
-  approval: { text: "font-medium text-orange-ink", dot: "bg-orange" },
-  input: { text: "font-medium text-accent-ink", dot: "bg-accent" },
-  working: { text: "text-ink-3", dot: "bg-accent motion-safe:animate-pulse" },
-  failed: { text: "font-medium text-red-ink", dot: "bg-red" },
-};
-
-function StatusPill({ status, className = "" }: { status: Exclude<SessionStatus, "unread">; className?: string }) {
-  const tone = PILL_TONE[status];
-  return (
-    <span className={`flex shrink-0 items-center gap-1.5 text-[12px] ${tone.text} ${className}`}>
-      <span className={`size-1.5 rounded-full ${tone.dot}`} aria-hidden />
-      {STATUS_LABEL[status]}
-    </span>
-  );
-}
+});
 
 /** The row as a text field: Enter saves, Escape cancels, leaving the field saves. Empty brings the original name back. */
-function RenameRow({
-  s,
-  lead,
-  indent,
-  draft,
-  onDone,
-}: {
-  s: SessionSummary;
-  lead?: ReactNode;
-  indent?: boolean;
-  draft: { current: string | null };
-  onDone: (title: string | null, viaKey: boolean) => void;
-}) {
+function RenameRow({ title, draft, onDone }: { title: string; draft: { current: string | null }; onDone: (title: string | null, viaKey: boolean) => void }) {
   const [resumed] = useState(() => draft.current !== null);
-  const [value, setValue] = useState(() => draft.current ?? s.title);
+  const [value, setValue] = useState(() => draft.current ?? title);
   const done = useRef(false);
   /* a field that unmounts because its row moved must not save what it had (a blur on removal would) */
   useLayoutEffect(() => {
@@ -296,14 +248,14 @@ function RenameRow({
       done.current = true;
     };
   }, []);
-  const finish = (title: string | null, viaKey: boolean) => {
+  const finish = (next: string | null, viaKey: boolean) => {
     if (done.current) return;
     done.current = true;
-    onDone(title, viaKey);
+    onDone(next, viaKey);
   };
   return (
-    <div className={`side-row bg-sidebar-hover shadow-[inset_0_0_0_1.5px_var(--accent)] ${indent ? "pl-[34px]" : ""}`}>
-      {lead}
+    <div className="side-row gap-2.5 bg-sidebar-hover shadow-[inset_0_0_0_1.5px_var(--accent)]">
+      <span className="w-1.5 shrink-0" aria-hidden />
       <input
         autoFocus
         value={value}
@@ -333,7 +285,7 @@ function RenameRow({
         autoComplete="off"
         spellCheck={false}
         aria-label="Session name"
-        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none sm:text-[14px] sm:pointer-coarse:text-[16px]"
+        className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none sm:text-[13.5px] sm:pointer-coarse:text-[16px]"
       />
     </div>
   );
@@ -572,42 +524,43 @@ function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: (
   );
 }
 
-const PulseSlot = ({ s }: { s: SessionSummary }) => (
-  <span className="flex size-4 shrink-0 items-center justify-center">
-    <Pulse busy={isBusy(s)} size={2.5} cellClass={AGENT_TONE[s.agent]} />
-  </span>
-);
-
-const PinSlot = () => (
-  <span className="flex size-4 shrink-0 items-center justify-center text-ink-3">
-    <Pin width={13} height={13} strokeWidth={1.9} aria-hidden />
-  </span>
-);
+/** Asks before archiving, when Settings > Sidebar says so. */
+function ArchiveDialog({ s, onClose, onArchive }: { s: SessionSummary; onClose: () => void; onArchive: () => void }) {
+  return (
+    <Sheet
+      title="Archive session?"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} className={secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" data-autofocus onClick={onArchive} className={primaryBtn}>
+            Archive
+          </button>
+        </>
+      }
+    >
+      <p className="text-[13.5px] leading-relaxed text-ink-2">
+        <span className="font-medium text-ink [overflow-wrap:anywhere]">{s.title}</span> moves to Archived on every device. You can restore it from there.
+      </p>
+    </Sheet>
+  );
+}
 
 /* ── sections ───────────────────────────────────────────── */
 
-function Section({
-  label,
-  open,
-  onToggle,
-  action,
-  children,
-}: {
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
+function Section({ label, open, onToggle, action, children }: { label: string; open: boolean; onToggle: () => void; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="group/section mt-5 first:mt-1">
-      <div className="flex h-8 items-center gap-1 pr-1">
+    <section data-nav-group className="group/section mt-4 first:mt-1">
+      <div className="mb-px flex h-7 items-center gap-1 pr-1 pointer-coarse:h-10">
         <h2 className="min-w-0 flex-1">
           <button
             type="button"
+            data-nav={`section:${label}`}
             onClick={onToggle}
             aria-expanded={open}
-            className="group/label flex h-8 w-full items-center gap-1 rounded-control px-2.5 text-left text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px]"
+            className="group/label flex h-7 w-full items-center gap-1 rounded-control px-2.5 text-left text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
           >
             <span className="truncate">{label}</span>
             <NavArrowRight
@@ -626,56 +579,56 @@ function Section({
   );
 }
 
-type RecentsGroup = "none" | "time" | "agent";
+/** A folder's label: quiet 28px text with a chevron; the session count shows on hover. */
+const ProjectHeader = memo(function ProjectHeader({ id, name, path, count, open, onToggle }: { id: string; name: string; path: string; count: number; open: boolean; onToggle: (id: string) => void }) {
+  return (
+    <button
+      type="button"
+      data-nav={`project:${id}`}
+      onClick={() => onToggle(id)}
+      aria-expanded={open}
+      title={path}
+      className="group/ph flex h-7 w-full shrink-0 items-center gap-1.5 rounded-control px-2.5 text-left text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink-2 focus-visible:outline-offset-[-2px] pointer-coarse:h-10"
+    >
+      <NavArrowRight width={12} height={12} strokeWidth={2.2} aria-hidden className={`shrink-0 transition-transform duration-150 ${open ? "rotate-90" : ""}`} />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="shrink-0 tabular-nums opacity-0 transition-opacity duration-150 group-hover/ph:opacity-100 group-focus-visible/ph:opacity-100" aria-label={`${count} ${count === 1 ? "session" : "sessions"}`}>
+        {count}
+      </span>
+    </button>
+  );
+});
+
 const GROUPS: readonly RecentsGroup[] = ["none", "time", "agent"];
 const GROUP_LABEL: Record<RecentsGroup, string> = { none: "None", time: "Date", agent: "Agent" };
+const VIEW_LABEL: Record<SettingValues["sidebarGroup"], string> = { project: "By project", flat: "Flat list" };
+const SORT_LABEL: Record<SidebarSort, string> = { activity: "Last activity", created: "Created", title: "Title" };
 
-function timeBucket(ms: number, now: number) {
-  const day = (t: number) => new Date(new Date(t).toDateString()).getTime();
-  const d = Math.round((day(now) - day(ms)) / 86_400_000);
-  return d <= 0 ? "Today" : d === 1 ? "Yesterday" : d < 7 ? "This week" : d < 31 ? "This month" : "Older";
-}
-
-function groupRows(rows: SessionSummary[], by: RecentsGroup, now: number): [string, SessionSummary[]][] {
-  if (by === "none") return [["", rows]];
-  const groups = new Map<string, SessionSummary[]>();
-  for (const s of rows) {
-    const key = by === "time" ? timeBucket(s.mtime, now) : AGENT_LABEL[s.agent];
-    groups.set(key, [...(groups.get(key) ?? []), s]);
-  }
-  return [...groups.entries()];
-}
-
-type Project = { key: string; name: string; path: string; rows: SessionSummary[]; newest: number };
-
-/** Sessions by folder, newest folder first. */
-function groupProjects(rows: SessionSummary[]): Project[] {
-  const m = new Map<string, Project>();
-  for (const s of rows) {
-    const key = s.cwd || "";
-    const p = m.get(key) ?? { key, name: s.project || "No folder", path: s.cwd ? shortPath(s.cwd) : "No folder", rows: [], newest: 0 };
-    p.rows.push(s);
-    p.newest = Math.max(p.newest, s.mtime);
-    m.set(key, p);
-  }
-  return [...m.values()].sort((a, b) => b.newest - a.newest);
-}
-
-/** The Recent overflow: grouping, the agent filter, and the inline filter. */
+/** The list's overflow: filter, view, sort, the flat list's grouping, the agent filter, and a way to all of it in Settings. */
 function ViewMenu({
+  view,
+  onView,
+  sort,
+  onSort,
   groupBy,
   onGroupBy,
   agents,
   agent,
   onAgent,
   onFilter,
+  onSettings,
 }: {
+  view: SettingValues["sidebarGroup"];
+  onView: (v: SettingValues["sidebarGroup"]) => void;
+  sort: SidebarSort;
+  onSort: (s: SidebarSort) => void;
   groupBy: RecentsGroup;
   onGroupBy: (g: RecentsGroup) => void;
   agents: AgentId[];
   agent: AgentId | "all";
   onAgent: (a: AgentId | "all") => void;
   onFilter: () => void;
+  onSettings?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [place, setPlace] = useState<CSSProperties>({});
@@ -693,10 +646,10 @@ function ViewMenu({
       ...(below ? { top: r.bottom + 4 } : { top: Math.max(8, r.top - 4 - h) }),
       transformOrigin: below ? "top right" : "bottom right",
     });
-  }, [open]);
+  }, [open, view]);
   useEffect(() => {
     if (!open) return;
-    ref.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
+    ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus({ preventScroll: true });
     const inside = (t: EventTarget | null) => t instanceof Node && Boolean(ref.current?.contains(t) || buttonRef.current?.contains(t));
     const close = (e: PointerEvent) => !inside(e.target) && setOpen(false);
     const onFocus = (e: FocusEvent) => !inside(e.target) && setOpen(false);
@@ -727,6 +680,8 @@ function ViewMenu({
       {checked && <Check width={15} height={15} strokeWidth={2} className="shrink-0 text-ink-2" aria-hidden />}
     </button>
   );
+  const heading = (text: string) => <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">{text}</div>;
+  const rule = <div className="mx-2 my-1 h-px bg-line" />;
   return (
     <div className="relative">
       <button
@@ -736,57 +691,103 @@ function ViewMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className={`flex size-7 items-center justify-center rounded-control text-ink-3 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-hover hover:text-ink group-hover/section:opacity-100 focus-visible:opacity-100 pointer-coarse:size-9 pointer-coarse:opacity-100 ${open ? "bg-sidebar-hover text-ink opacity-100" : "opacity-0"}`}
+        className={`flex size-7 items-center justify-center rounded-control text-ink-3 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-hover hover:text-ink group-hover/section:opacity-100 focus-visible:opacity-100 pointer-coarse:size-11 pointer-coarse:opacity-100 ${open ? "bg-sidebar-hover text-ink opacity-100" : "opacity-0"}`}
       >
         <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
       </button>
       {open &&
         createPortal(
-        <div
-          ref={ref}
-          role="menu"
-          aria-label="View options"
-          onKeyDown={(e) => {
-            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-            e.preventDefault();
-            const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
-            const i = items.indexOf(document.activeElement as HTMLElement);
-            items[(i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
-          }}
-          className="z-50 w-52 rounded-[12px] bg-surface p-1 shadow-overlay"
-          style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", ...place, visibility: place.position ? "visible" : "hidden" }}
-        >
-          <button type="button" role="menuitem" onClick={pick(onFilter)} className="menu-item">
-            <Search width={14} height={14} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Filter list…</span>
-          </button>
-          <div className="mx-2 my-1 h-px bg-line" />
-          <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">Group by</div>
-          {GROUPS.map((g) => item(groupBy === g, GROUP_LABEL[g], () => onGroupBy(g)))}
-          {agents.length > 1 && (
-            <>
-              <div className="mx-2 my-1 h-px bg-line" />
-              <div className="px-2 pt-1 pb-0.5 text-[12px] text-ink-3">Show</div>
-              {item(agent === "all", "All agents", () => onAgent("all"))}
-              {agents.map((a) => item(agent === a, AGENT_LABEL[a], () => onAgent(a)))}
-            </>
-          )}
-        </div>,
+          <div
+            ref={ref}
+            role="menu"
+            aria-label="View options"
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+              e.preventDefault();
+              const items = [...(ref.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
+              const i = items.indexOf(document.activeElement as HTMLElement);
+              const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+              items[next]?.focus();
+            }}
+            className="scroll-quiet z-50 max-h-[min(80vh,640px)] w-52 overflow-y-auto rounded-[12px] bg-surface p-1 shadow-overlay"
+            style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", ...place, visibility: place.position ? "visible" : "hidden" }}
+          >
+            <button type="button" role="menuitem" onClick={pick(onFilter)} className="menu-item">
+              <Search width={14} height={14} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Filter list…</span>
+            </button>
+            {rule}
+            {heading("View")}
+            {(["project", "flat"] as const).map((v) => item(view === v, VIEW_LABEL[v], () => onView(v)))}
+            {rule}
+            {heading("Sort by")}
+            {(["activity", "created", "title"] as const).map((s) => item(sort === s, SORT_LABEL[s], () => onSort(s)))}
+            {view === "flat" && (
+              <>
+                {rule}
+                {heading("Group by")}
+                {GROUPS.map((g) => item(groupBy === g, GROUP_LABEL[g], () => onGroupBy(g)))}
+              </>
+            )}
+            {agents.length > 1 && (
+              <>
+                {rule}
+                {heading("Show")}
+                {item(agent === "all", "All agents", () => onAgent("all"))}
+                {agents.map((a) => item(agent === a, AGENT_LABEL[a], () => onAgent(a)))}
+              </>
+            )}
+            {onSettings && (
+              <>
+                {rule}
+                <button type="button" role="menuitem" onClick={pick(onSettings)} className="menu-item">
+                  <Settings width={14} height={14} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">Sidebar settings…</span>
+                </button>
+              </>
+            )}
+          </div>,
           document.body,
         )}
     </div>
   );
 }
 
+/** A minute clock for row times: one re-render a minute, at the turn of the minute. */
+function useMinute(): [number, () => void] {
+  const [now, setNow] = useState(() => Date.now());
+  const bump = useCallback(() => setNow(Date.now()), []);
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      t = setTimeout(
+        () => {
+          bump();
+          tick();
+        },
+        60_000 - (Date.now() % 60_000) + 50,
+      );
+    };
+    tick();
+    const onShow = () => document.visibilityState === "visible" && bump();
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("visibilitychange", onShow);
+    };
+  }, [bump]);
+  return [now, bump];
+}
+
 const PROJECT_CAP = 6;
-const PROJECT_ROWS_CAP = 8;
 const RECENT_STEP = 40;
 
-type SectionKey = "pinned" | "live" | "projects" | "recents";
+type SectionKey = "pinned" | "projects" | "recents";
 const UNDO_MS = 5000;
 const NONE_FINISHED: Finished = {};
+const SETTINGS_SECTION_KEY = "cui:settings-section";
 
-export function SessionList({
+export const SessionList = memo(function SessionList({
   sessions,
   activeId,
   onPick,
@@ -823,24 +824,32 @@ export function SessionList({
   inbox?: number;
 }) {
   const mod = useModKey();
+  const [view, setView] = useSetting("sidebarGroup");
+  const [sort, setSort] = useSetting("sidebarSort");
+  const [projectCap] = useSetting("sidebarProjectCap");
+  const [archivedOn] = useSetting("sidebarShowArchived");
+  const [agentIcon] = useSetting("sidebarAgentIcon");
+  const [timeStyle] = useSetting("sidebarTime");
+  const [confirmFirst] = useSetting("sidebarConfirm");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [groupBy, setGroupBy] = useStored<RecentsGroup>("cui:recentsGroup", "none", GROUPS);
   const [agentFilter, setAgentFilter] = useStored<AgentId | "all">("cui:agent", "all");
   const [shut, setShut] = useState<Set<SectionKey>>(new Set());
-  const [openProjects, setOpenProjects] = useState<Set<string>>(new Set());
+  const [folded, setFolded] = useState<Set<string>>(new Set());
   const [fullProjects, setFullProjects] = useState<Set<string>>(new Set());
   const [allProjects, setAllProjects] = useState(false);
   const [recentCap, setRecentCap] = useState(RECENT_STEP);
-  /* bumped when the next snooze runs out, so the session comes back on time */
-  const [, setWoke] = useState(0);
-  const now = Date.now();
+  const [now, tickNow] = useMinute();
 
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("cui:sidebarShut") ?? "[]") as SectionKey[];
       if (Array.isArray(saved)) setShut(new Set(saved));
+      const f = JSON.parse(localStorage.getItem("cui:sidebarFolded") ?? "[]") as string[];
+      if (Array.isArray(f)) setFolded(new Set(f.filter((k) => typeof k === "string")));
     } catch {}
   }, []);
   const toggleSection = (k: SectionKey) =>
@@ -853,41 +862,67 @@ export function SessionList({
       } catch {}
       return next;
     });
-  const flip = (set: (fn: (s: Set<string>) => Set<string>) => void, key: string) =>
-    set((cur) => {
+  const toggleProject = useCallback(
+    (key: string) =>
+      setFolded((cur) => {
+        const next = new Set(cur);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        try {
+          localStorage.setItem("cui:sidebarFolded", JSON.stringify([...next].slice(-200)));
+        } catch {}
+        return next;
+      }),
+    [],
+  );
+  const flipFull = (key: string) =>
+    setFullProjects((cur) => {
       const next = new Set(cur);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
 
+  const byId = useMemo(() => new Map((sessions ?? []).map((s) => [s.id, s])), [sessions]);
   const agentsPresent = useMemo(() => [...new Set((sessions ?? []).map((s) => s.agent))], [sessions]);
   const filter = agentsPresent.includes(agentFilter as AgentId) ? agentFilter : "all";
   const rows = useMemo(() => (sessions ?? []).filter((s) => filter === "all" || s.agent === filter), [sessions, filter]);
-  /* archived rows only show under Archived; pinned ones sit in Pinned instead of Active and Recent */
-  const shown = useMemo(() => rows.filter((s) => !s.archived), [rows]);
-  const archived = useMemo(() => rows.filter((s) => s.archived), [rows]);
-  const awake = shown.filter((s) => !isAsleep(s, now));
-  const snoozed = shown.filter((s) => isAsleep(s, now)).sort((a, b) => a.snoozedUntil! - b.snoozedUntil!);
-  const pinned = awake.filter((s) => s.pinned);
-  const live = awake.filter((s) => isLive(s) && !s.pinned);
-  const recent = awake.filter((s) => !isLive(s) && !s.pinned);
+  const lists = useMemo(() => {
+    const shown = rows.filter((s) => !s.archived);
+    const awake = shown.filter((s) => !isAsleep(s, now));
+    const rest = awake.filter((s) => !s.pinned);
+    return {
+      shown,
+      awake,
+      archived: sortSessions(
+        rows.filter((s) => s.archived),
+        sort,
+      ),
+      snoozed: shown.filter((s) => isAsleep(s, now)).sort((a, b) => a.snoozedUntil! - b.snoozedUntil!),
+      pinned: sortSessions(
+        awake.filter((s) => s.pinned),
+        sort,
+      ),
+      recent: sortSessions(rest, sort),
+      projects: groupByProject(rest, sort),
+    };
+  }, [rows, now, sort]);
+  const { shown, awake, archived, snoozed, pinned, recent, projects } = lists;
   const nextWake = snoozed[0]?.snoozedUntil;
   useEffect(() => {
     if (!nextWake) return;
     /* setTimeout tops out near 24.8 days; a far wake just checks again then */
-    const t = setTimeout(() => setWoke((n) => n + 1), Math.min(Math.max(0, nextWake - Date.now()) + 50, 2 ** 31 - 1));
+    const t = setTimeout(tickNow, Math.min(Math.max(0, nextWake - Date.now()) + 50, 2 ** 31 - 1));
     return () => clearTimeout(t);
-  }, [nextWake]);
-  const projects = useMemo(() => groupProjects(shown), [shown]);
+  }, [nextWake, tickNow]);
 
-  const [menu, setMenu] = useState<{ s: SessionSummary; at: MenuAt; where: RowWhere } | null>(null);
-  const [renaming, setRenaming] = useState<RowControl["renaming"]>(null);
+  const [menu, setMenu] = useState<{ id: string; s: SessionSummary; at: MenuAt } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const renameDraft = useRef<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
-  const closeDelete = useCallback(() => setDeleting(null), []);
+  const [archiving, setArchiving] = useState<SessionSummary | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: () => void; n: number } | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -896,30 +931,91 @@ export function SessionList({
   }, [toast]);
   const say = (text: string, undo?: () => void) => setToast((cur) => ({ text, undo, n: (cur?.n ?? 0) + 1 }));
 
+  /* ── roving focus: the list is one tab stop; arrows, Home and End move between rows and labels ── */
+  const lastNav = useRef<string | null>(null);
+  const lastNavIndex = useRef(0);
+  const navItems = useCallback(() => [...(listRef.current?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])], []);
+  const syncStops = useCallback(() => {
+    const items = navItems();
+    const current = items.find((el) => el.getAttribute("aria-current") === "page")?.dataset.nav ?? null;
+    const stop = tabStop(
+      items.map((el) => el.dataset.nav!),
+      lastNav.current,
+      current,
+      lastNavIndex.current,
+    );
+    items.forEach((el, i) => {
+      el.tabIndex = i === stop ? 0 : -1;
+    });
+  }, [navItems]);
+  useLayoutEffect(syncStops);
+  const focusNav = (el: HTMLElement | undefined) => {
+    el?.focus({ preventScroll: true });
+    el?.scrollIntoView({ block: "nearest" });
+  };
+  /** Before a row leaves the list: its neighbor takes the tab stop, and focus if the row had it. */
+  const handOff = (id: string) => {
+    const items = navItems();
+    const i = items.findIndex((el) => el.dataset.sessionRow === id);
+    if (i < 0) return;
+    const next = items[i + 1]?.dataset.sessionRow ? items[i + 1] : (items[i - 1] ?? items[i + 1]);
+    const key = next?.dataset.nav ?? null;
+    const had = listRef.current?.contains(document.activeElement) || Boolean(menu);
+    lastNav.current = key;
+    lastNavIndex.current = i;
+    if (had && key) requestAnimationFrame(() => focusNav(listRef.current?.querySelector<HTMLElement>(`[data-nav="${CSS.escape(key)}"]`) ?? undefined));
+  };
+
   const change = (s: SessionSummary, c: SessionChange) =>
     patchSession(s.id, c).catch((err: unknown) => say(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`));
+  const archiveNow = (s: SessionSummary) => {
+    handOff(s.id);
+    const wasPinned = Boolean(s.pinned);
+    void change(s, { archived: true });
+    say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
+  };
+  const afterDelete = (s: SessionSummary, transcript: boolean) => {
+    if (finished[s.id]) onUnread?.(s, false);
+    onDeleted?.(s.id);
+    say(transcript ? "Session and transcript deleted." : "Session deleted.");
+  };
+  const requestArchive = (s: SessionSummary) => (confirmFirst === "both" ? setArchiving(s) : archiveNow(s));
+  const requestDelete = (s: SessionSummary) => {
+    /* a running session can't go; the dialog says why */
+    if (confirmFirst !== "never" || isBusy(s) || s.web?.pending.length) return setDeleting(s);
+    handOff(s.id);
+    deleteSession(s.id, false).then(
+      () => afterDelete(s, false),
+      (err: unknown) => say(`Couldn't delete: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  };
+  const startRename = (id: string) => {
+    renameDraft.current = null;
+    setRenaming(id);
+  };
+
   const menuRef = useRef(menu);
   menuRef.current = menu;
   const closeMenu = useCallback((restoreFocus: boolean) => {
-    const cur = menuRef.current;
-    if (cur && restoreFocus) {
-      if (cur.at instanceof HTMLElement && cur.at.isConnected && cur.at.tagName === "BUTTON") cur.at.focus({ preventScroll: true });
-      else focusRow(cur.s.id, cur.where);
-    }
+    if (restoreFocus && menuRef.current) focusRow(listRef.current, menuRef.current.id);
     setMenu(null);
   }, []);
   const onAction = (action: RowAction) => {
     if (!menu) return;
-    const { s, where } = menu;
+    const s = byId.get(menu.id) ?? menu.s;
     if (action === "delete") {
       setMenu(null);
-      setDeleting(s);
+      requestDelete(s);
       return;
     }
     if (action === "rename") {
       setMenu(null);
-      renameDraft.current = null;
-      setRenaming({ id: s.id, where });
+      startRename(s.id);
+      return;
+    }
+    if (action === "archive" && !s.archived) {
+      setMenu(null);
+      requestArchive(s);
       return;
     }
     closeMenu(true);
@@ -930,12 +1026,8 @@ export function SessionList({
     } else if (action === "wake") void change(s, { snoozedUntil: null });
     else if (action === "pin") void change(s, { pinned: !s.pinned });
     else if (action === "read") onUnread?.(s, !finished[s.id]);
-    else if (action === "archive" && s.archived) void change(s, { archived: false });
-    else if (action === "archive") {
-      const wasPinned = Boolean(s.pinned);
-      void change(s, { archived: true });
-      say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
-    } else if (action === "link") {
+    else if (action === "archive") void change(s, { archived: false });
+    else if (action === "link") {
       void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied." : "Couldn't copy the link."));
     } else if (action === "path") {
       void copyText(s.cwd).then((ok) => say(ok ? "Folder path copied." : "Couldn't copy the folder path."));
@@ -943,33 +1035,50 @@ export function SessionList({
       void copyText(nativeId(s.id)).then((ok) => say(ok ? "Session ID copied." : "Couldn't copy the session ID."));
     }
   };
-  const ctl: RowControl = {
-    menuFor: menu ? `${menu.where}:${menu.s.id}` : null,
-    renaming,
-    draft: renameDraft,
-    openMenu: (s, at, where) => setMenu((cur) => (cur?.s.id === s.id && cur.where === where && at instanceof HTMLElement ? null : { s, at, where })),
-    rename: (s, where, title, viaKey) => {
-      setRenaming(null);
-      renameDraft.current = null;
-      if (viaKey) focusRow(s.id, where);
-      if (title === null) return;
-      const t = title.replace(/\s+/g, " ").trim();
-      if (t !== s.title) void change(s, { title: t || null });
-    },
-    unread: (id) => Boolean(finished[id]),
-  };
+
+  /* Rows get the same callbacks every render; they read the latest state through this ref. */
+  const latest = useRef({ byId, change });
+  latest.current = { byId, change };
+  const onMenu = useCallback(
+    (id: string, at: MenuAt) =>
+      setMenu((cur) => {
+        if (cur?.id === id && at instanceof HTMLElement) return null;
+        const s = latest.current.byId.get(id);
+        return s ? { id, s, at } : null;
+      }),
+    [],
+  );
+  const onRenamed = useCallback((id: string, title: string | null, viaKey: boolean) => {
+    setRenaming(null);
+    renameDraft.current = null;
+    if (viaKey) focusRow(listRef.current, id);
+    const s = latest.current.byId.get(id);
+    if (title === null || !s) return;
+    const t = title.replace(/\s+/g, " ").trim();
+    if (t !== s.title) void latest.current.change(s, { title: t || null });
+  }, []);
+
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return null;
-    return rows.filter((s) => `${s.title} ${s.cwd} ${AGENT_LABEL[s.agent]}`.toLowerCase().includes(q));
-  }, [rows, query]);
+    return sortSessions(
+      rows.filter((s) => `${s.title} ${s.cwd} ${AGENT_LABEL[s.agent]}`.toLowerCase().includes(q)),
+      sort,
+    );
+  }, [rows, query, sort]);
 
-  /* the active session's folder opens by itself */
+  /* the open session's folder unfolds when you open it */
   const activeProject = useMemo(() => (sessions ?? []).find((s) => s.id === activeId)?.cwd, [sessions, activeId]);
   useEffect(() => {
     if (activeProject === undefined) return;
-    setOpenProjects((cur) => (cur.has(activeProject) ? cur : new Set(cur).add(activeProject)));
-  }, [activeProject]);
+    setFolded((cur) => {
+      if (!cur.has(activeProject)) return cur;
+      const next = new Set(cur);
+      next.delete(activeProject);
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   useEffect(() => {
     if (searching) searchRef.current?.focus();
@@ -979,18 +1088,105 @@ export function SessionList({
     setQuery("");
   };
 
+  const showAgents = agentIcon && agentsPresent.length > 1;
+  const timeOf = (ms: number) => (timeStyle === "absolute" ? absoluteTime(ms, now) : relativeTime(ms, now));
+  const row = (s: SessionSummary, where: RowWhere, time?: string) => (
+    <Row
+      key={s.id}
+      id={s.id}
+      title={s.title}
+      tip={rowTitle(s, now)}
+      status={sessionStatus(s, Boolean(finished[s.id]))}
+      time={time ?? timeOf(sort === "created" ? s.created || s.mtime : s.mtime)}
+      agent={showAgents ? s.agent : null}
+      active={s.id === activeId}
+      where={where}
+      menuOpen={menu?.id === s.id}
+      renaming={renaming === s.id}
+      draft={renameDraft}
+      onPick={onPick}
+      onMenu={onMenu}
+      onRenamed={onRenamed}
+    />
+  );
+
+  const onListKey = (e: ReactKeyEvent<HTMLDivElement>) => {
+    if (e.defaultPrevented || e.altKey || e.nativeEvent.isComposing) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("input, textarea")) return;
+    const item = t.closest<HTMLElement>("[data-nav]");
+    if (!item) return;
+    const plain = !e.ctrlKey && !e.metaKey && !e.shiftKey;
+    const items = navItems();
+    const i = items.indexOf(item);
+    const to = plain ? rovingTarget(e.key, i, items.length) : null;
+    if (to !== null) {
+      e.preventDefault();
+      focusNav(items[to]);
+      return;
+    }
+    if (plain && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      const expanded = item.getAttribute("aria-expanded");
+      if (expanded !== null) {
+        e.preventDefault();
+        if ((expanded === "true") !== (e.key === "ArrowRight")) item.click();
+        else if (e.key === "ArrowRight") focusNav(items[i + 1]);
+      } else if (e.key === "ArrowLeft") {
+        const owner = item.closest("[data-nav-group]")?.querySelector<HTMLElement>("[data-nav][aria-expanded]");
+        if (owner) {
+          e.preventDefault();
+          focusNav(owner);
+        }
+      }
+      return;
+    }
+    const s = item.dataset.sessionRow ? byId.get(item.dataset.sessionRow) : undefined;
+    if (!s) return;
+    if (e.key === "F2" && plain) {
+      e.preventDefault();
+      startRename(s.id);
+    } else if (e.key === "Delete" || (e.key === "Backspace" && (e.metaKey || e.ctrlKey))) {
+      e.preventDefault();
+      if (e.shiftKey || s.archived) requestDelete(s);
+      else requestArchive(s);
+    }
+  };
+
   const shownProjects = allProjects ? projects : projects.filter((p, i) => i < PROJECT_CAP || p.key === activeProject);
   const recentGroups = groupRows(recent.slice(0, recentCap), groupBy, now);
   const palette = () => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT));
+  const cap = capCount(projectCap);
+  const viewMenu = (
+    <ViewMenu
+      view={view}
+      onView={setView}
+      sort={sort}
+      onSort={setSort}
+      groupBy={groupBy}
+      onGroupBy={setGroupBy}
+      agents={agentsPresent}
+      agent={filter}
+      onAgent={setAgentFilter}
+      onFilter={() => setSearching(true)}
+      onSettings={
+        onView &&
+        (() => {
+          try {
+            sessionStorage.setItem(SETTINGS_SECTION_KEY, "sidebar");
+          } catch {}
+          window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_SECTION_EVENT, { detail: "sidebar" }));
+          onView("@settings");
+        })
+      }
+    />
+  );
+  const navBtn = "relative flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg px-1.5 text-[12.5px] text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
+  const empty = !shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : !awake.length ? "Everything is snoozed." : null;
 
   return (
     <nav aria-label="Sessions" className="relative flex h-full min-h-0 w-full flex-col">
-      <div className="flex h-[52px] shrink-0 items-center gap-0.5 pr-2 pl-3.5">
-        <Brand />
-        <span className="ml-2 min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.015em] text-ink">agent-u</span>
-        <IconButton label="Search" tip={`Search  ${mod} K`} onClick={palette}>
-          <Search width={18} height={18} strokeWidth={1.8} aria-hidden />
-        </IconButton>
+      <div className="flex h-[52px] shrink-0 items-center gap-0.5 pr-2 pl-4">
+        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold tracking-[-0.01em] text-ink">agent-u</span>
         {onCollapse && (
           <IconButton label={collapseLabel} tip={`${collapseLabel}  ${mod} B`} tipPos="bottom-end" onClick={onCollapse}>
             <SidebarCollapse width={18} height={18} strokeWidth={1.8} aria-hidden />
@@ -998,45 +1194,66 @@ export function SessionList({
         )}
       </div>
 
-      <div className="shrink-0 px-2 pb-1">
-        <button type="button" onClick={onNew} className="side-row group/new">
-          <EditPencil width={17} height={17} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
-          <span className="min-w-0 flex-1 truncate">New session</span>
-          <kbd className="hidden shrink-0 font-sans text-[12px] text-ink-3 opacity-0 transition-opacity duration-150 group-hover/new:opacity-100 group-focus-visible/new:opacity-100 pointer-fine:inline" aria-hidden>
-            Alt T
-          </kbd>
+      <div className="flex shrink-0 flex-col gap-1 px-2 pb-1">
+        <button
+          type="button"
+          onClick={onNew}
+          className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-[13px] font-medium text-ink shadow-hairline transition-colors duration-150 hover:bg-sidebar-hover pointer-coarse:h-11"
+        >
+          <EditPencil width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-2" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-left">New session</span>
+          <Kbd keys={["Alt", "T"]} />
+        </button>
+        <button
+          type="button"
+          onClick={palette}
+          className="flex h-8 items-center gap-2 rounded-lg bg-field px-2.5 text-[13px] text-ink-3 transition-colors duration-150 hover:text-ink-2 pointer-coarse:h-11"
+        >
+          <Search width={15} height={15} strokeWidth={1.9} className="shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-left">Search</span>
+          <Kbd keys={["Mod", "K"]} />
         </button>
         {onView && (
-          <>
-            <button type="button" onClick={() => onView("@inbox")} aria-current={activeView === "@inbox" ? "page" : undefined} className="side-row">
-              <MailIn width={17} height={17} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Inbox</span>
-              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-[11.5px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => onView("@inbox")}
+              aria-current={activeView === "@inbox" ? "page" : undefined}
+              aria-label={inbox ? `Inbox, ${inbox} waiting` : "Inbox"}
+              className={navBtn}
+            >
+              <MailIn width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              <span className="truncate">Inbox</span>
+              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-[11px] leading-[16px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
             </button>
-            <button type="button" onClick={() => onView("@agents")} aria-current={activeView === "@agents" ? "page" : undefined} className="side-row">
-              <Terminal width={17} height={17} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Agents and terminals</span>
+            <button type="button" onClick={() => onView("@agents")} aria-current={activeView === "@agents" ? "page" : undefined} aria-label="Agents and terminals" data-tip="Agents and terminals" className={navBtn}>
+              <Terminal width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              <span className="truncate">Agents</span>
             </button>
-            <button type="button" onClick={() => onView("@files")} aria-current={activeView === "@files" ? "page" : undefined} className="side-row">
-              <Folder width={17} height={17} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">Files</span>
+            <button type="button" onClick={() => onView("@files")} aria-current={activeView === "@files" ? "page" : undefined} className={navBtn}>
+              <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              <span className="truncate">Files</span>
             </button>
-          </>
+          </div>
         )}
       </div>
 
       {searching && (
-        <div className="shrink-0 px-2 pb-1">
-          <label className="flex h-[34px] items-center rounded-control bg-sidebar-hover text-ink-3 focus-within:text-ink-2 pointer-coarse:h-10">
+        <div className="shrink-0 px-2 pt-1 pb-1">
+          <label className="flex h-8 items-center rounded-lg bg-sidebar-hover text-ink-3 focus-within:text-ink-2 pointer-coarse:h-11">
             <Search width={15} height={15} strokeWidth={1.9} className="ml-2.5 shrink-0" aria-hidden />
             <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                /* Enter opens the top match; Escape clears, then folds the field away */
+                /* Enter opens the top match; Escape clears, then folds the field away; Down moves into the list */
                 if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 if (e.key === "Enter" && matches?.[0]) onPick(matches[0].id);
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  focusNav(navItems()[0]);
+                }
                 if (e.key === "Escape") {
                   e.stopPropagation();
                   if (query) setQuery("");
@@ -1050,14 +1267,14 @@ export function SessionList({
               name="session-search"
               autoComplete="off"
               aria-label="Filter sessions"
-              className="ml-2 min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[14px] sm:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
+              className="ml-2 min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[13px] sm:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
             />
             <button
               type="button"
               aria-label="Close filter"
               onMouseDown={(e) => e.preventDefault()}
               onClick={closeSearch}
-              className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 hover:text-ink"
+              className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 hover:text-ink pointer-coarse:size-11"
             >
               <Xmark width={14} height={14} strokeWidth={2} aria-hidden />
             </button>
@@ -1065,7 +1282,18 @@ export function SessionList({
         </div>
       )}
 
-      <div className="scroll-quiet scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-5">
+      <div
+        ref={listRef}
+        onKeyDown={onListKey}
+        onFocus={(e) => {
+          const item = (e.target as HTMLElement).closest<HTMLElement>("[data-nav]");
+          if (!item) return;
+          lastNav.current = item.dataset.nav ?? null;
+          lastNavIndex.current = Math.max(0, navItems().indexOf(item));
+          syncStops();
+        }}
+        className="scroll-quiet scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-8"
+      >
         {error && (
           <p role="alert" className="mx-0.5 mb-2 rounded-control bg-red-tint px-2.5 py-2 text-[13px] text-red-ink">
             Couldn&apos;t load sessions: {error}
@@ -1091,15 +1319,11 @@ export function SessionList({
 
         {matches ? (
           <section className="mt-1">
-            <h2 className="flex h-8 items-center px-2.5 text-[13px] text-ink-3">
+            <h2 className="flex h-7 items-center px-2.5 text-[12px] font-medium text-ink-3">
               {matches.length ? `${matches.length} ${matches.length === 1 ? "match" : "matches"}` : "No matches"}
             </h2>
             {matches.length ? (
-              <div className="flex flex-col gap-px">
-                {matches.map((s) => (
-                  <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="match" lead={isLive(s) ? <PulseSlot s={s} /> : undefined} />
-                ))}
-              </div>
+              <div className="flex flex-col gap-px">{matches.map((s) => row(s, "match"))}</div>
             ) : (
               <div className="flex flex-col items-start gap-1 px-2.5 py-1">
                 <p className="text-[13px] text-ink-3">
@@ -1116,121 +1340,67 @@ export function SessionList({
             <>
               {pinned.length > 0 && (
                 <Section label="Pinned" open={!shut.has("pinned")} onToggle={() => toggleSection("pinned")}>
-                  {pinned.map((s) => (
-                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="pinned" lead={isLive(s) ? <PulseSlot s={s} /> : <PinSlot />} />
-                  ))}
+                  {pinned.map((s) => row(s, "pinned"))}
                 </Section>
               )}
 
-              {live.length > 0 && (
-                <Section label="Active" open={!shut.has("live")} onToggle={() => toggleSection("live")}>
-                  {live.map((s) => (
-                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="live" lead={<PulseSlot s={s} />} />
-                  ))}
-                </Section>
-              )}
-
-              {projects.length > 0 && (
-                <Section label="Projects" open={!shut.has("projects")} onToggle={() => toggleSection("projects")}>
+              {view === "project" ? (
+                <Section label="Projects" open={!shut.has("projects")} onToggle={() => toggleSection("projects")} action={viewMenu}>
                   {shownProjects.map((p) => {
-                    const open = openProjects.has(p.key);
-                    const full = fullProjects.has(p.key);
-                    const list = full ? p.rows : p.rows.slice(0, PROJECT_ROWS_CAP);
+                    const open = !folded.has(p.key);
+                    const { shown: list, hidden } = fullProjects.has(p.key) ? { shown: p.rows, hidden: 0 } : capRows(p.rows, cap, activeId);
                     return (
-                      <div key={p.key} className="flex flex-col gap-px">
-                        <button type="button" onClick={() => flip(setOpenProjects, p.key)} aria-expanded={open} title={p.path} className="side-row group/row">
-                          <span className="relative flex size-[18px] shrink-0 items-center justify-center text-ink-2">
-                            <Folder width={17} height={17} strokeWidth={1.7} aria-hidden className="transition-opacity duration-150 group-hover/row:opacity-0 group-focus-visible/row:opacity-0" />
-                            <NavArrowRight
-                              width={14}
-                              height={14}
-                              strokeWidth={2}
-                              aria-hidden
-                              className={`absolute opacity-0 transition-[opacity,transform] duration-150 group-hover/row:opacity-100 group-focus-visible/row:opacity-100 ${open ? "rotate-90" : ""}`}
-                            />
-                          </span>
-                          <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                          <span className="shrink-0 text-[12px] tabular-nums text-ink-3">{p.rows.length}</span>
-                        </button>
-                        {open &&
-                          (p.rows.length ? (
-                            <>
-                              {list.map((s) => (
-                                <Row key={s.id} s={s} indent active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="project" />
-                              ))}
-                              {p.rows.length > list.length && (
-                                <button type="button" onClick={() => flip(setFullProjects, p.key)} className="side-row pl-[34px] text-[13px] text-ink-3">
-                                  Show {p.rows.length - list.length} more
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            <p className="flex h-8 items-center pl-[34px] text-[13px] text-ink-3">No sessions</p>
-                          ))}
+                      <div key={p.key} data-nav-group className="flex flex-col gap-px [&:not(:first-child)]:mt-1.5">
+                        <ProjectHeader id={p.key} name={p.name} path={p.key ? shortPath(p.key) : "No folder"} count={p.rows.length} open={open} onToggle={toggleProject} />
+                        {open && (
+                          <>
+                            {list.map((s) => row(s, "project"))}
+                            {(hidden > 0 || fullProjects.has(p.key)) && cap !== null && p.rows.length > cap && (
+                              <button type="button" data-nav={`more:${p.key}`} onClick={() => flipFull(p.key)} className="side-row h-7 gap-2.5 text-[12.5px] text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                                <span className="w-1.5 shrink-0" aria-hidden />
+                                {hidden > 0 ? `Show ${hidden} more` : "Show less"}
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     );
                   })}
-                  {projects.length > shownProjects.length || allProjects ? (
-                    projects.length > PROJECT_CAP && (
-                      <button type="button" onClick={() => setAllProjects((v) => !v)} className="side-row text-[13px] text-ink-3">
-                        <span className="flex size-[18px] shrink-0 items-center justify-center">
-                          <MoreHoriz width={16} height={16} strokeWidth={2} aria-hidden />
-                        </span>
-                        {allProjects ? "Show fewer" : `${projects.length - shownProjects.length} more`}
-                      </button>
-                    )
-                  ) : null}
+                  {(projects.length > shownProjects.length || allProjects) && projects.length > PROJECT_CAP && (
+                    <button type="button" data-nav="more:projects" onClick={() => setAllProjects((v) => !v)} className="side-row mt-1.5 h-7 gap-1.5 text-[12px] font-medium text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                      <MoreHoriz width={12} height={12} strokeWidth={2.2} aria-hidden />
+                      {allProjects ? "Fewer projects" : `${projects.length - shownProjects.length} more projects`}
+                    </button>
+                  )}
+                  {empty && <p className="px-2.5 py-1.5 text-[13px] text-ink-3">{empty}</p>}
+                </Section>
+              ) : (
+                <Section label="Recent" open={!shut.has("recents")} onToggle={() => toggleSection("recents")} action={viewMenu}>
+                  {recentGroups.map(([name, list]) => (
+                    <div key={name || "all"} className="flex flex-col gap-px">
+                      {name && <h3 className="flex h-7 items-end px-2.5 pb-1 text-[12px] text-ink-3 [&:not(:first-child)]:mt-2">{name}</h3>}
+                      {list.map((s) => row(s, "recent"))}
+                    </div>
+                  ))}
+                  {recent.length > recentCap && (
+                    <button type="button" data-nav="more:recent" onClick={() => setRecentCap((c) => c + RECENT_STEP)} className="side-row h-7 gap-2.5 text-[12.5px] text-ink-3 hover:text-ink-2 pointer-coarse:h-10">
+                      <span className="w-1.5 shrink-0" aria-hidden />
+                      Show more
+                    </button>
+                  )}
+                  {empty && <p className="px-2.5 py-1.5 text-[13px] text-ink-3">{empty}</p>}
                 </Section>
               )}
-
-              <Section
-                label="Recent"
-                open={!shut.has("recents")}
-                onToggle={() => toggleSection("recents")}
-                action={
-                  <ViewMenu
-                    groupBy={groupBy}
-                    onGroupBy={setGroupBy}
-                    agents={agentsPresent}
-                    agent={filter}
-                    onAgent={setAgentFilter}
-                    onFilter={() => setSearching(true)}
-                  />
-                }
-              >
-                {recentGroups.map(([name, list]) => (
-                  <div key={name || "all"} className="flex flex-col gap-px">
-                    {name && <h3 className="flex h-7 items-end px-2.5 pb-1 text-[12px] text-ink-3 [&:not(:first-child)]:mt-2">{name}</h3>}
-                    {list.map((s) => (
-                      <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="recent" showAgent={groupBy !== "agent"} />
-                    ))}
-                  </div>
-                ))}
-                {recent.length > recentCap && (
-                  <button type="button" onClick={() => setRecentCap((c) => c + RECENT_STEP)} className="side-row text-[13px] text-ink-3">
-                    Show more
-                  </button>
-                )}
-                {!recent.length && (!shown.length || live.length > 0 || snoozed.length > 0) && (
-                  <p className="px-2.5 py-1.5 text-[13px] text-ink-3">
-                    {!shown.length ? (filter !== "all" ? `No ${AGENT_LABEL[filter]} sessions yet.` : "No sessions yet.") : snoozed.length ? "The rest are snoozed." : "All sessions are active."}
-                  </p>
-                )}
-              </Section>
 
               {snoozed.length > 0 && (
                 <Section label={`Snoozed (${snoozed.length})`} open={showSnoozed} onToggle={() => setShowSnoozed((v) => !v)}>
-                  {snoozed.map((s) => (
-                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="snoozed" trail={wakeLabel(s.snoozedUntil!, now)} />
-                  ))}
+                  {snoozed.map((s) => row(s, "snoozed", wakeLabel(s.snoozedUntil!, now)))}
                 </Section>
               )}
 
-              {archived.length > 0 && (
+              {archivedOn && archived.length > 0 && (
                 <Section label={`Archived (${archived.length})`} open={showArchived} onToggle={() => setShowArchived((v) => !v)}>
-                  {archived.map((s) => (
-                    <Row key={s.id} s={s} active={s.id === activeId} onPick={onPick} now={now} ctl={ctl} where="archived" />
-                  ))}
+                  {archived.map((s) => row(s, "archived"))}
                 </Section>
               )}
             </>
@@ -1242,16 +1412,32 @@ export function SessionList({
         <DeleteDialog
           key={deleting.id}
           s={sessions?.find((x) => x.id === deleting.id) ?? deleting}
-          onClose={closeDelete}
+          onClose={() => {
+            setDeleting(null);
+            focusRow(listRef.current, deleting.id);
+          }}
           onDeleted={(transcript) => {
             setDeleting(null);
-            if (finished[deleting.id]) onUnread?.(deleting, false);
-            onDeleted?.(deleting.id);
-            say(transcript ? "Session and transcript deleted." : "Session deleted.");
+            handOff(deleting.id);
+            afterDelete(deleting, transcript);
           }}
         />
       )}
-      {menu && <RowMenu key={`${menu.where}:${menu.s.id}`} s={menu.s} at={menu.at} unread={Boolean(finished[menu.s.id])} onClose={closeMenu} onAction={onAction} />}
+      {archiving && (
+        <ArchiveDialog
+          key={archiving.id}
+          s={archiving}
+          onClose={() => {
+            setArchiving(null);
+            focusRow(listRef.current, archiving.id);
+          }}
+          onArchive={() => {
+            setArchiving(null);
+            archiveNow(byId.get(archiving.id) ?? archiving);
+          }}
+        />
+      )}
+      {menu && <RowMenu key={menu.id} s={byId.get(menu.id) ?? menu.s} at={menu.at} unread={Boolean(finished[menu.id])} onClose={closeMenu} onAction={onAction} />}
 
       <div role="status" aria-live="polite" className="pointer-events-none absolute inset-x-2 bottom-[60px] z-20 flex justify-center pb-[env(safe-area-inset-bottom)]">
         {toast && (
@@ -1302,7 +1488,7 @@ export function SessionList({
       </div>
     </nav>
   );
-}
+});
 
 /* ── collapsed rail ─────────────────────────────────────── */
 
