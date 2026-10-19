@@ -198,7 +198,10 @@ export function CommandPalette({
     setOpen(false);
   };
 
-  /* the page underneath never keeps a preview once the palette is gone (unmounts included) */
+  /* the page underneath never keeps a preview once the palette is gone (Mod+K, unmounts included) */
+  useEffect(() => {
+    if (!open) endPreview();
+  }, [open, endPreview]);
   useEffect(() => () => endPreview(), [endPreview]);
 
   const toggleTheme = useCallback(() => {
