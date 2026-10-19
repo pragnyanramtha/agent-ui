@@ -1350,6 +1350,10 @@ html[data-code-font="system"] body {
     opacity: 0;
     transition: opacity 150ms ease;
   }
+  /* the time sits on the message's edge, the copy button inside it */
+  html[data-timestamps] .msg-actions time {
+    order: -1;
+  }
   html[data-timestamps] .group\/msg:hover .msg-copy,
   html[data-timestamps] .msg-actions:focus-within .msg-copy,
   html[data-timestamps] .msg-actions[data-copied] .msg-copy {
@@ -1517,8 +1521,8 @@ html[data-code-font="system"] body {
   --orange: #d08770;
   --orange-tint: rgb(208 135 112 / 0.16);
   --orange-ink: #d08770;
-  --red: #bf616a;
-  --red-tint: rgb(191 97 106 / 0.18);
+  --red: #d57780;
+  --red-tint: rgb(191 97 106 / 0.2);
   --red-ink: #d57780;
 }
 
@@ -1796,15 +1800,15 @@ html[data-code-font="system"] body {
   --accent: oklch(0.58 calc(0.17 * var(--ac, 1)) var(--ah, 256));
   --accent-ink: oklch(0.52 calc(0.17 * var(--ac, 1)) var(--ah, 256));
   --accent-tint: oklch(0.96 calc(0.025 * var(--ac, 1)) var(--ah, 256));
-  --accent-solid: oklch(0.55 calc(0.19 * var(--ac, 1)) var(--ah, 256));
-  --accent-solid-hover: oklch(0.5 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid: oklch(0.52 calc(0.19 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid-hover: oklch(0.47 calc(0.18 * var(--ac, 1)) var(--ah, 256));
 }
 :root.dark[data-accent] {
   --accent: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256));
   --accent-ink: oklch(0.8 calc(0.11 * var(--ac, 1)) var(--ah, 256));
   --accent-tint: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256) / 0.14);
-  --accent-solid: oklch(0.55 calc(0.19 * var(--ac, 1)) var(--ah, 256));
-  --accent-solid-hover: oklch(0.6 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid: oklch(0.52 calc(0.19 * var(--ac, 1)) var(--ah, 256));
+  --accent-solid-hover: oklch(0.57 calc(0.18 * var(--ac, 1)) var(--ah, 256));
 }
 /* neutral reads as ink, not as a gray version of blue */
 :root[data-accent="neutral"] {
