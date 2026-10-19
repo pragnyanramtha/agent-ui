@@ -109,6 +109,18 @@ describe("checkpoint size limits", () => {
     expect(await g.listCheckpoints(repo, "s-count")).toEqual([]);
     clean();
   }, 60_000);
+
+  it("leave out a large file and a nested repo without commits in the same checkpoint", async () => {
+    write("big.bin", big());
+    write("b.txt", "b\n");
+    sh(["init", "-q", "nested"]);
+    write("nested/inner.txt", "inner\n");
+    const cp = await g.checkpoint(repo, "s-nested", "both");
+    expect(files(cp!.commit)).toEqual([".gitignore", "a.txt", "b.txt"]);
+    expect(cp!.skipped).toEqual({ count: 1, bytes: 30 * MB, paths: ["big.bin"] });
+    fs.rmSync(path.join(repo, "nested"), { recursive: true, force: true });
+    clean();
+  });
 });
 
 describe("rewinding around files left out", () => {
