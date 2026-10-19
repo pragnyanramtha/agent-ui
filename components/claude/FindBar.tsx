@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { NavArrowDown, NavArrowUp, Xmark } from "iconoir-react";
-import { hasMod, isMac, modalOpen } from "@/lib/client/shortcuts";
+import { isCommand, modalOpen } from "@/lib/client/shortcuts";
 import { RELEASE_PIN_EVENT } from "./Thread";
 import { EXPAND_FOLD_EVENT } from "./TurnFold";
 
@@ -49,9 +49,8 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   const supported = typeof window !== "undefined" && Boolean(highlights());
 
   useEffect(() => {
-    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (!hasMod(e, mac) || e.altKey || e.shiftKey || e.code !== "KeyF") return;
+      if (!isCommand(e, "find")) return;
       /* the terminal, the side panels and dialogs keep the browser's own find */
       if (e.target instanceof Element && e.target.closest(".xterm, .panel-slot")) return;
       if (modalOpen() || !scope.current?.isConnected || !highlights()) return;

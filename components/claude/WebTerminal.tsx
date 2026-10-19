@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Collapse, Expand, Xmark } from "iconoir-react";
 import "@xterm/xterm/css/xterm.css";
 import { api } from "@/lib/client/api";
-import { comboFor, hasMod, isMac, keyLabels } from "@/lib/client/shortcuts";
+import { comboFor, isCommand, isMac } from "@/lib/client/shortcuts";
+import { getSetting, setSetting, useSettings } from "@/lib/client/settings";
+import { DOM_ATTRS } from "@/lib/settings-schema";
+import { applyTerminalOptions, terminalFace, terminalOptions, NERD_FONT, type TerminalPrefs } from "@/lib/client/terminal-options";
 import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
-import { isDarkColor, oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
+import { isDarkColor, oscColor, readTerminalTheme, schemeTheme } from "@/lib/client/terminal-theme";
 import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
 import { TerminalFind } from "./TerminalFind";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
@@ -47,12 +50,15 @@ const KEYS: [string, string][] = [
 ];
 
 const SIZE_KEY = "cui:term-font";
+const SIZE_MIN = 8;
+const SIZE_MAX = 24;
 const DOCK_KEY = "cui:term-dock-height";
 const DOCK_MIN = 140;
 const DOCK_DEFAULT = 320;
-const NERD = '"Symbols Nerd Font Mono"';
 
 const LONG_PRESS_MS = 500;
+
+const hideHint = (combo: string, verb: string) => (combo ? `${combo} to ${verb}` : "");
 
 /* a buffer line's text with each character's cell column, so wide characters don't shift link ranges */
 function lineCells(line: import("@xterm/xterm").IBufferLine) {
@@ -120,6 +126,50 @@ const ctrlOf = (ch: string) => {
   return ch;
 };
 
+let audio: AudioContext | null = null;
+let lastBeep = 0;
+
+/** A short, quiet beep for the terminal bell, at most a few a second. */
+function beep() {
+  const now = Date.now();
+  if (now - lastBeep < 150) return;
+  lastBeep = now;
+  try {
+    audio ??= new AudioContext();
+    const t = audio.currentTime;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.05, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t);
+    osc.stop(t + 0.13);
+  } catch {
+    /* no audio here */
+  }
+}
+
+/** What the page offers the terminal settings: its code font and colors, and whether this is a phone. */
+function terminalContext() {
+  let sizeChosen = false;
+  try {
+    sizeChosen = localStorage.getItem(SIZE_KEY) !== null;
+  } catch {}
+  return {
+    codeFace: getComputedStyle(document.body).getPropertyValue("--font-mono-face"),
+    appTheme: readTerminalTheme(),
+    phone: window.matchMedia("(max-width: 640px)").matches,
+    sizeChosen,
+  };
+}
+
+const loadFace = (face: string) =>
+  Promise.all([
+    ...(face ? [document.fonts.load(`13px ${face}`), document.fonts.load(`bold 13px ${face}`)] : []),
+    document.fonts.load(`13px ${NERD_FONT}`, "\ue0b0"),
+  ]).catch(() => undefined);
+
 /**
  * A full interactive terminal: a shell on the server, an agent launched from the web,
  * or the zellij/tmux session a CLI session runs in (shared with your other clients).
@@ -185,6 +235,25 @@ export function WebTerminal({
   const cwdRef = useRef<string | null>(target.cwd ?? null);
   const dockedRef = useRef(docked);
   dockedRef.current = docked;
+  const settings = useSettings();
+  const prefs: TerminalPrefs = useMemo(
+    () => ({
+      terminalFont: settings.terminalFont,
+      terminalFontSize: settings.terminalFontSize,
+      terminalLineHeight: settings.terminalLineHeight,
+      terminalCursor: settings.terminalCursor,
+      terminalCursorBlink: settings.terminalCursorBlink,
+      terminalScrollback: settings.terminalScrollback,
+      terminalOptionMeta: settings.terminalOptionMeta,
+      terminalTheme: settings.terminalTheme,
+    }),
+    [settings.terminalFont, settings.terminalFontSize, settings.terminalLineHeight, settings.terminalCursor, settings.terminalCursorBlink, settings.terminalScrollback, settings.terminalOptionMeta, settings.terminalTheme],
+  );
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  /* set by the open terminal: re-reads the settings and page, and switches the GPU renderer */
+  const applyRef = useRef<(() => Promise<void>) | null>(null);
+  const rendererRef = useRef<((on: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -201,25 +270,13 @@ export function WebTerminal({
         import("@xterm/addon-search"),
       ]);
       /* xterm measures glyphs on a canvas, which can't resolve CSS variables: use the real families, once loaded */
-      const mono = getComputedStyle(document.body).getPropertyValue("--font-mono-face").trim();
-      await Promise.all([
-        ...(mono ? [document.fonts.load(`13px ${mono}`), document.fonts.load(`bold 13px ${mono}`)] : []),
-        document.fonts.load(`13px ${NERD}`, "\ue0b0"),
-      ]).catch(() => undefined);
+      await loadFace(terminalFace(prefsRef.current.terminalFont, terminalContext().codeFace));
       if (disposed || !hostRef.current) return;
-      const phone = window.matchMedia("(max-width: 640px)").matches;
-      const stored = Number(localStorage.getItem(SIZE_KEY));
-      const size = stored >= 8 && stored <= 24 ? stored : phone ? 12 : 13;
-      setFontSize(size);
+      const initial = terminalOptions(prefsRef.current, terminalContext());
+      setFontSize(initial.fontSize);
       const term = new Terminal({
-        fontFamily: `${mono ? `${mono}, ` : ""}${NERD}, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`,
-        lineHeight: 1.12,
-        fontSize: size,
-        cursorBlink: true,
-        scrollback: 10000,
-        theme: readTerminalTheme(),
+        ...initial,
         allowProposedApi: true,
-        macOptionIsMeta: true,
         rightClickSelectsWord: true,
         smoothScrollDuration: 0,
         drawBoldTextInBrightColors: false,
@@ -264,7 +321,7 @@ export function WebTerminal({
       const search = new SearchAddon({ highlightLimit: 2000 });
       term.loadAddon(search);
       term.attachCustomKeyEventHandler((e) => {
-        if (e.type === "keydown" && e.shiftKey && hasMod(e) && e.code === "KeyF") {
+        if (e.type === "keydown" && isCommand(e, "terminalFind")) {
           e.preventDefault();
           openFindRef.current();
           return false;
@@ -272,16 +329,32 @@ export function WebTerminal({
         return true;
       });
       term.open(hostRef.current);
-      /* the GPU renderer draws box art and Nerd Font icons cell-exact; fall back to the DOM renderer without WebGL */
-      try {
-        if (!(await deviceBoxTrusted())) throw new Error("device pixel boxes are off");
-        const { WebglAddon } = await import("@xterm/addon-webgl");
-        const gl = new WebglAddon();
-        gl.onContextLoss(() => gl.dispose());
-        term.loadAddon(gl);
-      } catch {
-        /* DOM renderer */
-      }
+      /* the GPU renderer draws box art and Nerd Font icons cell-exact; fall back to the DOM renderer without WebGL,
+       * or when it's turned off in settings (some GPUs draw garbage) */
+      let gl: { dispose(): void } | null = null;
+      const setRenderer = async (on: boolean) => {
+        if (!on) {
+          gl?.dispose();
+          gl = null;
+          return;
+        }
+        if (gl) return;
+        try {
+          if (!(await deviceBoxTrusted())) return;
+          const { WebglAddon } = await import("@xterm/addon-webgl");
+          if (disposed || gl || !getSetting("terminalWebgl")) return;
+          const addon = new WebglAddon();
+          addon.onContextLoss(() => {
+            addon.dispose();
+            if (gl === addon) gl = null;
+          });
+          term.loadAddon(addon);
+          gl = addon;
+        } catch {
+          /* DOM renderer */
+        }
+      };
+      await setRenderer(getSetting("terminalWebgl"));
       /* closed (or retried) while the renderer loaded */
       if (disposed) {
         term.dispose();
@@ -406,6 +479,16 @@ export function WebTerminal({
         }
         return true;
       });
+      let selTimer: ReturnType<typeof setTimeout> | undefined;
+      const onSelect = term.onSelectionChange(() => {
+        clearTimeout(selTimer);
+        if (!getSetting("terminalCopyOnSelect")) return;
+        selTimer = setTimeout(() => {
+          const text = term.getSelection();
+          if (text) void navigator.clipboard?.writeText(text).catch(() => undefined);
+        }, 120);
+      });
+      const onBell = term.onBell(() => bellRef.current());
       const onData = term.onData((data) => {
         const m = modRef.current;
         if (m && data.length === 1) {
@@ -438,29 +521,44 @@ export function WebTerminal({
       };
       window.addEventListener("online", wake);
       document.addEventListener("visibilitychange", wake);
-      /* light, dark and palette switches all land on <html> */
-      let themeKey = JSON.stringify(term.options.theme);
-      const themeWatch = new MutationObserver(() => {
-        const next = readTerminalTheme();
-        const key = JSON.stringify(next);
-        if (key === themeKey) return;
-        themeKey = key;
-        term.options.theme = next;
-      });
-      themeWatch.observe(document.documentElement, { attributes: true });
+      /* settings changes, and light, dark, palette and code font switches (which land on <html>) */
+      let applying = 0;
+      const apply = async () => {
+        const run = ++applying;
+        const next = terminalOptions(prefsRef.current, terminalContext());
+        if (next.fontFamily !== term.options.fontFamily) await loadFace(terminalFace(prefsRef.current.terminalFont, terminalContext().codeFace));
+        if (disposed || run !== applying) return;
+        const { refit } = applyTerminalOptions(term as unknown as { options: Record<string, unknown> }, next);
+        setFontSize(next.fontSize);
+        if (refit) {
+          try {
+            fit.fit();
+          } catch {
+            /* hidden */
+          }
+        }
+      };
+      applyRef.current = apply;
+      rendererRef.current = setRenderer;
+      const themeWatch = new MutationObserver(() => void apply());
+      themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", ...DOM_ATTRS] });
       (term as unknown as { __send?: (d: string) => void }).__send = sendData;
-      (term as unknown as { __fit?: () => void }).__fit = () => fit.fit();
       connect();
 
       cleanup = () => {
         clearTimeout(timer);
         clearTimeout(fitTimer);
+        clearTimeout(selTimer);
+        if (applyRef.current === apply) applyRef.current = null;
+        if (rendererRef.current === setRenderer) rendererRef.current = null;
         window.removeEventListener("online", wake);
         document.removeEventListener("visibilitychange", wake);
         ro.disconnect();
         themeWatch.disconnect();
         pathLinks.dispose();
         onData.dispose();
+        onSelect.dispose();
+        onBell.dispose();
         onResize.dispose();
         osc.forEach((h) => h.dispose());
         osc7.dispose();
@@ -486,12 +584,19 @@ export function WebTerminal({
   onInfoRef.current = onInfo;
   useEffect(() => onInfoRef.current?.({ label, conn, id: termId, kind, cwd }), [label, conn, termId, kind, cwd]);
 
+  useEffect(() => {
+    void applyRef.current?.();
+  }, [prefs]);
+  useEffect(() => {
+    void rendererRef.current?.(settings.terminalWebgl);
+  }, [settings.terminalWebgl]);
+
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       /* Escape belongs to the terminal; Ctrl+Shift+X closes it */
-      if (e.key.toLowerCase() === "x" && e.ctrlKey && e.shiftKey && !hiddenRef.current) {
+      if (isCommand(e, "closeTerminal") && !hiddenRef.current) {
         e.preventDefault();
         closeRef.current();
       }
@@ -535,14 +640,11 @@ export function WebTerminal({
     send(seq);
     termRef.current?.focus();
   };
+  /* the size is a setting, so every open terminal follows */
   const zoom = (delta: number) => {
     const t = termRef.current;
     if (!t) return;
-    const next = Math.min(24, Math.max(8, (t.options.fontSize ?? 13) + delta));
-    t.options.fontSize = next;
-    setFontSize(next);
-    localStorage.setItem(SIZE_KEY, String(next));
-    (t as unknown as { __fit?: () => void }).__fit?.();
+    setSetting("terminalFontSize", Math.min(SIZE_MAX, Math.max(SIZE_MIN, (t.options.fontSize ?? prefs.terminalFontSize) + delta)));
   };
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -576,7 +678,31 @@ export function WebTerminal({
     setFind(null);
     termRef.current?.focus();
   };
-  const findKey = keyLabels(["Mod", "Shift", "F"]).join(isMac() ? "" : "+");
+  const findKey = comboFor("terminalFind");
+  const [bell, setBell] = useState(0);
+  const bellRef = useRef(() => {});
+  bellRef.current = () => {
+    const mode = getSetting("terminalBell");
+    if (mode === "sound") beep();
+    else if (mode === "visual") setBell((n) => n + 1);
+  };
+  useEffect(() => {
+    if (!bell) return;
+    const t = setTimeout(() => setBell(0), 220);
+    return () => clearTimeout(t);
+  }, [bell]);
+  const rightClickRef = useRef<() => void>(() => {});
+  rightClickRef.current = () => {
+    const t = termRef.current;
+    if (!t) return;
+    const selection = t.getSelection();
+    if (!selection) return void paste();
+    void copyText(selection).then((ok) => {
+      flash(ok ? "Copied." : "Couldn't copy. Use your copy shortcut instead.");
+      t.clearSelection();
+      t.focus();
+    });
+  };
   const [menu, setMenu] = useState<{ x: number; y: number; selection: boolean } | null>(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -590,6 +716,7 @@ export function WebTerminal({
       if (e.shiftKey || !termRef.current) return;
       e.preventDefault();
       if (Date.now() - pressAt < 1000) return;
+      if (getSetting("terminalRightClickPaste")) return rightClickRef.current();
       open(e.clientX, e.clientY);
     };
     /* iOS has no contextmenu on long-press */
@@ -654,6 +781,7 @@ export function WebTerminal({
   };
 
   /* a plain shell (or one that ended before saying what it was) restarts fresh; attaches retry the same target */
+  const scheme = schemeTheme(prefs.terminalTheme);
   const isShell = kind === "shell" || (!kind && !target.tmux && !target.pid && !target.session && !target.term);
   const dot = conn === "open" ? "bg-green" : conn === "ended" ? "bg-red" : "animate-pulse bg-orange";
   const tool = "tap relative h-9 shrink-0 rounded-[7px] px-2 text-[12px] text-ink-2 hover:bg-hover hover:text-ink sm:h-7";
@@ -724,7 +852,7 @@ export function WebTerminal({
                 {docked ? <Expand width={14} height={14} strokeWidth={1.8} /> : <Collapse width={14} height={14} strokeWidth={1.8} />}
               </button>
             )}
-            <span className="mx-1 hidden text-[11px] text-ink-3 lg:inline">{docked ? `${comboFor("terminal-anywhere")} to hide` : "Ctrl+Shift+X to close"}</span>
+            <span className="mx-1 hidden text-[11px] text-ink-3 lg:inline">{docked ? hideHint(comboFor("terminal", isMac(), { inTerminal: true }), "hide") : hideHint(comboFor("closeTerminal"), "close")}</span>
           </span>
           <button type="button" onClick={onClose} aria-label="Close terminal" className="tap relative flex size-10 shrink-0 items-center justify-center rounded-[8px] text-ink-3 hover:bg-hover hover:text-ink sm:size-8">
             <Xmark width={16} height={16} strokeWidth={2} />
@@ -732,7 +860,8 @@ export function WebTerminal({
         </div>
         {reason && conn !== "open" && <p className={`shrink-0 px-3 py-1.5 text-[12px] ${conn === "ended" ? "bg-red-tint text-red-ink" : "bg-orange-tint text-orange-ink"}`}>{reason}</p>}
         <div className="relative min-h-0 flex-1">
-          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" />
+          <div ref={hostRef} className="absolute inset-0 px-1.5 pt-1.5 [-webkit-touch-callout:none]" style={{ background: scheme?.background }} />
+          {bell > 0 && <div key={bell} aria-hidden className="pointer-events-none absolute inset-0 bg-ink/10" style={{ animation: "fade-in 220ms ease-out reverse both" }} />}
           {!output && conn !== "ended" && <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center font-mono text-[12px] text-ink-3">{conn === "open" ? "Waiting for the terminal…" : "Connecting…"}</p>}
           {find && search && <TerminalFind search={search} dark={find.dark} focusKey={find.n} onClose={closeFind} />}
           {notice && (

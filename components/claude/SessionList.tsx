@@ -19,6 +19,8 @@ import { copyText } from "./CodeCard";
 import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 import { Kbd } from "@/components/atoms/Kbd";
 import { OPEN_SETTINGS_SECTION_EVENT, useSetting } from "@/lib/client/settings";
+import { useBindings } from "@/lib/client/shortcuts";
+import { keysFor } from "@/lib/keybindings";
 import type { Settings as SettingValues } from "@/lib/settings-schema";
 import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
 
@@ -1155,6 +1157,9 @@ export const SessionList = memo(function SessionList({
   const shownProjects = allProjects ? projects : projects.filter((p, i) => i < PROJECT_CAP || p.key === activeProject);
   const recentGroups = groupRows(recent.slice(0, recentCap), groupBy, now);
   const palette = () => window.dispatchEvent(new Event(OPEN_PALETTE_EVENT));
+  const bindings = useBindings();
+  const newKey = keysFor("newSession", bindings)[0];
+  const searchKey = keysFor("palette", bindings)[0];
   const cap = capCount(projectCap);
   const viewMenu = (
     <ViewMenu
@@ -1202,7 +1207,7 @@ export const SessionList = memo(function SessionList({
         >
           <EditPencil width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-2" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">New session</span>
-          <Kbd keys={["Alt", "T"]} />
+          {newKey && <Kbd chord={newKey} />}
         </button>
         <button
           type="button"
@@ -1211,7 +1216,7 @@ export const SessionList = memo(function SessionList({
         >
           <Search width={15} height={15} strokeWidth={1.9} className="shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-left">Search</span>
-          <Kbd keys={["Mod", "K"]} />
+          {searchKey && <Kbd chord={searchKey} />}
         </button>
         {onView && (
           <div className="flex gap-1">

@@ -28,7 +28,8 @@ import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
-import { hasMod, isMac } from "@/lib/client/shortcuts";
+import { isCommand } from "@/lib/client/shortcuts";
+import { useDefaultEffort, useSetting } from "@/lib/client/settings";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -96,13 +97,11 @@ export function SessionScreen({
   }, []);
   /* which panels have something to show; read at key time */
   const available = useRef({ changes: false, git: false });
-  /* Ctrl/Cmd+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
+  /* Mod+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
   useEffect(() => {
-    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (!hasMod(e, mac) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
-      /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts, so it's text there */
-      if (!mac && e.getModifierState?.("AltGraph")) return;
+      /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts; the matcher treats it as text */
+      if (!isCommand(e, "sidePanel")) return;
       e.preventDefault();
       setPanel((cur) => {
         if (cur) return null;
@@ -150,7 +149,11 @@ export function SessionScreen({
   const profileId = localProfile ?? view.profile ?? agent;
   const profileInfo = profiles?.find((p) => p.id === profileId);
   const agentModels = useAgentModels(agent, profileId);
-  const effort = localEffort || profileInfo?.defaultEffort || "";
+  /* the session's own, else the profile's default, else the one in Settings > Composer; while the profiles load
+   * nothing is sent, so the server applies the profile's default instead of Settings overriding it */
+  const settingsEffort = useDefaultEffort(agent);
+  const fallbackEffort = profiles ? profileInfo?.defaultEffort || settingsEffort || "" : "";
+  const effort = localEffort || fallbackEffort;
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
@@ -223,14 +226,16 @@ export function SessionScreen({
   const deliver = useCallback(
     async (localId: string, text: string, fresh = false, sentAs?: string) => {
       const clientId = fresh ? `${localId}-${Date.now().toString(36)}` : (sentAs ?? localId);
+      let delivered: { via?: "terminal" | "web" | "queued"; clientId: string } | null = null;
       updatePending(localId, { state: "sending", error: undefined, resend: undefined, sentAs: clientId });
       try {
         const res = await postReliably<{ id: string; via?: "terminal" | "web" | "queued"; cleared?: string | null }>(
           `/api/sessions/${id}/message`,
-          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined, effort: effortRef.current },
+          { text, model: localModel ?? undefined, permissionMode: localModeRef.current ?? undefined, profile: localProfile ?? undefined, effort: effortRef.current || undefined },
           clientId,
         );
         updatePending(localId, { state: "sent", via: res.via, sentAt: Date.now() });
+        delivered = { via: res.via, clientId };
         /* a greyed suggestion or half-typed text was in the terminal's prompt; say what was cleared */
         if (res.cleared && !/^Try "/.test(res.cleared)) setError(`Cleared unsent text: "${res.cleared.slice(0, 80)}"`);
         if (res.id !== id) {
@@ -242,6 +247,7 @@ export function SessionScreen({
         /* the terminal refused the keystrokes: show it, so the reason is visible */
         if (err instanceof ApiError && ["agent_focus", "has_text", "no_prompt"].includes(err.code ?? "")) setPeek(true);
       }
+      return delivered;
     },
     [id, localModel, localMode, localProfile, updatePending, onNavigate],
   );
@@ -251,14 +257,6 @@ export function SessionScreen({
     window.addEventListener("online", retry);
     return () => window.removeEventListener("online", retry);
   }, [deliver]);
-  const send = useCallback(
-    async (text: string) => {
-      void deliver(addPending(text), text);
-      return true;
-    },
-    [deliver, addPending],
-  );
-
   const control = useCallback(
     async (action: string, value?: string) => {
       try {
@@ -280,6 +278,30 @@ export function SessionScreen({
       }
     },
     [id],
+  );
+
+  /* Settings > Composer: a message sent while the agent works can stop the turn first. Claude's run and
+   * terminals stop, then take it; other agents queue it and send it now, like the queued bubble's Send now. */
+  const [busySend] = useSetting("busySend");
+  const busyRef = useRef(false);
+  busyRef.current = Boolean(busy);
+  const send = useCallback(
+    async (text: string) => {
+      const localId = addPending(text);
+      if (busySend !== "interrupt" || !busyRef.current) {
+        void deliver(localId, text);
+      } else if (agent === "claude" || !live) {
+        if (live) await control("interrupt");
+        else if (terminal) await pressKey("Escape");
+        void deliver(localId, text);
+      } else {
+        void deliver(localId, text).then((d) => {
+          if (d?.via === "queued") void control("sendQueued", d.clientId);
+        });
+      }
+      return true;
+    },
+    [deliver, addPending, busySend, agent, live, terminal, control, pressKey],
   );
 
   /* the cards show a failure themselves and offer the answer again */
@@ -314,11 +336,51 @@ export function SessionScreen({
     </span>
   ) : null;
 
+  /* the branch for the strip under the composer, read again when a turn ends */
+  const [branch, setBranch] = useState<string | null>(null);
+  const idle = !busy;
+  useEffect(() => setBranch(null), [id]);
+  useEffect(() => {
+    if (!view.cwd || !idle) return;
+    let gone = false;
+    api<{ repo: { branch: string | null } | null }>(`/api/git?session=${encodeURIComponent(id)}`)
+      .then((d) => !gone && setBranch(d.repo?.branch ?? null))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+    };
+  }, [id, view.cwd, idle]);
+  const stripBtn = "tap relative -mx-1 flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1 text-ink-3 transition-colors duration-150 hover:text-ink-2";
+  const composerContext = view.cwd ? (
+    <>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: view.cwd } }))}
+        title={`${view.cwd}\nBrowse files here`}
+        aria-label={`Folder: ${view.cwd}. Browse files`}
+        className={`${stripBtn} max-w-[12rem] shrink-[2]`}
+      >
+        <Folder width={14} height={14} strokeWidth={1.8} className="shrink-0" aria-hidden />
+        <span className="min-w-0 truncate" translate="no">
+          {view.cwd.replace(/\/+$/, "").split("/").pop() || "/"}
+        </span>
+      </button>
+      {branch && (
+        <button type="button" onClick={() => togglePanel("git")} title={`Branch ${branch}\nGit and checkpoints`} aria-label={`Branch: ${branch}. Git and checkpoints`} className={`${stripBtn} max-w-[16rem]`}>
+          <GitBranch width={14} height={14} strokeWidth={1.8} className="shrink-0" aria-hidden />
+          <span className="min-w-0 truncate" translate="no">
+            {branch}
+          </span>
+        </button>
+      )}
+    </>
+  ) : null;
+
   /* sent with every message; a running Claude switches right away */
   const pickEffort = (e: string) => {
     setLocalEffort(e);
     saveEffort(id, e);
-    effortRef.current = e || profileInfo?.defaultEffort || "";
+    effortRef.current = e || fallbackEffort;
     if (live) void control("effort", effortRef.current);
   };
 
@@ -651,8 +713,9 @@ export function SessionScreen({
 
       <div ref={composerRef} className="safe-bottom safe-x pointer-events-none absolute inset-x-0 bottom-0 z-10">
         <div className="h-6 bg-gradient-to-t from-page to-transparent" />
-        <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-8 sm:pb-5">
-          <div className="mx-auto max-w-(--thread-w)">
+        {/* the same column as the thread (its width token and side padding), so the card lines up with the text */}
+        <div className="pointer-events-auto bg-page px-3 pb-3 sm:px-0 sm:pb-4">
+          <div className="mx-auto max-w-(--thread-w) sm:px-8">
             {failed && !busy && (
               <div role="alert" className="mb-2 flex flex-col gap-2 rounded-[12px] border border-red/25 bg-red-tint px-3 py-2.5 text-[13px] text-red-ink sm:flex-row sm:items-center" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
@@ -725,6 +788,7 @@ export function SessionScreen({
                 setLocalModel(null);
               }}
               root={view.cwd || undefined}
+              context={composerContext}
               effort={localEffort}
               defaultEffort={profileInfo?.defaultEffort ?? null}
               onEffortChange={pickEffort}

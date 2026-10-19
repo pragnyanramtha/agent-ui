@@ -19,10 +19,12 @@ import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, Shortc
 import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
-import { setAttention, setBaseTitle } from "@/lib/client/attention";
+import { setBaseTitle } from "@/lib/client/attention";
+import { useLooking, useNotifications } from "@/lib/client/useNotifications";
+import { Toaster } from "./Toaster";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
-import { hasMod, isMac } from "@/lib/client/shortcuts";
+import { commandFor, isCommand, isMac, terminalOwns } from "@/lib/client/shortcuts";
 import type { SessionSummary } from "@/lib/types";
 
 const isEditable = (t: EventTarget | null) =>
@@ -32,6 +34,7 @@ const isEditable = (t: EventTarget | null) =>
 const OpenSession = memo(SessionScreen);
 
 const SIDEBAR_KEY = "cui:sidebar";
+const TAB_COMMANDS = ["nextTab", "prevTab", "newSession", "reopenTab", "closeTab", "tab1", "tab2", "tab3", "tab4", "tab5", "tab6", "tab7", "tab8", "lastTab"] as const;
 /** null until checked (the server render and the first client render), so callers can keep both layouts until then */
 function useMediaQuery(query: string) {
   const [matches, setMatches] = useState<boolean | null>(null);
@@ -107,7 +110,9 @@ export function App() {
   }, [sessions, byId, syncTitles]);
   const infos = useMemo(() => openTabs.map((t) => describeTab(t, byId.get(t.id), sessions !== null)), [openTabs, byId, sessions]);
   const sessionId = active && active !== NEW_TAB && !VIEW_TABS[active] ? active : null;
-  const { finished, dismiss, unread } = useFinished(sessions, sessionId);
+  const looking = useLooking();
+  /* behind another window the open session can finish unread too */
+  const { finished, dismiss, unread } = useFinished(sessions, looking ? sessionId : null);
   const setUnread = useCallback((s: SessionSummary, on: boolean) => (on ? unread(s.id, s.mtime || Date.now()) : dismiss(s.id)), [unread, dismiss]);
   useEffect(() => {
     if (!sessionId) return;
@@ -120,9 +125,6 @@ export function App() {
     if (active === NEW_TAB) setBaseTitle("New session · agent-u");
     else if (active && VIEW_TABS[active]) setBaseTitle(`${VIEW_TABS[active]} · agent-u`);
   }, [active]);
-  useEffect(() => {
-    if (sessions) setAttention(sessions.filter((s) => s.web?.pending.length).length);
-  }, [sessions]);
 
   /* "Browse files here" from a session: the Files tab, at that folder */
   const [filesStart, setFilesStart] = useState<{ path: string | null; n: number }>({ path: null, n: 0 });
@@ -146,6 +148,7 @@ export function App() {
     },
     [open, refresh],
   );
+  useNotifications({ sessions, activeId: sessionId, looking, finished, onOpen: openSession });
   /* the service worker: a tapped notification opens its session, a push means the list just changed */
   useEffect(() => {
     registerWorker();
@@ -179,56 +182,39 @@ export function App() {
    * Alt+T (Alt+Shift+T reopens) and Alt+W otherwise, so the browser's own Ctrl+T/W keep working.
    * On a Mac, Option+arrows in a text field stay word jumps. */
   useEffect(() => {
-    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.isComposing || drawer || sheet) return;
-      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === "Tab") {
-        e.preventDefault();
-        cycle(e.shiftKey ? -1 : 1);
-        return;
-      }
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && !e.shiftKey) {
-        if (mac && isEditable(e.target)) return;
-        e.preventDefault();
-        cycle(e.key === "ArrowRight" ? 1 : -1);
-      } else if (e.code === "KeyT") {
-        e.preventDefault();
-        if (e.shiftKey) reopen();
-        else newTab();
-      } else if (e.code === "KeyW" && !e.shiftKey) {
-        e.preventDefault();
+      const id = commandFor(e, TAB_COMMANDS, mac);
+      if (!id) return;
+      if (mac && e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft") && isEditable(e.target)) return;
+      e.preventDefault();
+      if (id === "nextTab" || id === "prevTab") cycle(id === "nextTab" ? 1 : -1);
+      else if (id === "newSession") newTab();
+      else if (id === "reopenTab") reopen();
+      else if (id === "closeTab") {
         if (active) close(active);
-      } else if (/^Digit[1-9]$/.test(e.code) && !e.shiftKey) {
-        e.preventDefault();
-        const n = Number(e.code.slice(5));
-        select(n === 9 ? -1 : n - 1);
-      }
+      } else select(id === "lastTab" ? -1 : Number(id.slice(3)) - 1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [cycle, reopen, close, select, active, newTab, drawer, sheet]);
 
-  /* Mod+J or Ctrl+`: open a shell in the current session's folder, or show/hide the terminal. Ctrl+Shift+` adds a terminal tab.
-   * Capture phase, so a focused terminal can't swallow Ctrl+`. Ctrl+J inside a terminal is a line feed
-   * (newline in Claude Code, accept-line in bash), so off a Mac it's left to the terminal. */
+  /* Toggle terminal (Mod+J or Ctrl+`): open a shell in the current session's folder, or show/hide the terminal.
+   * New terminal tab (Ctrl+Shift+`) adds one. Capture phase, so a focused terminal can't swallow Ctrl+`.
+   * Ctrl+letter inside a terminal is a control character (Ctrl+J is a line feed), so it's left to the terminal. */
   const activeCwd = sessionId ? byId.get(sessionId)?.cwd || undefined : undefined;
   useEffect(() => {
-    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (e.altKey || e.isComposing) return;
-      if (e.shiftKey) {
-        if (e.code !== "Backquote" || !(e.ctrlKey || e.metaKey)) return;
+      if (e.isComposing || terminalOwns(e)) return;
+      if (isCommand(e, "newTerminal")) {
         e.preventDefault();
         e.stopPropagation();
         setTermHidden(false);
         window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `Shell: ${shortPath(activeCwd)}` : "Shell", newTab: true } }));
         return;
       }
-      const inTerm = e.target instanceof Element && Boolean(e.target.closest(".xterm"));
-      const backquote = e.code === "Backquote" && e.ctrlKey && !e.metaKey;
-      const modJ = e.code === "KeyJ" && hasMod(e, mac) && (mac || !inTerm);
-      if (!backquote && !modJ) return;
+      if (!isCommand(e, "terminal")) return;
       e.preventDefault();
       e.stopPropagation();
       if (!terminal) {
@@ -239,10 +225,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [terminal, activeCwd]);
 
-  /* Ctrl/Cmd+, opens Settings */
+  /* Mod+, opens Settings */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key !== ",") return;
+      if (!isCommand(e, "settings")) return;
       e.preventDefault();
       openView(SETTINGS_TAB);
     };
@@ -250,7 +236,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openView]);
 
-  /* Ctrl/Cmd+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
+  /* Mod+B (or Ctrl+Shift+S) folds the desktop sidebar, or opens the drawer on a phone */
   const toggleSidebar = sidebar.toggle;
   useEffect(() => {
     const flip = () => {
@@ -258,9 +244,8 @@ export function App() {
       else setDrawer((d) => !d);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing || e.altKey) return;
-      const mod = e.ctrlKey || e.metaKey;
-      if ((mod && !e.shiftKey && e.code === "KeyB") || (e.ctrlKey && e.shiftKey && e.code === "KeyS")) {
+      if (e.defaultPrevented || e.isComposing) return;
+      if (isCommand(e, "sidebar")) {
         e.preventDefault();
         flip();
       }
@@ -448,6 +433,7 @@ export function App() {
       <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} />
       <AskHost />
       <ShortcutsDialog />
+      <Toaster />
     </main>
   );
 }
