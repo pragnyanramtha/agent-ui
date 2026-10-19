@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { NavArrowDown, NavArrowUp, Xmark } from "iconoir-react";
 import { hasMod, isMac, modalOpen } from "@/lib/client/shortcuts";
+import { RELEASE_PIN_EVENT } from "./Thread";
 
 const MAX = 2000;
 
@@ -76,7 +77,9 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
       if (!r || !log) return;
       const box = r.getBoundingClientRect();
       const view = log.getBoundingClientRect();
-      if (box.top < view.top + 60 || box.bottom > view.bottom - 160) log.scrollBy({ top: box.top - view.top - view.height / 3 });
+      if (box.top >= view.top + 60 && box.bottom <= view.bottom - 160) return;
+      log.dispatchEvent(new Event(RELEASE_PIN_EVENT));
+      log.scrollBy({ top: box.top - view.top - view.height / 3 });
     },
     [scope],
   );

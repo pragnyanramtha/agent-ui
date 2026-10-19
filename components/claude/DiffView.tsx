@@ -286,7 +286,7 @@ export function DiffView({
                     {STATUS[f.status].letter}
                   </span>
                   <PathLabel path={f.path} className="flex-1" />
-                  <Counts f={f} />
+                  {f.status === "binary" ? <span className="shrink-0 text-ink-3">binary</span> : <Counts f={f} />}
                 </button>
               </li>
             ))}
@@ -313,10 +313,12 @@ export function DiffView({
 const lineCount = (f: PatchFile) => f.hunks.reduce((n, h) => n + h.lines.length, 0);
 
 function Counts({ f }: { f: PatchFile }) {
-  if (f.status === "binary") return <span className="shrink-0 text-ink-3">binary</span>;
+  if (f.status === "binary") return null;
   return (
     <span className="shrink-0 tabular-nums">
-      <span className="text-green">+{f.additions}</span> <span className="text-red">-{f.deletions}</span>
+      {(f.additions > 0 || f.deletions === 0) && <span className="text-green">+{f.additions}</span>}
+      {f.additions > 0 && f.deletions > 0 && " "}
+      {f.deletions > 0 && <span className="text-red">-{f.deletions}</span>}
     </span>
   );
 }

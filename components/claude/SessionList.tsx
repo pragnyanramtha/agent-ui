@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
+import { Archive, Check, EditPencil, Folder, Link, LogOut, MailIn, MoreHoriz, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { patchSession, type SessionChange } from "@/lib/client/useSessions";
@@ -627,7 +627,7 @@ export function SessionList({
   collapseLabel?: string;
   error: string | null;
   /** opens the Agents or Files tab */
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
   activeView?: string | null;
   /** approvals, failures and finished turns waiting in the inbox */
   inbox?: number;
@@ -1042,6 +1042,11 @@ export function SessionList({
         <ThemeToggle />
         <span className="flex items-center gap-1">
           <NotifyButton />
+          {onView && (
+            <IconButton label="Settings" tipPos="bottom-end" onClick={() => onView("@settings")} pressed={activeView === "@settings"}>
+              <Settings width={17} height={17} strokeWidth={1.8} aria-hidden />
+            </IconButton>
+          )}
           <IconButton
             label="Sign out"
             tipPos="bottom-end"
@@ -1077,7 +1082,7 @@ export function SessionRail({
   onPick: (id: string) => void;
   onNew: () => void;
   onExpand: () => void;
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
   inbox?: number;
 }) {
   const mod = useModKey();
