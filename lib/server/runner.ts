@@ -4,7 +4,7 @@ import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
-import type { ResolvedProfile } from "./profiles";
+import { LIMIT_ERROR, type ResolvedProfile } from "./profiles";
 
 /** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
  * The SDK writes every extraArgs key as "--key", so short flags go in executableArgs, which it puts before its own
@@ -52,6 +52,15 @@ function askTitle(toolName: string, input: Record<string, unknown>, displayName?
   if (toolName === "Bash") return "Let Claude run this command?";
   if (toolName === "WebFetch") return "Let Claude fetch this page?";
   return `Let Claude use ${displayName ?? toolName}?`;
+}
+
+/** What a failed turn says. Limit hits must read as one (LIMIT_ERROR), or fallback profiles never take over. */
+export function turnError(m: Extract<SDKMessage, { type: "result" }>): string {
+  const said = (m.subtype === "success" ? m.result : (m.errors ?? []).join("; ")).trim().slice(0, 300);
+  if (m.terminal_reason === "blocking_limit" || m.terminal_reason === "rapid_refill_breaker") {
+    return LIMIT_ERROR.test(said) ? said : `Usage limit reached${said ? `: ${said}` : "."}`;
+  }
+  return said || (m.subtype === "success" ? "The turn failed." : `Turn ended: ${m.subtype.replace(/_/g, " ")}`);
 }
 
 class Inbox implements AsyncIterable<SDKUserMessage> {
@@ -356,7 +365,7 @@ export class Run {
         /* sends queued mid-turn run next without new input: still busy until session_state_changed says idle */
         status: m.queued_turn_count ? "running" : "idle",
         costUsd: m.total_cost_usd ?? this.state.costUsd,
-        error: !m.is_error || stopped ? null : m.subtype === "success" ? m.result.slice(0, 300) || "The turn failed." : `Turn ended: ${m.subtype.replace(/_/g, " ")}`,
+        error: !m.is_error || stopped ? null : turnError(m),
       });
     }
   }
