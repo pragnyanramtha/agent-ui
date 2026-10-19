@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 const fail = (err: unknown) =>
   NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: err instanceof GitError ? err.status : 500 });
 
-/** ?session=<id>: the session folder's branch and changes, and its checkpoints */
+/** ?session=<id>: the session folder's branch and changes, and its checkpoints. &fetch=1 also fetches the remote now
+ * and then (the Git panel asks while it's open; a branch label doesn't need it). */
 export async function GET(req: NextRequest) {
   const session = req.nextUrl.searchParams.get("session") ?? "";
   try {
@@ -16,8 +17,7 @@ export async function GET(req: NextRequest) {
     if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const st = await status(cwd);
     if (!st) return NextResponse.json({ repo: null, cwd });
-    /* the panel polls this while it's open, which keeps ahead/behind current */
-    if (st.remote) void autoFetch(st.root);
+    if (st.remote && req.nextUrl.searchParams.get("fetch") === "1") void autoFetch(st.root);
     return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session), checkpointSkip: checkpointSkip(st.root, session) });
   } catch (err) {
     return fail(err);

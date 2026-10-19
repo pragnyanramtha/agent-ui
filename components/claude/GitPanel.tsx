@@ -153,7 +153,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const load = useCallback(
     async (quiet = false) => {
       try {
-        const d = await api<Data>(`/api/git?session=${encodeURIComponent(session)}`);
+        const d = await api<Data>(`/api/git?session=${encodeURIComponent(session)}&fetch=1`);
         const text = JSON.stringify(d);
         if (text !== lastText.current) {
           lastText.current = text;
