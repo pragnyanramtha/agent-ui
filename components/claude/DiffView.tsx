@@ -7,6 +7,7 @@ import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/l
 import { DEFAULT_DIFF_PREFS, readDiffPrefs, writeDiffPrefs, type DiffPrefs } from "@/lib/client/diff-prefs";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { PathLabel } from "./PathLabel";
+import { scrollBehavior } from "@/lib/client/motion";
 
 /** "turn": the session's newest checkpoint against now, so what the last message changed */
 export type DiffScope = "uncommitted" | "checkpoint" | "branch" | "turn";
@@ -182,7 +183,7 @@ export function DiffView({
 
   const jump = (path: string) => {
     setOpen((o) => ({ ...o, [path]: true }));
-    requestAnimationFrame(() => fileRefs.current.get(path)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    requestAnimationFrame(() => fileRefs.current.get(path)?.scrollIntoView({ block: "start", behavior: scrollBehavior() }));
   };
   const allOpen = files.length > 0 && files.every(isOpen);
   const noneOpen = !files.some(isOpen);

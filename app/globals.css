@@ -5,6 +5,27 @@
 @import "shadow-plugin/unprefixed";
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* motion-safe and motion-reduce follow Settings > Reduce motion ("On" and "Off" win over the device) */
+@custom-variant motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    &:where(html:not([data-motion="off"]) *) {
+      @slot;
+    }
+  }
+  &:where(html[data-motion="on"] *) {
+    @slot;
+  }
+}
+@custom-variant motion-safe {
+  @media (prefers-reduced-motion: no-preference) {
+    &:where(html:not([data-motion="on"]) *) {
+      @slot;
+    }
+  }
+  &:where(html[data-motion="off"] *) {
+    @slot;
+  }
+}
 
 /* Nerd Font icons (powerline, devicons, file icons) as a fallback behind the text face; only fetched when a terminal asks for it */
 @font-face {
@@ -500,6 +521,7 @@ a:focus-visible .animated-underline::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 html[data-motion="on"] *,

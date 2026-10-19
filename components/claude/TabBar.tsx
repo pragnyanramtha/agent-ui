@@ -7,6 +7,7 @@ import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
 import { AGENT_TONE, AgentBadge, isBusy } from "./SessionList";
 import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
+import { scrollBehavior } from "@/lib/client/motion";
 
 const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences" };
 
@@ -110,8 +111,7 @@ export function TabBar({
   /* keep the active tab in view */
   useEffect(() => {
     const el = scrollRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: still ? "auto" : "smooth" });
+    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: scrollBehavior() });
   }, [active, tabs.length]);
 
   /* arrows move focus (manual activation: Enter/Space opens, so the composer doesn't steal focus mid-browse) */

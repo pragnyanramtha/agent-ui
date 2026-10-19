@@ -13,6 +13,7 @@ import { Composer, MODELS, type AgentOption } from "./Composer";
 import { FolderPicker } from "./lazy";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
+import { reducedMotion } from "@/lib/client/motion";
 
 /* The new-session screen: one question, one composer, and a few quiet rows
  * for picking up where you left off. Staggered blur-up reveal on entry. */
@@ -104,7 +105,7 @@ export function NewSession({
     setNow(Date.now());
     if (!touched.current) setCwd((c) => c || localStorage.getItem("cui:lastCwd") || "");
     /* reduced motion: show everything at once, no blur-up */
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (reducedMotion()) {
       setStage(3);
       return;
     }

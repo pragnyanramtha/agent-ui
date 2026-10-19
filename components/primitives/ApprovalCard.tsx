@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/atoms/Button";
 import GlideMenu from "@/components/primitives/GlideMenu";
+import { reducedMotion } from "@/lib/client/motion";
 
 /* ─────────────────────────────────────────────────────────
  * APPROVAL CARD (human-in-the-loop)
@@ -189,7 +190,7 @@ export default function ApprovalCard({
   const sync = (withAnim: boolean) => {
     const item = questionRefs.current[qi];
     if (!item) return;
-    const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce = reducedMotion();
     setViewportH(item.offsetHeight);
     setTrackY(item.offsetTop);
     setAnimate(withAnim && !reduce);

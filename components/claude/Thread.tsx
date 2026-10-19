@@ -21,6 +21,7 @@ import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
 import { TurnChanges, TurnFold } from "./TurnFold";
 import "./thread.css";
+import { scrollBehavior } from "@/lib/client/motion";
 
 /** Dispatched on the thread's scroll box to stop following new content before jumping to an earlier spot. */
 export const RELEASE_PIN_EVENT = "cui:release-pin";
@@ -510,7 +511,7 @@ export function Thread({
           aria-label={footer ? `${agentName} needs you` : "Jump to latest"}
           onClick={() => {
             stickRef.current = true;
-            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: scrollBehavior() });
           }}
           className={`absolute left-1/2 z-10 flex h-9 -translate-x-1/2 items-center justify-center gap-1.5 rounded-full shadow-raised transition-[transform,color] duration-150 active:scale-[0.94] ${
             footer ? "bg-orange-tint px-3.5 text-[12.5px] font-medium text-orange-ink" : "w-9 bg-surface text-ink-2 hover:text-ink"
