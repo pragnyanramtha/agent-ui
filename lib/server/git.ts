@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
@@ -18,9 +19,9 @@ export class GitError extends Error {
 /* checkpoint commits need an author even where git has no user configured */
 const BOT = { GIT_AUTHOR_NAME: "agent-u", GIT_AUTHOR_EMAIL: "agent-u@localhost", GIT_COMMITTER_NAME: "agent-u", GIT_COMMITTER_EMAIL: "agent-u@localhost" };
 
-function git(cwd: string, args: string[], opts: { env?: Record<string, string>; timeout?: number; bin?: string } = {}): Promise<string> {
+function git(cwd: string, args: string[], opts: { env?: Record<string, string>; timeout?: number; bin?: string; input?: string } = {}): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(
+    const child = execFile(
       opts.bin ?? "git",
       args,
       { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...opts.env }, timeout: opts.timeout ?? 20_000, maxBuffer: 32 * 1024 * 1024 },
@@ -30,6 +31,7 @@ function git(cwd: string, args: string[], opts: { env?: Record<string, string>; 
         reject(new GitError(msg || `${opts.bin ?? "git"} ${args[0]} failed`));
       },
     );
+    if (opts.input !== undefined) child.stdin?.end(opts.input);
   });
 }
 
@@ -51,36 +53,138 @@ async function needRoot(cwd: string) {
 const MAX_CHECKPOINTS = 60;
 export const refBase = (session: string) => `refs/agent-u/cp/${crypto.createHash("sha1").update(session).digest("hex").slice(0, 16)}`;
 
-export type Checkpoint = { id: string; commit: string; tree: string; at: number; label: string };
+/** untracked files left out of a checkpoint because they're too large (at most SKIPPED_PATHS of them named; when
+ * there were more, `limit` is the file size over which a file was left out) */
+export type Skipped = { count: number; bytes: number; paths: string[]; limit?: number };
+export type Checkpoint = { id: string; commit: string; tree: string; at: number; label: string; skipped?: Skipped };
 
-/** the working tree as git would commit it right now (ignored files left out), through a copy of the index */
-async function snapshotTree(root: string) {
-  return (await snapshot(root)).tree;
+const MB = 1024 * 1024;
+const MAX_UNTRACKED = 20_000;
+const SKIPPED_PATHS = 100;
+const SKIPPED_TRAILER = "Agent-U-Skipped: ";
+const PRUNE_EVERY_MS = 60 * 60 * 1000;
+const envNumber = (name: string, fallback: number) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const limits = () => ({
+  file: envNumber("CHECKPOINT_MAX_FILE_MB", 20) * MB,
+  total: envNumber("CHECKPOINT_MAX_TOTAL_MB", 200) * MB,
+  days: envNumber("CHECKPOINT_MAX_AGE_DAYS", 30),
+});
+
+/** The folder had too much new, unignored data to snapshot without bloating the repository. */
+export class CheckpointSkipped extends GitError {
+  constructor(readonly reason: string) {
+    super(`Checkpoint skipped: ${reason}. Add them to .gitignore to keep saving checkpoints.`, 413);
+  }
 }
 
-/** plus the paths git couldn't add (an unreadable file, a nested repo without commits), which the tree leaves out */
-async function snapshot(root: string): Promise<{ tree: string; skipped: string[] }> {
+const fmtMB = (bytes: number) => `${Math.max(1, Math.round(bytes / MB)).toLocaleString("en-US")} MB`;
+
+/** untracked, unignored files, stopping once there are more than `limit` */
+function untrackedFiles(root: string, env: Record<string, string>, limit = Infinity): Promise<{ paths: string[]; more: boolean }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["ls-files", "-o", "--exclude-standard", "-z"], { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    const decoder = new StringDecoder("utf8");
+    const paths: string[] = [];
+    let rest = "";
+    let more = false;
+    let stderr = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+    child.stdout.on("data", (b: Buffer) => {
+      if (more) return;
+      const parts = (rest + decoder.write(b)).split("\0");
+      rest = parts.pop() ?? "";
+      /* a nested repository shows as "dir/" and goes in as a link, not as files */
+      for (const p of parts) if (p && !p.endsWith("/")) paths.push(p);
+      if (paths.length > limit) {
+        more = true;
+        child.kill("SIGKILL");
+      }
+    });
+    child.stderr.on("data", (b: Buffer) => void (stderr.length < 4000 && (stderr += b.toString())));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(new GitError(err.message));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0 || more) resolve({ paths, more });
+      else reject(new GitError(stderr.trim().split("\n").slice(-3).join(" ") || "git ls-files failed"));
+    });
+  });
+}
+
+/** `unreadable`: paths git couldn't add (an unreadable file, a nested repo without commits), which the tree leaves out */
+type Snapshot = { tree: string; excluded: string[]; excludedBytes: number; unreadable: string[]; limit: number };
+
+/** The working tree as git would commit it right now (ignored files left out), through a copy of the index.
+ * Untracked files over CHECKPOINT_MAX_FILE_MB stay out too. With `strict` (a checkpoint, kept by a ref), too many
+ * new files or too many bytes of them throw CheckpointSkipped instead of being copied into the object store. */
+async function snapshotTree(root: string, opts: { strict?: boolean } = {}): Promise<Snapshot> {
   const gitDir = (await git(root, ["rev-parse", "--absolute-git-dir"])).trim();
-  const tmp = path.join(os.tmpdir(), `agent-u-index-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
+  const id = `${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+  const tmp = path.join(os.tmpdir(), `agent-u-index-${id}`);
+  const specs = path.join(os.tmpdir(), `agent-u-pathspec-${id}`);
   /* starting from the real index lets git reuse its stat cache, so a big repo snapshots fast */
   await fs.copyFile(path.join(gitDir, "index"), tmp).catch(() => undefined);
   try {
     const env = { GIT_INDEX_FILE: tmp };
+    const max = limits();
+    const { paths, more } = await untrackedFiles(root, env, opts.strict ? MAX_UNTRACKED : Infinity);
+    if (more) throw new CheckpointSkipped(`more than ${MAX_UNTRACKED.toLocaleString("en-US")} new files that git doesn't ignore`);
+    const excluded: string[] = [];
+    let excludedBytes = 0;
+    let total = 0;
+    for (let i = 0; i < paths.length; i += 256) {
+      const batch = paths.slice(i, i + 256);
+      const sizes = await Promise.all(batch.map((p) => fs.lstat(path.join(root, p)).then((s) => s.size, () => 0)));
+      sizes.forEach((size, j) => {
+        if (size > max.file) {
+          excluded.push(batch[j]);
+          excludedBytes += size;
+        } else total += size;
+      });
+    }
+    if (opts.strict && total > max.total) throw new CheckpointSkipped(`${fmtMB(total)} of new files that git doesn't ignore`);
+    /* a pathspec file, not argv: no length limit, and literal magic keeps any file name exact */
+    if (excluded.length) await fs.writeFile(specs, [".", ...excluded.map((p) => `:(exclude,literal)${p}`)].join("\0") + "\0", { mode: 0o600 });
+    const spec = excluded.length ? [`--pathspec-from-file=${specs}`, "--pathspec-file-nul"] : ["--", "."];
     /* --ignore-errors: what git can't add is left out and git exits 1 after writing the rest; a fatal error (128),
      * a timeout, no index at all, or an error that names no path still fail the snapshot */
     const failed = await new Promise<{ code: unknown; message: string; stderr: string } | null>((resolve) =>
       execFile(
         "git",
-        ["add", "-A", "--ignore-errors", "--", "."],
+        ["add", "-A", "--ignore-errors", ...spec],
         { cwd: root, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C", ...env }, timeout: 60_000, maxBuffer: 32 * 1024 * 1024 },
         (err, _out, stderr) => resolve(err ? { code: err.code, stderr, message: stderr.trim().split("\n").filter(Boolean).slice(-3).join(" ") || err.message } : null),
       ),
     );
-    const skipped = failed ? skippedPaths(failed.stderr) : [];
-    if (failed && !(failed.code === 1 && skipped.length && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
-    return { tree: (await git(root, ["write-tree"], { env })).trim(), skipped };
+    const unreadable = failed ? skippedPaths(failed.stderr) : [];
+    if (failed && !(failed.code === 1 && unreadable.length && (await fs.stat(tmp).then(() => true, () => false)))) throw new GitError(failed.message);
+    return { tree: (await git(root, ["write-tree"], { env })).trim(), excluded, excludedBytes, unreadable, limit: max.file };
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
+    await fs.rm(specs, { force: true }).catch(() => undefined);
+  }
+}
+
+const skippedOf = (snap: Snapshot): Skipped | undefined =>
+  snap.excluded.length
+    ? { count: snap.excluded.length, bytes: snap.excludedBytes, paths: snap.excluded.slice(0, SKIPPED_PATHS), ...(snap.excluded.length > SKIPPED_PATHS ? { limit: snap.limit } : {}) }
+    : undefined;
+
+function parseSkipped(body: string): Skipped | undefined {
+  const line = body.split("\n").find((l) => l.startsWith(SKIPPED_TRAILER));
+  if (!line) return undefined;
+  try {
+    const s = JSON.parse(line.slice(SKIPPED_TRAILER.length)) as Skipped;
+    if (typeof s.count !== "number" || !Array.isArray(s.paths)) return undefined;
+    const limit = Number(s.limit);
+    return { count: s.count, bytes: Number(s.bytes) || 0, paths: s.paths.map(String), ...(limit > 0 ? { limit } : {}) };
+  } catch {
+    return undefined;
   }
 }
 
@@ -96,38 +200,87 @@ export function skippedPaths(stderr: string): string[] {
 export async function listCheckpoints(cwd: string, session: string): Promise<Checkpoint[]> {
   const root = await repoRoot(cwd);
   if (!root) return [];
-  const out = await git(root, ["for-each-ref", "--sort=-refname", "--format=%(refname)%09%(objectname)%09%(tree)%09%(contents:subject)", `${refBase(session)}/`]).catch(() => "");
+  const out = await git(root, ["for-each-ref", "--sort=-refname", "--format=%(refname)%00%(objectname)%00%(tree)%00%(contents:subject)%00%(contents:body)%00", `${refBase(session)}/`]).catch(() => "");
   return out
-    .split("\n")
+    .split("\0\n")
     .filter(Boolean)
-    .map((line) => {
-      const [ref, commit, tree, ...rest] = line.split("\t");
+    .map((rec) => {
+      const [ref, commit, tree, label = "", body = ""] = rec.split("\0");
       const id = ref.slice(ref.lastIndexOf("/") + 1);
-      return { id, commit, tree, at: Number(id.split("-")[0]) || 0, label: rest.join("\t") };
+      const skipped = parseSkipped(body);
+      return { id, commit, tree, at: Number(id.split("-")[0]) || 0, label, ...(skipped ? { skipped } : {}) };
     });
 }
 
-/** Saves the folder's current state for this session, unless it's the same as the last checkpoint. */
-export async function checkpoint(cwd: string, session: string, label: string): Promise<Checkpoint | null> {
-  const root = await repoRoot(cwd);
-  if (!root) return null;
-  const { tree, skipped } = await snapshot(root);
+/* why the last checkpoint of a session was skipped, until one is saved again (server memory only) */
+const skips = new Map<string, { at: number; reason: string }>();
+const skipKey = (root: string, session: string) => `${root}\0${session}`;
+
+/** the reason this session's most recent checkpoint attempt was skipped, if it was */
+export function checkpointSkip(root: string, session: string) {
+  return skips.get(skipKey(root, session)) ?? null;
+}
+
+async function save(root: string, session: string, label: string): Promise<{ cp: Checkpoint; snap: Snapshot }> {
+  let snap: Snapshot;
+  try {
+    snap = await snapshotTree(root, { strict: true });
+  } catch (err) {
+    if (err instanceof CheckpointSkipped) skips.set(skipKey(root, session), { at: Date.now(), reason: err.reason });
+    throw err;
+  }
+  skips.delete(skipKey(root, session));
+  const skipped = skippedOf(snap);
   const list = await listCheckpoints(root, session);
-  if (list[0]?.tree === tree) return list[0];
+  if (list[0]?.tree === snap.tree && JSON.stringify(list[0].skipped) === JSON.stringify(skipped)) return { cp: list[0], snap };
   const head = (await git(root, ["rev-parse", "--verify", "-q", "HEAD"]).catch(() => "")).trim();
   const subject = label.replace(/\s+/g, " ").trim().slice(0, 120) || "Checkpoint";
   /* rewinding must not delete what this checkpoint couldn't see */
-  const body = skipped.map((p) => `${SKIPPED}${JSON.stringify(p)}`).join("\n");
-  const commit = (await git(root, ["commit-tree", tree, ...(head ? ["-p", head] : []), "-m", subject, ...(body ? ["-m", body] : [])], { env: BOT })).trim();
+  const body = [...(skipped ? [`${SKIPPED_TRAILER}${JSON.stringify(skipped)}`] : []), ...snap.unreadable.map((p) => `${SKIPPED}${JSON.stringify(p)}`)].join("\n");
+  const commit = (await git(root, ["commit-tree", snap.tree, ...(head ? ["-p", head] : []), "-m", subject, ...(body ? ["-m", body] : [])], { env: BOT })).trim();
   const id = `${Date.now()}-${crypto.randomBytes(2).toString("hex")}`;
   await git(root, ["update-ref", `${refBase(session)}/${id}`, commit]);
   for (const old of list.slice(MAX_CHECKPOINTS - 1)) await git(root, ["update-ref", "-d", `${refBase(session)}/${old.id}`]).catch(() => undefined);
-  return { id, commit, tree, at: Number(id.split("-")[0]), label: subject };
+  await maybePrune(root);
+  return { cp: { id, commit, tree: snap.tree, at: Number(id.split("-")[0]), label: subject, ...(skipped ? { skipped } : {}) }, snap };
 }
 
-/** Checkpoints taken before a session had its id (a first message) move to it once it does. */
+/** Saves the folder's current state for this session, unless it's the same as the last checkpoint.
+ * Throws CheckpointSkipped when there's too much new data to save. */
+export async function checkpoint(cwd: string, session: string, label: string): Promise<Checkpoint | null> {
+  const root = await repoRoot(cwd);
+  if (!root) return null;
+  return (await save(root, session, label)).cp;
+}
+
+/** Deletes checkpoints of every session in the repository whose commit is older than CHECKPOINT_MAX_AGE_DAYS. */
+export async function pruneCheckpoints(cwd: string, now = Date.now()): Promise<number> {
+  const root = await needRoot(cwd);
+  const cutoff = Math.floor(now / 1000) - limits().days * 86_400;
+  const out = await git(root, ["for-each-ref", "--format=%(refname)%00%(committerdate:unix)", "refs/agent-u/cp/"]);
+  const old = out
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => l.split("\0"))
+    .filter(([, t]) => Number(t) > 0 && Number(t) < cutoff)
+    .map(([ref]) => ref);
+  if (old.length) await git(root, ["update-ref", "--stdin"], { input: old.map((r) => `delete ${r}\n`).join("") });
+  return old.length;
+}
+
+const pruned = new Map<string, number>();
+
+/** at most once an hour per repository, and never in the way of a checkpoint */
+async function maybePrune(root: string) {
+  const now = Date.now();
+  if (now - (pruned.get(root) ?? 0) < PRUNE_EVERY_MS) return;
+  pruned.set(root, now);
+  await pruneCheckpoints(root, now).catch(() => 0);
+}
+
 const SKIPPED = "Skipped: ";
 
+/** paths a checkpoint couldn't read when it was taken */
 async function skippedIn(root: string, commit: string): Promise<string[]> {
   const body = await git(root, ["show", "-s", "--format=%b", commit]).catch(() => "");
   return body.split("\n").flatMap((l) => {
@@ -141,12 +294,18 @@ async function skippedIn(root: string, commit: string): Promise<string[]> {
   });
 }
 
+/** Checkpoints taken before a session had its id (a first message) move to it once it does. */
 export async function moveCheckpoints(cwd: string, from: string, to: string) {
   const root = await repoRoot(cwd);
   if (!root || from === to) return;
   for (const c of await listCheckpoints(root, from)) {
     await git(root, ["update-ref", `${refBase(to)}/${c.id}`, c.commit]);
     await git(root, ["update-ref", "-d", `${refBase(from)}/${c.id}`]);
+  }
+  const skip = skips.get(skipKey(root, from));
+  if (skip) {
+    skips.set(skipKey(root, to), skip);
+    skips.delete(skipKey(root, from));
   }
 }
 
@@ -167,7 +326,7 @@ export async function sinceCheckpoint(cwd: string, session: string, id: string):
   const root = await needRoot(cwd);
   const cp = (await listCheckpoints(root, session)).find((c) => c.id === id);
   if (!cp) throw new GitError("That checkpoint is gone.", 404);
-  const now = await snapshotTree(root);
+  const now = (await snapshotTree(root)).tree;
   return numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, now]));
 }
 
@@ -320,7 +479,7 @@ async function diffAt(root: string, session: string, opts: DiffOpts): Promise<Gi
     base = head || (await emptyTree(root));
     baseLabel = head ? "HEAD" : "Empty repository";
   }
-  const now = await snapshotTree(root);
+  const now = (await snapshotTree(root)).tree;
   const flags = ["-c", "core.quotepath=off", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", ...(opts.ignoreWhitespace ? ["-w"] : [])];
   const stats = rawNumstat(await git(root, [...flags, "--raw", "--numstat", "-z", base, now], { timeout: 60_000 }));
   const huge = stats.filter((s) => s.additions + s.deletions > HUGE_FILE_LINES);
@@ -357,25 +516,47 @@ export async function rewind(cwd: string, session: string, id: string) {
   const cp = (await listCheckpoints(root, session)).find((c) => c.id === id);
   if (!cp) throw new GitError("That checkpoint is gone.", 404);
   const when = new Date(cp.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  const before = await checkpoint(root, session, `Before rewinding to ${when}`);
-  if (!before || before.tree === cp.tree) return { changed: 0, removed: 0, undo: before?.id ?? null };
-  const changes = numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, before.tree]));
-  const added = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", cp.tree, before.tree])).split("\0").filter(Boolean);
+  let saved: Awaited<ReturnType<typeof save>>;
+  try {
+    saved = await save(root, session, `Before rewinding to ${when}`);
+  } catch (err) {
+    if (err instanceof CheckpointSkipped) throw new GitError(`Can't rewind: the files as they are now can't be saved first, so it couldn't be undone (${err.reason}).`, 413);
+    throw err;
+  }
+  const before = saved.cp;
+  if (before.tree === cp.tree) return { changed: 0, removed: 0, kept: 0, undo: before.id };
+  /* Files left out of `before` (too large) aren't in its tree: they never count as made since, so they're never
+   * removed, and one the checkpoint has an older copy of stays as it is, since the undo couldn't bring it back. */
+  const excluded = new Set(saved.snap.excluded);
+  const kept = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=D", "-z", cp.tree, before.tree])).split("\0").filter((p) => p && excluded.has(p));
+  /* nor is one the checkpoint itself left out (too large, or unreadable): it existed then, the checkpoint just has no copy of it */
+  const large = new Set(cp.skipped?.paths ?? []);
+  const unreadable = await skippedIn(root, cp.commit);
+  const newer = (await git(root, ["diff", "--name-only", "--no-renames", "--diff-filter=A", "-z", cp.tree, before.tree])).split("\0").filter(Boolean);
+  /* more were left out than the checkpoint names: any file over the size limit it used may be one of them */
+  const unnamed = new Set<string>();
+  if (cp.skipped && cp.skipped.count > cp.skipped.paths.length) {
+    const over = Math.min(cp.skipped.limit ?? limits().file, limits().file);
+    for (const p of newer) if ((await fs.lstat(path.join(root, p)).then((st) => st.size, () => 0)) > over) unnamed.add(p);
+  }
+  const leftOut = (p: string) => large.has(p) || unnamed.has(p) || unreadable.some((s) => p === s || p.startsWith(`${s}/`));
+  const added = newer.filter((p) => !leftOut(p));
+  const keep = new Set([...kept, ...newer.filter(leftOut)]);
+  const changes = numstat(await git(root, ["diff", "--numstat", "--no-renames", cp.tree, before.tree])).filter((f) => !keep.has(f.path));
   const tmp = path.join(os.tmpdir(), `agent-u-index-${process.pid}-${crypto.randomBytes(4).toString("hex")}`);
   try {
     const env = { GIT_INDEX_FILE: tmp };
     await git(root, ["read-tree", cp.tree], { env });
+    if (kept.length) await git(root, ["update-index", "--force-remove", "-z", "--stdin"], { env, input: kept.join("\0") + "\0" });
     await git(root, ["checkout-index", "-a", "-f"], { env, timeout: 60_000 });
   } finally {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
   }
-  const skipped = await skippedIn(root, cp.commit);
-  const removable = added.filter((rel) => !skipped.some((s) => rel === s || rel.startsWith(`${s}/`)));
-  for (const rel of removable) {
+  for (const rel of added) {
     const abs = path.resolve(root, rel);
     if (abs.startsWith(`${root}${path.sep}`)) await fs.rm(abs, { force: true }).catch(() => undefined);
   }
-  return { changed: changes.length, removed: removable.length, undo: before.id };
+  return { changed: changes.length, removed: added.length, kept: keep.size, undo: before.id };
 }
 
 /* ── status, commit, push, pull request ──────────────── */

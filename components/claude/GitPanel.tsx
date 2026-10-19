@@ -17,9 +17,11 @@ type Status = {
   remote: boolean;
   gh: boolean;
 };
-type Checkpoint = { id: string; commit: string; at: number; label: string };
+type Checkpoint = { id: string; commit: string; at: number; label: string; skipped?: { count: number; bytes: number; paths: string[] } };
 type FileStat = { path: string; added: number; removed: number; binary: boolean };
-type Data = { repo: Status | null; cwd: string; checkpoints?: Checkpoint[] };
+type Data = { repo: Status | null; cwd: string; checkpoints?: Checkpoint[]; checkpointSkip?: { at: number; reason: string } | null };
+
+const sizeLabel = (bytes: number) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`);
 
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 const primary = `${btn} bg-ink text-surface`;
@@ -121,7 +123,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     });
     if (!ok) return;
     const r = await act("rewind", { id: cp.id });
-    if (r) setNote({ text: `Rewound: ${String(r.changed)} ${r.changed === 1 ? "file" : "files"} changed back${r.removed ? `, ${String(r.removed)} removed` : ""}.` });
+    if (r) setNote({ text: `Rewound: ${String(r.changed)} ${r.changed === 1 ? "file" : "files"} changed back${r.removed ? `, ${String(r.removed)} removed` : ""}.${r.kept ? ` ${String(r.kept)} large ${r.kept === 1 ? "file was" : "files were"} left as ${r.kept === 1 ? "it is" : "they are"}.` : ""}` });
   };
 
   return (
@@ -263,6 +265,11 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                 </button>
               </div>
               <p className="mb-2 text-[12px] leading-snug text-ink-3">The files as they were before each message you sent from here. Rewinding changes files only, never the conversation or your commits.</p>
+              {data?.checkpointSkip && (
+                <p className="mb-2 rounded-[10px] bg-inset px-3 py-2 text-[12px] leading-snug text-ink-2 shadow-hairline" title={new Date(data.checkpointSkip.at).toLocaleString()}>
+                  The last checkpoint was skipped: {data.checkpointSkip.reason}. Add them to .gitignore to keep saving checkpoints.
+                </p>
+              )}
               {cps.length === 0 ? (
                 <p className="py-4 text-center text-[12.5px] text-ink-3">None yet. One is saved before the next message.</p>
               ) : (
@@ -286,6 +293,11 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                           Rewind
                         </button>
                       </div>
+                      {cp.skipped && (
+                        <p className="mt-0.5 ml-12 truncate text-[11.5px] text-ink-3" title={cp.skipped.paths.join("\n")}>
+                          Not saved in this checkpoint: {cp.skipped.count} large {cp.skipped.count === 1 ? "file" : "files"} ({sizeLabel(cp.skipped.bytes)})
+                        </p>
+                      )}
                       {since?.id === cp.id && (
                         <div className="mt-1 ml-12 font-mono text-[12px]">
                           {since.files === null ? (

@@ -17,7 +17,8 @@ All machine-specific values live in gitignored env files; `.env.example` documen
   because Next's dotenv expands `$`; wins if both are set), `UI_SECRET` (32+ chars, signs the session cookie), optional `CLAUDE_BIN`, `CLAUDE_HOME`, `HIDE_PROJECTS`,
  `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
  `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
- `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, plus any secrets profiles reference as `${NAME}`.
+ `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, checkpoint limits (`CHECKPOINT_MAX_FILE_MB`, `CHECKPOINT_MAX_TOTAL_MB`,
+ `CHECKPOINT_MAX_AGE_DAYS`), plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
 - Optional, also on your machine and gitignored: `.env.server` (KEY=value lines `scripts/setup.sh` merges into the server's
  `.env.local`) and `agent-u.config.json` (the profiles file it installs).
@@ -124,5 +125,8 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
  (`lib/attachments.ts`), so every agent and terminal can open them; the thread renders them as thumbnails.
 - Git (`lib/server/git.ts`): a checkpoint of the working tree before each web message (hidden refs under
  `refs/agent-u/cp/`, via a temporary index: HEAD, branch and staging area untouched), rewind with undo, commit/push/PR
- (gh), and optional worktree per new session (`~/.local/share/agent-u/worktrees`).
+ (gh), and optional worktree per new session (`~/.local/share/agent-u/worktrees`). Untracked files over
+ `CHECKPOINT_MAX_FILE_MB` stay out of checkpoints (named in the commit body, never removed or overwritten by a rewind);
+ more than `CHECKPOINT_MAX_TOTAL_MB` of new files, or 20k of them, skips the checkpoint. Checkpoints older than
+ `CHECKPOINT_MAX_AGE_DAYS` are pruned, at most hourly per repo.
 - UI copy: no em dashes; loading labels end with an ellipsis.
