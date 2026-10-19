@@ -363,15 +363,15 @@ export function SessionScreen({
             )}
             {project && (
               <>
-                <span className="min-w-[2.5rem] shrink-[4] truncate text-ink-3 max-sm:hidden" title={runsOn ? `${shortPath(view.cwd)} · ${runsOn}` : shortPath(view.cwd)} translate="no">
+                <span className="min-w-[2.5rem] shrink-[4] truncate text-ink-3 max-sm:hidden @max-[36rem]:hidden" title={runsOn ? `${shortPath(view.cwd)} · ${runsOn}` : shortPath(view.cwd)} translate="no">
                   {project}
                 </span>
-                <span className="shrink-0 text-ink-3/60 max-sm:hidden" aria-hidden>
+                <span className="shrink-0 text-ink-3/60 max-sm:hidden @max-[36rem]:hidden" aria-hidden>
                   /
                 </span>
               </>
             )}
-            <h1 className="min-w-0 truncate font-medium text-ink" title={view.title || undefined}>
+            <h1 className="min-w-0 truncate font-medium text-ink" title={[view.title, shortPath(view.cwd)].filter(Boolean).join("\n") || undefined}>
               {view.title || (view.status === "missing" ? "Couldn't load this session" : "Loading session…")}
             </h1>
             {git?.branch && (
@@ -381,7 +381,7 @@ export function SessionScreen({
             )}
           </div>
           {status}
-          <div role="group" aria-label="Panels" className={`mx-1 flex h-8 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-hairline pointer-coarse:h-11 ${changes.length || showTerminal ? "" : "max-sm:hidden"}`}>
+          <div role="group" aria-label="Panels" className={`mx-1 flex h-8 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-hairline pointer-coarse:h-11 max-sm:mx-0 max-sm:p-0 max-sm:shadow-none ${changes.length || showTerminal ? "" : "max-sm:hidden"}`}>
             {changes.length > 0 && (
               <button
                 type="button"
