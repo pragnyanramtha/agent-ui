@@ -36,9 +36,9 @@ function scrollParent(el: Element | null): Element | null {
 }
 
 const STATUS: Record<PatchStatus, { letter: string; tone: string; label: string }> = {
-  added: { letter: "A", tone: "text-green", label: "Added" },
+  added: { letter: "A", tone: "text-(--add-ink)", label: "Added" },
   modified: { letter: "M", tone: "text-ink-3", label: "Modified" },
-  deleted: { letter: "D", tone: "text-red", label: "Deleted" },
+  deleted: { letter: "D", tone: "text-(--del-ink)", label: "Deleted" },
   renamed: { letter: "R", tone: "text-accent-ink", label: "Renamed" },
   binary: { letter: "B", tone: "text-ink-3", label: "Binary" },
 };
@@ -292,7 +292,7 @@ export function DiffView({
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
             <span className="diff-tone font-mono text-xs tabular-nums">
-              <span className="text-green">+{data.additions}</span> <span className="text-red">-{data.deletions}</span>
+              <span className="text-(--add-ink)">+{data.additions}</span> <span className="text-(--del-ink)">-{data.deletions}</span>
             </span>
             {scope === "turn" && latest && (
               <span className="min-w-0 truncate" title={latest.label}>
@@ -342,9 +342,9 @@ function Counts({ f }: { f: PatchFile }) {
   if (f.binary || f.status === "binary") return null;
   return (
     <span className="shrink-0 tabular-nums">
-      {(f.additions > 0 || f.deletions === 0) && <span className="text-green">+{f.additions}</span>}
+      {(f.additions > 0 || f.deletions === 0) && <span className="text-(--add-ink)">+{f.additions}</span>}
       {f.additions > 0 && f.deletions > 0 && " "}
-      {f.deletions > 0 && <span className="text-red">-{f.deletions}</span>}
+      {f.deletions > 0 && <span className="text-(--del-ink)">-{f.deletions}</span>}
     </span>
   );
 }
@@ -476,7 +476,7 @@ const Chunk = memo(function Chunk({ rows, eager, num, plain, wrap, split }: { ro
 });
 
 const tint = (t: PatchLine["type"]) => (t === "add" ? "bg-green-tint" : t === "del" ? "bg-red-tint" : "");
-const numTone = (t: PatchLine["type"]) => (t === "add" ? "text-green" : t === "del" ? "text-red" : "text-ink-3");
+const numTone = (t: PatchLine["type"]) => (t === "add" ? "text-(--add-ink)" : t === "del" ? "text-(--del-ink)" : "text-ink-3");
 const Bar = ({ type }: { type: PatchLine["type"] }) =>
   type === "ctx" ? null : <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: type === "add" ? "var(--green)" : HATCH }} />;
 const NoEol = () => <span className="ml-2 select-none font-sans text-[10.5px] text-ink-3">no newline at end</span>;

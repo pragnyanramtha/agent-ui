@@ -503,7 +503,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                                   <span className="min-w-0 flex-1 truncate text-ink-2" title={f.path}>
                                     {f.path}
                                   </span>
-                                  <span className="diff-tone shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span></>}</span>
+                                  <span className="diff-tone shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-(--add-ink)">+{f.added}</span> <span className="text-(--del-ink)">-{f.removed}</span></>}</span>
                                 </li>
                               ))}
                             </ul>

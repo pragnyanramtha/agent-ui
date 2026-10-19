@@ -96,7 +96,7 @@ const Row = memo(function Row({ item, result, active }: { item: RunItem; result?
               className={`size-3 rounded-full border-[1.5px] border-line-strong border-t-ink-2 animate-[spin_700ms_linear_infinite] motion-reduce:animate-none ${PLAY}`}
             />
           )}
-          {failed && <span className="text-[11.5px] font-medium text-red">Failed</span>}
+          {failed && <span className="text-[11.5px] font-medium text-red-ink">Failed</span>}
         </span>
       </button>
       <Collapse open={open}>
@@ -193,7 +193,7 @@ export const ToolRun = memo(function ToolRun({
         ) : (
           <span className="min-w-0 truncate tabular-nums">{runSummary(items)}</span>
         )}
-        {!shimmer && failed > 0 && <span className="shrink-0 text-red">· {failed} failed</span>}
+        {!shimmer && failed > 0 && <span className="shrink-0 text-red-ink">· {failed} failed</span>}
       </button>
       {/* the collapse clips overflow; widen it by the rows' hover bleed so their backgrounds and focus rings aren't cut */}
       <Collapse open={open} className="-mx-1">

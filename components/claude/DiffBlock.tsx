@@ -25,7 +25,7 @@ export function DiffBlock({ before, after, file, plain = isPlainText(file) }: { 
         <div className="flex h-9 items-center gap-2 border-b border-line px-3 font-mono text-xs">
           <PathLabel path={file} />
           <span className="ml-auto shrink-0 tabular-nums">
-            <span className="text-green">+{added}</span> <span className="text-red">-{removed}</span>
+            <span className="text-(--add-ink)">+{added}</span> <span className="text-(--del-ink)">-{removed}</span>
           </span>
         </div>
       )}
@@ -39,7 +39,7 @@ export function DiffBlock({ before, after, file, plain = isPlainText(file) }: { 
             ) : (
               <div key={i} style={cols} className={`relative grid items-start ${r.tone === "add" ? "bg-green-tint" : r.tone === "del" ? "bg-red-tint" : ""}`}>
                 {r.tone !== "ctx" && <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: r.tone === "add" ? "var(--green)" : HATCH }} />}
-                <span className={`select-none pr-2 text-right text-2xs tabular-nums ${r.tone === "add" ? "text-green" : r.tone === "del" ? "text-red" : "text-ink-3"}`}>
+                <span className={`select-none pr-2 text-right text-2xs tabular-nums ${r.tone === "add" ? "text-(--add-ink)" : r.tone === "del" ? "text-(--del-ink)" : "text-ink-3"}`}>
                   {r.tone === "del" ? r.old : r.cur}
                 </span>
                 <code className="pr-4 pl-2 whitespace-pre">{plain ? r.text : highlight(r.text)}</code>

@@ -66,7 +66,7 @@ export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: {
         <span className="truncate">
           {title}
           {detail && <span className="text-ink-3/70"> · {detail}</span>}
-          {failed > 0 && <span className="text-red"> · {failed} failed</span>}
+          {failed > 0 && <span className="text-red-ink"> · {failed} failed</span>}
         </span>
         <NavArrowRight width={14} height={14} strokeWidth={1.6} className="shrink-0 transition-transform duration-200" style={{ transform: open ? "rotate(90deg)" : undefined }} aria-hidden />
       </button>
@@ -118,7 +118,7 @@ export const TurnChanges = memo(function TurnChanges({
         {files.length} {files.length === 1 ? "file" : "files"} changed
       </span>
       <span className="diff-tone shrink-0 tabular-nums">
-        <span className="text-green">+{added}</span> <span className="text-red">−{removed}</span>
+        <span className="text-(--add-ink)">+{added}</span> <span className="text-(--del-ink)">−{removed}</span>
       </span>
       <span className="ml-auto flex min-w-0 items-center gap-0.5">
         {state.note && (

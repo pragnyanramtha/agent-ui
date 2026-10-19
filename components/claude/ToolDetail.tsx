@@ -51,7 +51,7 @@ function Output({ result, wrap = true, json = false }: { result?: ToolResult; wr
   const text = cleanResult(result.text);
   if (!text.trim()) return <Empty result={result} />;
   return (
-    <Pre wrap={wrap} tone={result.isError ? "text-red" : "text-ink-2"}>
+    <Pre wrap={wrap} tone={result.isError ? "text-red-ink" : "text-ink-2"}>
       {json ? prettyJson(text) : text}
       <Trimmed result={result} />
     </Pre>
@@ -259,7 +259,7 @@ function PatchView({ patch }: { patch: string }) {
             {f.moveTo && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">moved</span>}
             {PATCH_OP[f.op] && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">{PATCH_OP[f.op]}</span>}
             <span className="ml-auto shrink-0 tabular-nums">
-              <span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span>
+              <span className="text-(--add-ink)">+{f.added}</span> <span className="text-(--del-ink)">-{f.removed}</span>
             </span>
           </div>
           {f.lines.length > 0 && (
