@@ -92,6 +92,31 @@ describe("client settings store", () => {
     expect(ls().getItem("bui-theme")).toBe("system");
   });
 
+  it("carries the diff viewer's choices over, the old combined key included", async () => {
+    ls().setItem("agent-u:diff", JSON.stringify({ split: true, ws: true }));
+    ls().setItem("agent-u:diff-wrap", "on");
+    const s = await load();
+    expect(s.getSetting("diffLayout")).toBe("split");
+    expect(s.getSetting("diffIgnoreWhitespace")).toBe(true);
+    expect(s.getSetting("diffWrap")).toBe(true);
+    expect(ls().getItem("agent-u:diff")).toBeNull();
+    /* the diff viewer's toggles write the same keys, in the format it always used */
+    s.setSetting("diffLayout", "unified");
+    s.setSetting("diffIgnoreWhitespace", false);
+    expect(ls().getItem("agent-u:diff-layout")).toBe("unified");
+    expect(ls().getItem("agent-u:diff-whitespace")).toBe("show");
+  });
+
+  it("puts the diff colors on <html> and syncs them", async () => {
+    const s = await load();
+    s.setSetting("diffColors", "blue-orange");
+    expect(root.attrs.get("data-diff-colors")).toBe("blue-orange");
+    await s.flush();
+    expect(server.readSynced().settings).toEqual({ diffColors: "blue-orange" });
+    s.setSetting("diffColors", "red-green");
+    expect(root.attrs.has("data-diff-colors")).toBe(false);
+  });
+
   it("shows synced changes at once, puts them on <html>, then saves them on the server", async () => {
     const s = await load();
     const seen = vi.fn();

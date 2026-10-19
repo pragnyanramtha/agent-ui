@@ -5,6 +5,7 @@ import { NavArrowRight } from "iconoir-react";
 import type { Entry, ToolResult } from "@/lib/types";
 import { foldLabel } from "@/lib/client/turns";
 import { collectChanges } from "./ChangesPanel";
+import "./diff.css";
 
 /** Dispatched on a fold's root (`[data-fold]`) to open it, so find can show a match inside. */
 export const EXPAND_FOLD_EVENT = "cui:expand-fold";
@@ -116,7 +117,7 @@ export const TurnChanges = memo(function TurnChanges({
       <span className="min-w-0 truncate text-ink-2">
         {files.length} {files.length === 1 ? "file" : "files"} changed
       </span>
-      <span className="shrink-0 tabular-nums">
+      <span className="diff-tone shrink-0 tabular-nums">
         <span className="text-green">+{added}</span> <span className="text-red">−{removed}</span>
       </span>
       <span className="ml-auto flex min-w-0 items-center gap-0.5">

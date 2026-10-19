@@ -79,4 +79,8 @@ describe("default branch", () => {
     expect(needsDefaultBranchConfirm(at({ ahead: 1 }), primaryAction(at({ ahead: 1 })))).toBe(false);
     expect(needsDefaultBranchConfirm(at({ branch: "main" }), { id: "commit", label: "Commit", steps: ["commit"] })).toBe(false);
   });
+
+  it("doesn't ask when the setting is off", () => {
+    expect(needsDefaultBranchConfirm(at({ branch: "main" }), { id: "push", label: "Push", steps: ["push"] }, false)).toBe(false);
+  });
 });

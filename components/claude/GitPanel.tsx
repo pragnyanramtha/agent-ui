@@ -33,6 +33,7 @@ const sizeLabel = (bytes: number) => (bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 const primary = `${btn} bg-ink text-surface`;
 const STATUS_POLL_MS = 20_000;
+const NO_ANSWER = { auto: "No agent answered", claude: "Claude didn't answer", codex: "Codex didn't answer", gemini: "Gemini didn't answer", off: "No agent answered" } as const;
 
 const STATE: Record<string, string> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "copied", "?": "new", U: "conflict" };
 const stateOf = (s: string) => STATE[s.trim()[0] ?? ""] ?? s.trim();
@@ -130,6 +131,9 @@ function ActionBar({
 export function GitPanel({ session, busy, onClose, view: initialView = "diff" }: { session: string; busy: boolean; onClose: () => void; view?: "diff" | "commit" }) {
   const [view, setView] = useState(initialView);
   const [timeFmt] = useSetting("timeFormat");
+  const [msgAgent] = useSetting("commitMessageAgent");
+  const [confirmPush] = useSetting("confirmDefaultPush");
+  const canGenerate = msgAgent !== "off";
   const [target, setTarget] = useState<{ scope: DiffScope; checkpoint?: string; n: number }>({ scope: "uncommitted", n: 0 });
   const [rev, setRev] = useState(0);
   const [data, setData] = useState<Data | null>(null);
@@ -236,7 +240,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     if (typeof r?.message !== "string") return;
     const text = r.message;
     setMessage((cur) => (cur.trim() ? cur : text));
-    if (r.source === "summary") setNote({ text: "No agent answered, so this sums up the changed files." });
+    if (r.source === "summary") setNote({ text: `${NO_ANSWER[msgAgent]}, so this sums up the changed files.` });
   };
 
   /** runs an action's steps in order, stopping at the first that fails */
@@ -245,7 +249,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
     if (!repo || !gitState || running.current) return;
     if (a.href) return void window.open(a.href, "_blank", "noopener,noreferrer");
     if (a.steps.includes("commit") && !message.trim()) return setError("Write a commit message first.");
-    if (needsDefaultBranchConfirm(gitState, a)) {
+    if (needsDefaultBranchConfirm(gitState, a, confirmPush)) {
       const ok = await confirmAsk({
         title: `Push to ${repo.branch}?`,
         body: `${repo.branch} is the default branch, so this goes to ${repo.upstream ?? "origin"} without a pull request.`,
@@ -425,9 +429,9 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                     rows={Math.min(8, message.split("\n").length)}
                     placeholder="Commit message"
                     aria-label="Commit message"
-                    className={`block w-full resize-none bg-field px-3.5 py-[7px] text-[16px] leading-[22px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:py-1.5 sm:text-[13px] sm:leading-5 ${message.includes("\n") ? "rounded-[14px]" : "rounded-[18px]"} ${message ? "" : "pr-28"}`}
+                    className={`block w-full resize-none bg-field px-3.5 py-[7px] text-[16px] leading-[22px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:py-1.5 sm:text-[13px] sm:leading-5 ${message.includes("\n") ? "rounded-[14px]" : "rounded-[18px]"} ${message || !canGenerate ? "" : "pr-28"}`}
                   />
-                  {!message && (
+                  {!message && canGenerate && (
                     <button
                       type="button"
                       onClick={() => void generate()}
@@ -498,7 +502,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                                   <span className="min-w-0 flex-1 truncate text-ink-2" title={f.path}>
                                     {f.path}
                                   </span>
-                                  <span className="shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span></>}</span>
+                                  <span className="diff-tone shrink-0 tabular-nums">{f.binary ? <span className="text-ink-3">binary</span> : <><span className="text-green">+{f.added}</span> <span className="text-red">-{f.removed}</span></>}</span>
                                 </li>
                               ))}
                             </ul>

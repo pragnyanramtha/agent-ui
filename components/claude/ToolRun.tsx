@@ -286,7 +286,7 @@ function PatchView({ patch }: { patch: string }) {
   return (
     <>
       {files.map((f, i) => (
-        <div key={i} className="w-full overflow-hidden rounded-card bg-surface shadow-card">
+        <div key={i} className="diff-tone w-full overflow-hidden rounded-card bg-surface shadow-card">
           <div className="flex h-9 min-w-0 items-center gap-2 border-b border-line px-3 font-mono text-[12px]">
             <PathLabel path={f.moveTo ?? f.path} className="min-w-0" />
             {f.moveTo && <span className="shrink-0 font-sans text-[11.5px] text-ink-3">moved</span>}

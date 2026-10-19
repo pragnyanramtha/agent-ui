@@ -1,0 +1,15 @@
+/* Diff colors (Settings > Git > Colors). Diff surfaces and +/− counts carry .diff-tone; the blue and orange choice
+ * remaps the add and remove colors inside them, so every text-green, bg-red-tint and var(--green) there follows. */
+:root[data-diff-colors="blue-orange"] .diff-tone {
+  --green: oklch(0.56 0.15 252);
+  --green-tint: oklch(0.95 0.028 252);
+  --add-ink: oklch(0.5 0.15 252);
+  --red: var(--orange);
+  --red-tint: var(--orange-tint);
+  --red-ink: var(--orange-ink);
+}
+:root.dark[data-diff-colors="blue-orange"] .diff-tone {
+  --green: oklch(0.72 0.13 250);
+  --green-tint: oklch(0.72 0.13 250 / 0.16);
+  --add-ink: oklch(0.74 0.12 250);
+}

@@ -1,6 +1,7 @@
 import { compact, lineDiff } from "@/lib/client/diff";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { PathLabel } from "./PathLabel";
+import "./diff.css";
 
 const HATCH = "repeating-linear-gradient(45deg, var(--red) 0, var(--red) 1.5px, transparent 1.5px, transparent 3px)";
 
@@ -14,7 +15,7 @@ export function DiffBlock({ before, after, file, plain = isPlainText(file) }: { 
   const cols = { gridTemplateColumns: `calc(${String(widest).length}ch + 18px) minmax(0,1fr)` };
 
   return (
-    <div className="w-full overflow-hidden rounded-card bg-surface shadow-card">
+    <div className="diff-tone w-full overflow-hidden rounded-card bg-surface shadow-card">
       {file && (
         <div className="flex h-9 items-center gap-2 border-b border-line px-3 font-mono text-[12px]">
           <PathLabel path={file} />

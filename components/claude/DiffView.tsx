@@ -4,9 +4,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavArrowDown, Refresh } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/lib/client/diff";
-import { DEFAULT_DIFF_PREFS, readDiffPrefs, writeDiffPrefs, type DiffPrefs } from "@/lib/client/diff-prefs";
 import { highlight, isPlainText } from "@/lib/client/highlight";
+import { useSetting } from "@/lib/client/settings";
 import { PathLabel } from "./PathLabel";
+import "./diff.css";
 
 /** "turn": the session's newest checkpoint against now, so what the last message changed */
 export type DiffScope = "uncommitted" | "checkpoint" | "branch" | "turn";
@@ -70,7 +71,9 @@ export function DiffView({
 }) {
   const [scope, setScope] = useState<DiffScope>(initialScope);
   const [cp, setCp] = useState<string | undefined>(initialCheckpoint ?? (initialScope === "checkpoint" ? checkpoints[0]?.id : undefined));
-  const [prefs, setPrefs] = useState<DiffPrefs | null>(null);
+  const [layout, setLayout] = useSetting("diffLayout");
+  const [ws, setWs] = useSetting("diffIgnoreWhitespace");
+  const [wrap, setWrap] = useSetting("diffWrap");
   const [data, setData] = useState<GitDiff | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -82,23 +85,9 @@ export function DiffView({
   /* the last response as text: a poll that brings the same diff keeps the old object, so nothing re-highlights */
   const lastText = useRef("");
 
-  useEffect(() => {
-    try {
-      setPrefs(readDiffPrefs(localStorage));
-    } catch {
-      setPrefs(DEFAULT_DIFF_PREFS);
-    }
-  }, []);
-  const ready = prefs !== null;
-  const ws = prefs?.ws ?? false;
-  const savePrefs = (p: Partial<DiffPrefs>) =>
-    setPrefs((cur) => {
-      const next = { ...DEFAULT_DIFF_PREFS, ...cur, ...p };
-      try {
-        writeDiffPrefs(localStorage, next);
-      } catch {}
-      return next;
-    });
+  /* stored settings only exist after hydration; waiting a tick keeps the first request from ignoring them */
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
 
   const latest = checkpoints[0];
   const checkpointId = scope === "checkpoint" ? cp : scope === "turn" ? latest?.id : undefined;
@@ -177,8 +166,7 @@ export function DiffView({
 
   const files = data?.files ?? [];
   const isOpen = (f: PatchFile) => open[f.path] ?? lineCount(f) <= BIG_FILE_LINES;
-  const split = Boolean(prefs?.split) && wide;
-  const wrap = prefs?.wrap ?? false;
+  const split = layout === "split" && wide;
 
   const jump = (path: string) => {
     setOpen((o) => ({ ...o, [path]: true }));
@@ -235,7 +223,7 @@ export function DiffView({
         <button
           type="button"
           aria-pressed={ws}
-          onClick={() => savePrefs({ ws: !ws })}
+          onClick={() => setWs(!ws)}
           className={`h-8 shrink-0 rounded-full px-3 text-[12.5px] font-medium shadow-hairline transition-colors duration-150 sm:h-7 ${ws ? "bg-ink text-surface" : "text-ink-2 hover:bg-hover hover:text-ink"}`}
         >
           Hide whitespace
@@ -245,7 +233,7 @@ export function DiffView({
           <button
             type="button"
             aria-pressed={wrap}
-            onClick={() => savePrefs({ wrap: !wrap })}
+            onClick={() => setWrap(!wrap)}
             title="Wrap long lines instead of scrolling sideways"
             className={`h-8 shrink-0 rounded-full px-3 text-[12.5px] font-medium shadow-hairline transition-colors duration-150 sm:h-7 ${wrap ? "bg-ink text-surface" : "text-ink-2 hover:bg-hover hover:text-ink"}`}
           >
@@ -255,8 +243,8 @@ export function DiffView({
         {wide && (
           <Segmented
             label="Layout"
-            value={prefs?.split ? "split" : "unified"}
-            onChange={(v) => savePrefs({ split: v === "split" })}
+            value={layout}
+            onChange={setLayout}
             options={[
               { value: "unified", label: "Unified" },
               { value: "split", label: "Split" },
@@ -286,7 +274,7 @@ export function DiffView({
             <span className="tabular-nums">
               {files.length} {files.length === 1 ? "file" : "files"}
             </span>
-            <span className="font-mono text-[12px] tabular-nums">
+            <span className="diff-tone font-mono text-[12px] tabular-nums">
               <span className="text-green">+{data.additions}</span> <span className="text-red">-{data.deletions}</span>
             </span>
             {scope === "turn" && latest && (
@@ -304,7 +292,7 @@ export function DiffView({
           </div>
           {data.truncated && <p className="rounded-[10px] bg-inset px-3 py-2 text-[12.5px] text-ink-2 shadow-hairline">Some files are too large to show in full.</p>}
 
-          <ul aria-label="Changed files" className="max-h-48 overflow-y-auto rounded-[10px] bg-inset py-1 font-mono text-[12px] shadow-hairline">
+          <ul aria-label="Changed files" className="diff-tone max-h-48 overflow-y-auto rounded-[10px] bg-inset py-1 font-mono text-[12px] shadow-hairline">
             {files.map((f) => (
               <li key={f.path}>
                 <button type="button" onClick={() => jump(f.path)} className="flex w-full min-w-0 items-center gap-2 px-2.5 py-1 text-left hover:bg-hover">
@@ -383,7 +371,7 @@ const FileDiff = memo(function FileDiff({
               : null;
 
   return (
-    <section ref={(el) => refCb(f.path, el)} aria-label={f.path} className="scroll-mt-2 rounded-card bg-surface shadow-card">
+    <section ref={(el) => refCb(f.path, el)} aria-label={f.path} className="diff-tone scroll-mt-2 rounded-card bg-surface shadow-card">
       <button
         type="button"
         onClick={() => onToggle(f)}

@@ -139,6 +139,27 @@ describe("stored values from earlier versions", () => {
     expect(decodeStored("newSessionWorktree", "1")).toBe(true);
   });
 
+  it("reads the diff viewer's own keys, so layout, whitespace and wrap choices carry over", () => {
+    expect(storageKey("diffLayout")).toBe("agent-u:diff-layout");
+    expect(decodeStored("diffLayout", "split")).toBe("split");
+    expect(decodeStored("diffLayout", "unified")).toBe("unified");
+    expect(decodeStored("diffLayout", "sideways")).toBe("unified");
+    expect(decodeStored("diffLayout", null)).toBe("unified");
+
+    expect(storageKey("diffIgnoreWhitespace")).toBe("agent-u:diff-whitespace");
+    expect(decodeStored("diffIgnoreWhitespace", "hide")).toBe(true);
+    expect(decodeStored("diffIgnoreWhitespace", "show")).toBe(false);
+
+    expect(storageKey("diffWrap")).toBe("agent-u:diff-wrap");
+    expect(decodeStored("diffWrap", "on")).toBe(true);
+    expect(decodeStored("diffWrap", "off")).toBe(false);
+    expect(decodeStored("diffWrap", null)).toBe(false);
+
+    expect(encodeStored("diffLayout", "split")).toBe("split");
+    expect(encodeStored("diffIgnoreWhitespace", true)).toBe("hide");
+    expect(encodeStored("diffWrap", false)).toBe("off");
+  });
+
   it("writes those keys back in their old format", () => {
     expect(encodeStored("sendWithEnter", true)).toBe("1");
     expect(encodeStored("terminalDocked", false)).toBe("sheet");

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pickValid, validatePatch, type Settings } from "@/lib/settings-schema";
+import { DEFAULTS, pickValid, validatePatch, type SettingKey, type Settings } from "@/lib/settings-schema";
 import { CONFIG_DIR } from "./profiles";
 
 /* Synced settings (lib/settings-schema.ts, scope "synced"): one small JSON file next to the profiles config, so every
@@ -29,12 +29,38 @@ export function readSynced(): SyncedFile {
   }
 }
 
+/* server code that reads a setting on every request (git status polls) shares one parsed copy until the file changes */
+let cached: { mtimeMs: number; size: number; file: SyncedFile } | null = null;
+
+function readCached(): SyncedFile {
+  let st: fs.Stats;
+  try {
+    st = fs.statSync(SETTINGS_PATH);
+  } catch {
+    cached = null;
+    return { settings: {}, updatedAt: 0 };
+  }
+  if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) return cached.file;
+  const file = readSynced();
+  cached = { mtimeMs: st.mtimeMs, size: st.size, file };
+  return file;
+}
+
+/** A synced setting as the server sees it: the stored value, or undefined when it was never set. */
+export function storedSetting<K extends SettingKey>(key: K): Settings[K] | undefined {
+  return readCached().settings[key] as Settings[K] | undefined;
+}
+
+/** A synced setting's value, or its registry default. */
+export const syncedSetting = <K extends SettingKey>(key: K): Settings[K] => storedSetting(key) ?? DEFAULTS[key];
+
 function write(data: SyncedFile) {
   fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true, mode: 0o700 });
   const tmp = `${SETTINGS_PATH}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
   try {
     fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tmp, SETTINGS_PATH);
+    cached = null;
   } catch (err) {
     fs.rmSync(tmp, { force: true });
     throw err;
