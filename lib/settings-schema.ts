@@ -491,25 +491,28 @@ export function parseValue(def: SettingDef, value: unknown): Parsed<unknown> {
   }
 }
 
-export type PatchResult = { ok: true; values: Partial<Settings>; reset: SettingKey[] } | { ok: false; errors: string[] };
+export type PatchResult = { ok: true; values: Partial<Settings>; reset: SettingKey[] } | { ok: false; errors: string[]; rejected: string[] };
 
 /**
  * Validates a partial update. Unknown keys and wrong values are errors; `null` resets a key when `allowNull`.
  * With `scope`, settings kept elsewhere are refused (the server only stores synced ones).
  */
 export function validatePatch(patch: unknown, opts: { scope?: Scope; allowNull?: boolean } = {}): PatchResult {
-  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { ok: false, errors: ["Expected an object of settings."] };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) return { ok: false, errors: ["Expected an object of settings."], rejected: [] };
   const values: Record<string, unknown> = {};
   const reset: SettingKey[] = [];
   const errors: string[] = [];
+  const rejected: string[] = [];
   for (const [key, value] of Object.entries(patch)) {
     if (!isSettingKey(key)) {
       errors.push(`Unknown setting "${key}".`);
+      rejected.push(key);
       continue;
     }
     const def = SETTINGS[key] as SettingDef;
     if (opts.scope && def.scope !== opts.scope) {
       errors.push(`"${key}" is kept on each device, not on the server.`);
+      rejected.push(key);
       continue;
     }
     if (value === null && opts.allowNull) {
@@ -518,9 +521,12 @@ export function validatePatch(patch: unknown, opts: { scope?: Scope; allowNull?:
     }
     const parsed = parseValue(def, value);
     if (parsed.ok) values[key] = parsed.value;
-    else errors.push(`"${key}" ${parsed.error}.`);
+    else {
+      errors.push(`"${key}" ${parsed.error}.`);
+      rejected.push(key);
+    }
   }
-  return errors.length ? { ok: false, errors } : { ok: true, values: values as Partial<Settings>, reset };
+  return errors.length ? { ok: false, errors, rejected } : { ok: true, values: values as Partial<Settings>, reset };
 }
 
 /** Keeps the valid entries of a stored or imported object and names the rest. */
