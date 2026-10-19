@@ -704,7 +704,7 @@ export function SessionScreen({
       </div>
     </section>
     {panel && (
-      <PanelSlot>
+      <PanelSlot resetKey={panel} onClose={() => setPanel(null)}>
         {usageOpen && <UsagePanel view={view} onClose={() => setPanel(null)} />}
         {gitOpen && <GitPanel session={id} busy={Boolean(busy)} onClose={() => setPanel(null)} />}
         {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setPanel(null)} />}

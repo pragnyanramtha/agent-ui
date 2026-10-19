@@ -3,6 +3,7 @@
 import { parseHandoff } from "@/lib/handoff-text";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, MediaImage } from "iconoir-react";
+import { Boundary } from "./Boundary";
 import { splitAttachments } from "@/lib/attachments";
 import { SentFiles } from "./Attachments";
 import LoadingState from "@/components/primitives/LoadingState";
@@ -50,7 +51,7 @@ function toBlocks(entries: Entry[]): Block[] {
   const blocks: Block[] = [];
   for (const e of entries) {
     /* models that keep reasoning private still log an empty thinking block; it carries nothing to show */
-    if (e.kind === "thinking" && !e.text.trim()) continue;
+    if (e.kind === "thinking" && !String(e.text ?? "").trim()) continue;
     if (e.kind === "tool" || e.kind === "thinking") {
       const last = blocks[blocks.length - 1];
       if (last?.type === "run") last.items.push(e);
@@ -375,47 +376,63 @@ export function Thread({
                       <span className="h-px flex-1 bg-line" />
                     </div>
                   )}
-                  <UserBubble text={b.entry.text} images={b.entry.images} ts={b.entry.ts} />
+                  <Boundary resetKey={b.entry} entry={b.entry}>
+                    <UserBubble text={b.entry.text} images={b.entry.images} ts={b.entry.ts} />
+                  </Boundary>
                 </div>
               );
             }
             if (b.type === "text")
               return (
                 <div key={b.key} className={ACTIONS_HOST} style={style}>
-                  <Markdown text={b.entry.text} />
-                  <MessageActions text={b.entry.text} />
+                  <Boundary resetKey={b.entry} entry={b.entry}>
+                    <Markdown text={b.entry.text} />
+                    <MessageActions text={b.entry.text} />
+                  </Boundary>
                 </div>
               );
             if (b.type === "notice")
               return (
                 <div key={b.key} style={style}>
-                  <Notice entry={b.entry} />
+                  <Boundary resetKey={b.entry} entry={b.entry}>
+                    <Notice entry={b.entry} />
+                  </Boundary>
                 </div>
               );
             const run = runs.get(b.key);
             const isLast = i === blocks.length - 1;
             return (
               <div key={b.key} style={style}>
-                <ToolRun
-                  items={run?.items ?? b.items}
-                  results={run?.results ?? EMPTY_RESULTS}
-                  active={busy && isLast && liveText.length === 0 && view.pending.length === 0}
-                  thinking={isLast ? liveThinking : undefined}
-                />
+                <Boundary resetKey={run ?? b.items} entry={run ?? { items: b.items }}>
+                  <ToolRun
+                    items={run?.items ?? b.items}
+                    results={run?.results ?? EMPTY_RESULTS}
+                    active={busy && isLast && liveText.length === 0 && view.pending.length === 0}
+                    thinking={isLast ? liveThinking : undefined}
+                  />
+                </Boundary>
               </div>
             );
           })}
 
           {view.pending.map((p) => (
             <div key={p.localId} className="mt-4">
-              {pendingSlot ? pendingSlot(p) : <UserBubble text={p.text} pending />}
+              <Boundary resetKey={p} entry={p}>
+                {pendingSlot ? pendingSlot(p) : <UserBubble text={p.text} pending />}
+              </Boundary>
             </div>
           ))}
 
-          {thinkingAlone && <ToolRun key="live-thinking" items={NO_ITEMS} results={EMPTY_RESULTS} active thinking={liveThinking} />}
+          {thinkingAlone && (
+            <Boundary key="live-thinking" resetKey={liveThinking}>
+              <ToolRun items={NO_ITEMS} results={EMPTY_RESULTS} active thinking={liveThinking} />
+            </Boundary>
+          )}
 
           {liveText.map((s) => (
-            <LiveText key={`${s.msgId}:${s.index}`} text={s.text} />
+            <Boundary key={`${s.msgId}:${s.index}`} resetKey={s.text} entry={s}>
+              <LiveText text={s.text} />
+            </Boundary>
           ))}
 
           {showWorking && (
