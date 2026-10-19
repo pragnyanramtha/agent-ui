@@ -116,8 +116,9 @@ export function App() {
   const [filesStart, setFilesStart] = useState<{ path: string | null; n: number }>({ path: null, n: 0 });
   useEffect(() => {
     const on = (e: Event) => {
-      const path = (e as CustomEvent<{ path?: string }>).detail?.path ?? null;
-      setFilesStart((f) => ({ path, n: f.n + 1 }));
+      const detail = (e as CustomEvent<{ path?: string; hideTerminal?: boolean }>).detail;
+      setFilesStart((f) => ({ path: detail?.path ?? null, n: f.n + 1 }));
+      if (detail?.hideTerminal) setTermHidden(true);
       open(FILES_TAB);
     };
     window.addEventListener(OPEN_FILES_EVENT, on);

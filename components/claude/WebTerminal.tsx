@@ -9,6 +9,8 @@ import { fenceBlock, sendToComposer } from "@/lib/client/composer-insert";
 import { isDarkColor, oscColor, readTerminalTheme } from "@/lib/client/terminal-theme";
 import { TerminalMenu, type TerminalAction } from "./TerminalMenu";
 import { TerminalFind } from "./TerminalFind";
+import { OPEN_FILES_EVENT } from "./FilesScreen";
+import { findPathLinks, resolveTerminalPath } from "@/lib/client/terminal-links";
 
 /** What to open: a kept terminal (`term`), a tmux session, a CLI's multiplexer (`pid`/`session`), or a new shell (`cwd`). */
 export type TerminalTarget = { term?: string; tmux?: string; session?: string; pid?: number; cwd?: string; label: string };
@@ -47,6 +49,48 @@ const DOCK_DEFAULT = 320;
 const NERD = '"Symbols Nerd Font Mono"';
 
 const LONG_PRESS_MS = 500;
+
+/* a buffer line's text with each character's cell column, so wide characters don't shift link ranges */
+function lineCells(line: import("@xterm/xterm").IBufferLine) {
+  let text = "";
+  const cols: number[] = [];
+  const widths: number[] = [];
+  for (let x = 0; x < line.length; x++) {
+    const cell = line.getCell(x);
+    if (!cell) break;
+    const w = cell.getWidth();
+    if (!w) continue;
+    const ch = cell.getChars() || " ";
+    for (let i = 0; i < ch.length; i++) {
+      cols.push(x);
+      widths.push(w);
+    }
+    text += ch;
+  }
+  return { text, cols, widths };
+}
+
+/* whether a path is a file on the server, remembered per terminal */
+function fileChecker() {
+  const known = new Map<string, Promise<boolean>>();
+  let home: Promise<string | null> | null = null;
+  const get = (p: string) =>
+    fetch(`/api/files?path=${encodeURIComponent(p)}`, { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ kind?: string; home?: string }>) : null))
+      .catch(() => null);
+  return {
+    home: () => (home ??= get("/").then((d) => d?.home ?? null)),
+    isFile: (p: string) => {
+      let v = known.get(p);
+      if (!v) {
+        if (known.size > 500) known.clear();
+        v = get(p).then((d) => d?.kind === "file");
+        known.set(p, v);
+      }
+      return v;
+    },
+  };
+}
 
 async function copyText(text: string) {
   try {
@@ -116,6 +160,10 @@ export function WebTerminal({
   /* after a shell exits, "New shell" opens a fresh one in the same folder */
   const [fresh, setFresh] = useState(false);
   const tgt: TerminalTarget = fresh ? { cwd: target.cwd, label: target.label } : target;
+  /* where relative paths in the output start from: the folder the terminal opened in */
+  const cwdRef = useRef<string | null>(target.cwd ?? null);
+  const dockedRef = useRef(docked);
+  dockedRef.current = docked;
 
   useEffect(() => {
     let disposed = false;
@@ -162,6 +210,36 @@ export function WebTerminal({
       term.loadAddon(new Unicode11Addon());
       term.unicode.activeVersion = "11";
       term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, "_blank", "noopener,noreferrer")));
+      const files = fileChecker();
+      const pathLinks = term.registerLinkProvider({
+        provideLinks(y, callback) {
+          const line = term.buffer.active.getLine(y - 1);
+          const cells = line ? lineCells(line) : null;
+          const matches = cells ? findPathLinks(cells.text).map((m) => ({ ...m, x0: cells.cols[m.start] + 1, x1: cells.cols[m.end - 1] + cells.widths[m.end - 1] })) : [];
+          if (!matches.length) return callback(undefined);
+          void (async () => {
+            const home = matches.some((m) => m.path.startsWith("~/")) ? await files.home() : null;
+            const links = await Promise.all(
+              matches.map(async (m) => {
+                const abs = resolveTerminalPath(m.path, cwdRef.current, home);
+                if (!abs || !(await files.isFile(abs))) return null;
+                return {
+                  range: { start: { x: m.x0, y }, end: { x: m.x1, y } },
+                  text: m.text,
+                  decorations: { underline: true, pointerCursor: true },
+                  activate: () => {
+                    /* a sheet over the page would hide Files; Ctrl+` brings it back on desktop */
+                    const hideTerminal = !dockedRef.current && window.matchMedia("(min-width: 1024px)").matches;
+                    window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: abs, hideTerminal } }));
+                  },
+                };
+              }),
+            );
+            const found = links.filter((l) => l !== null);
+            callback(found.length ? found : undefined);
+          })();
+        },
+      });
       const search = new SearchAddon({ highlightLimit: 2000 });
       term.loadAddon(search);
       term.attachCustomKeyEventHandler((e) => {
@@ -227,7 +305,7 @@ export function WebTerminal({
         };
         sock.onmessage = (e) => {
           if (typeof e.data === "string") {
-            let msg: { type: string; id?: string; label?: string; kind?: string; persistent?: boolean; code?: number; offset?: number };
+            let msg: { type: string; id?: string; label?: string; kind?: string; cwd?: string; persistent?: boolean; code?: number; offset?: number };
             try {
               msg = JSON.parse(e.data);
             } catch {
@@ -235,6 +313,7 @@ export function WebTerminal({
             }
             if (msg.type === "hello") {
               if (msg.label) setLabel(msg.label);
+              if (msg.cwd) cwdRef.current = msg.cwd;
               setKind(msg.kind ?? null);
               /* an attach starts over each time; the multiplexer redraws everything */
               if (msg.persistent && msg.id) {
@@ -345,6 +424,7 @@ export function WebTerminal({
         document.removeEventListener("visibilitychange", wake);
         ro.disconnect();
         themeWatch.disconnect();
+        pathLinks.dispose();
         onData.dispose();
         onResize.dispose();
         osc.forEach((h) => h.dispose());
