@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatLines, Check, EditPencil, Folder, HalfMoon, KeyCommand, LogOut, MailIn, Palette, Search, Settings, SidebarCollapse, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
+import { Archive, ArrowRight, Bell, Brain, ChatLines, Check, Download, EditPencil, Folder, GitBranch, GitCompare, HalfMoon, KeyCommand, LogOut, MailIn, Palette, Pin, PinSlash, Search, Settings, ShieldCheck, SidebarCollapse, Sparks, StatsReport, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
@@ -14,6 +14,9 @@ import { comboFor, isCommand, isMac, terminalOwns, useBindings } from "@/lib/cli
 import type { CommandId } from "@/lib/keybindings";
 import { matchSession, queryWords, score } from "@/lib/session-match";
 import { PALETTES, settingDef, type EnumSetting } from "@/lib/settings-schema";
+import { OPEN_PALETTE_PICKER_EVENT, paletteActions, palettePicker, usePaletteVersion, type PaletteIcon } from "@/lib/client/palette-actions";
+import { actionRank, filterActions, parsePaletteQuery, settingRows } from "@/lib/palette-search";
+import { searchSettingsFor } from "@/lib/client/settings-link";
 
 /** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
 export const OPEN_PALETTE_EVENT = "open-palette";
@@ -31,7 +34,8 @@ const isLive = (s: SessionSummary) => Boolean(s.terminal) || (s.web !== null && 
 
 type Item = {
   id: string;
-  group: "Sessions" | "Messages" | "Actions" | "Themes" | "Appearance";
+  /** "Sessions", "This session", "Actions", "Settings", "Messages", or a picker's heading */
+  group: string;
   label: string;
   hint?: ReactNode;
   /** command from lib/keybindings.ts whose current shortcut shows on the right */
@@ -45,8 +49,28 @@ type Item = {
   current?: boolean;
 };
 
-/** A quick picker inside the palette: arrow keys preview each choice, Enter keeps it, Esc puts the old one back. */
-type Picker = "palette" | "theme";
+/** A quick picker inside the palette: arrow keys preview each choice, Enter keeps it, Esc puts the old one back.
+ * `session:<id>` is one the open session registered (model, approvals, effort); those have no preview. */
+type Picker = "palette" | "theme" | `session:${string}`;
+
+const ic = { width: 15, height: 15, strokeWidth: 1.8 } as const;
+const ACTION_ICONS: Record<PaletteIcon, ReactNode> = {
+  git: <GitBranch {...ic} />,
+  changes: <GitCompare {...ic} />,
+  usage: <StatsReport {...ic} />,
+  rename: <EditPencil {...ic} />,
+  pin: <Pin {...ic} />,
+  unpin: <PinSlash {...ic} />,
+  archive: <Archive {...ic} />,
+  download: <Download {...ic} />,
+  handoff: <ArrowRight {...ic} />,
+  stop: <Xmark {...ic} />,
+  model: <Sparks {...ic} />,
+  mode: <ShieldCheck {...ic} />,
+  effort: <Brain {...ic} />,
+  needsYou: <Bell {...ic} />,
+};
+const PICKER_ICONS: Record<string, ReactNode> = { model: ACTION_ICONS.model, mode: ACTION_ICONS.mode, effort: ACTION_ICONS.effort };
 
 /** The palette setting the theme picker changes: the light-mode one while light, if it's set apart. */
 function paletteKey(): "palette" | "lightPalette" {
@@ -96,8 +120,11 @@ export function CommandPalette({
   const [picker, setPicker] = useState<Picker | null>(null);
   /* true while a picker shows a choice that hasn't been kept */
   const previewing = useRef(false);
-  const messages = useMessageSearch(query, open && !picker);
+  const parsed = useMemo(() => parsePaletteQuery(query), [query]);
+  const messages = useMessageSearch(query, open && !picker && !parsed.actionsOnly);
   const bindings = useBindings();
+  /* the open session's rows and pickers, read again when a screen registers or leaves */
+  const registered = usePaletteVersion();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -108,18 +135,20 @@ export function CommandPalette({
   const listId = `${uid}-list`;
   const optId = (i: number) => `${uid}-opt-${i}`;
 
-  const show = useCallback(() => {
-    setOpen((was) => {
-      if (!was) {
-        openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        navigated.current = false;
-        setQuery("");
-        setActive(0);
-        setPicker(null);
-        setDark(document.documentElement.classList.contains("dark"));
-      }
-      return true;
-    });
+  /** Opens the palette, on `start` if given (switching to it when the palette is already open). */
+  const show = useCallback((start: Picker | null = null) => {
+    if (!panelRef.current) {
+      openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      navigated.current = false;
+      setQuery("");
+      setActive(0);
+      setPicker(start);
+      setDark(document.documentElement.classList.contains("dark"));
+    } else if (start) {
+      setPicker(start);
+      setQuery("");
+    }
+    setOpen(true);
   }, []);
 
   const endPreview = useCallback(() => {
@@ -145,11 +174,19 @@ export function CommandPalette({
       if (panelRef.current) setOpen(false);
       else show();
     };
+    const onOpen = () => show();
+    /* a shortcut such as Switch model opens the palette on that picker */
+    const onPicker = (e: Event) => {
+      const id = (e as CustomEvent<{ picker?: string }>).detail?.picker;
+      if (id) show(`session:${id}`);
+    };
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener(OPEN_PALETTE_EVENT, show);
+    window.addEventListener(OPEN_PALETTE_EVENT, onOpen);
+    window.addEventListener(OPEN_PALETTE_PICKER_EVENT, onPicker);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener(OPEN_PALETTE_EVENT, show);
+      window.removeEventListener(OPEN_PALETTE_EVENT, onOpen);
+      window.removeEventListener(OPEN_PALETTE_PICKER_EVENT, onPicker);
     };
   }, [show]);
 
@@ -178,7 +215,7 @@ export function CommandPalette({
     if (!open) endPreview();
   }, [open, endPreview]);
   useEffect(() => () => endPreview(), [endPreview]);
-  const sessions = useFoundSessions(listed, query, open && !picker);
+  const sessions = useFoundSessions(listed, query, open && !picker && !parsed.actionsOnly);
 
   const toggleTheme = useCallback(() => {
     const next = !document.documentElement.classList.contains("dark");
@@ -195,7 +232,18 @@ export function CommandPalette({
       for (const [k, v] of Object.entries(patch)) setSetting(k as keyof SettingValues, v as never);
     };
     let rows: Item[];
-    if (picker === "palette") {
+    if (picker.startsWith("session:")) {
+      const p = palettePicker(picker.slice("session:".length));
+      rows = (p?.choices ?? []).map((c) => ({
+        id: `c:${c.value || "default"}`,
+        group: p!.title,
+        label: c.label,
+        hint: c.hint,
+        icon: PICKER_ICONS[p!.id] ?? <Check {...ic} />,
+        current: c.current,
+        run: () => p!.pick(c.value),
+      }));
+    } else if (picker === "palette") {
       const key = paletteKey();
       const options = (settingDef("palette") as EnumSetting).options.filter((o) => o.value !== "custom" || s.customTheme);
       rows = options.map((o) => ({
@@ -222,14 +270,17 @@ export function CommandPalette({
       }));
     }
     return words.length ? rows.filter((r) => words.every((w) => score(r.label, w) > 0)) : rows;
-  }, [picker, open, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picker, open, query, registered]);
 
   const items = useMemo<Item[]>(() => {
     if (pickerItems) return pickerItems;
-    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const { actionsOnly, words } = parsed;
     const all = sessions ?? [];
     let picked: SessionSummary[];
-    if (words.length) {
+    if (actionsOnly) {
+      picked = [];
+    } else if (words.length) {
       picked = all
         .map((s) => ({ s, rank: matchSession(s, words) }))
         .filter((x) => x.rank > 0)
@@ -411,11 +462,43 @@ export function CommandPalette({
         },
       },
     ];
-    const actionItems = words.length ? actions.filter((a) => words.every((w) => score(`${a.label} ${a.keywords}`, w) >= 60)) : actions;
+    const own: (Item & { keywords: string })[] = paletteActions().map((a) => ({
+      id: `x:${a.id}`,
+      group: "This session",
+      label: a.label,
+      hint: a.hint,
+      combo: a.command,
+      keywords: a.keywords ?? "",
+      icon: ACTION_ICONS[a.icon],
+      keep: Boolean(a.picker),
+      run: a.picker
+        ? () => openPicker(`session:${a.picker}`)
+        : () => {
+            if (a.takesFocus) navigated.current = true;
+            a.run();
+          },
+    }));
     /* "fil" means the Files action more than a session that mentions files */
     const typed = words.join(" ");
-    const prefix = (a: Item) => (!typed ? 1 : a.label.toLowerCase().startsWith(typed) ? 0 : score(a.label, typed) >= 80 ? 0.5 : 1);
-    const ranked = [...actionItems].sort((a, b) => prefix(a) - prefix(b));
+    const ownRanked = filterActions(own, words);
+    const ranked = filterActions(actions, words);
+    const best = (list: Item[]) => (list.length ? actionRank(list[0], typed) : 1);
+    const actionRows = best(ranked) < best(ownRanked) ? [...ranked, ...ownRanked] : [...ownRanked, ...ranked];
+    const settingItems: Item[] =
+      actionsOnly || !onView
+        ? []
+        : settingRows(words).map((r) => ({
+            id: r.id,
+            group: "Settings",
+            label: r.label,
+            hint: <span className="truncate">{r.sectionLabel}</span>,
+            icon: <Settings {...ic} />,
+            run: () => {
+              navigated.current = true;
+              searchSettingsFor(r.label);
+              onView("@settings");
+            },
+          }));
     const messageItems: Item[] = messages.hits.map((h) => ({
       id: `m:${h.key}`,
       group: "Messages",
@@ -427,9 +510,10 @@ export function CommandPalette({
         onOpen(h.key);
       },
     }));
-    const head = ranked.length && prefix(ranked[0]) < 1 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
-    return [...head, ...messageItems];
-  }, [pickerItems, query, sessions, activeId, dark, messages.hits, onOpen, onNew, onView, toggleTheme, openPicker]);
+    const head = Math.min(best(ranked), best(ownRanked)) < 1 ? [...actionRows, ...sessionItems] : [...sessionItems, ...actionRows];
+    return [...head, ...settingItems, ...messageItems];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerItems, parsed, sessions, activeId, dark, messages.hits, onOpen, onNew, onView, toggleTheme, openPicker, open, registered]);
 
   /* a new query starts back at the top; a picker starts on the choice in use */
   useEffect(() => {
@@ -528,7 +612,16 @@ export function CommandPalette({
   const groups = [...new Set(items.map((it) => it.group))]
     .map((g) => ({ g, rows: items.map((it, i) => ({ it, i })).filter((x) => x.it.group === g) }))
     .filter((x) => x.rows.length);
-  const loading = sessions === null;
+  const loading = sessions === null && !parsed.actionsOnly;
+  const themed = picker === "palette" || picker === "theme";
+  const placeholder =
+    picker === "palette"
+      ? "Choose a theme…"
+      : picker === "theme"
+        ? "Choose an appearance…"
+        : picker
+          ? (palettePicker(picker.slice("session:".length))?.placeholder ?? "Choose…")
+          : "Search sessions, messages and actions…";
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center sm:px-4 sm:pt-[12vh]" onKeyDown={onKeyDown}>
@@ -560,8 +653,8 @@ export function CommandPalette({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={current >= 0 ? optId(current) : undefined}
-            aria-label={picker === "palette" ? "Choose a theme" : picker === "theme" ? "Choose an appearance" : "Search sessions, messages and actions"}
-            placeholder={picker === "palette" ? "Choose a theme…" : picker === "theme" ? "Choose an appearance…" : "Search sessions, messages and actions…"}
+            aria-label={placeholder.replace(/…$/, "")}
+            placeholder={placeholder}
             enterKeyHint="go"
             autoComplete="off"
             autoCorrect="off"
@@ -610,7 +703,8 @@ export function CommandPalette({
                         Enter
                       </kbd>
                     ) : (
-                      it.combo && (
+                      it.combo &&
+                      comboFor(it.combo, isMac(), { bindings }) && (
                         <kbd className="kbd hidden shrink-0 px-1.5 pointer-fine:inline-flex" aria-hidden>
                           {comboFor(it.combo, isMac(), { bindings })}
                         </kbd>
@@ -640,14 +734,19 @@ export function CommandPalette({
 
         <div className="hidden h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-xs text-ink-3 pointer-fine:flex" aria-hidden>
           <span>
-            <Key>↑</Key> <Key>↓</Key> {picker ? "to preview" : "to move"}
+            <Key>↑</Key> <Key>↓</Key> {themed ? "to preview" : "to move"}
           </span>
           <span>
-            <Key>Enter</Key> {picker ? "to keep" : "to open"}
+            <Key>Enter</Key> {themed ? "to keep" : picker ? "to choose" : "to open"}
           </span>
           <span>
-            <Key>Esc</Key> {picker ? "to put it back" : "to close"}
+            <Key>Esc</Key> {themed ? "to put it back" : "to close"}
           </span>
+          {!picker && (
+            <span className="ml-auto">
+              <Key>&gt;</Key> for actions only
+            </span>
+          )}
         </div>
       </div>
     </div>,
