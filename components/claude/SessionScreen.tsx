@@ -429,7 +429,7 @@ export function SessionScreen({
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
     <section ref={sectionRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="on-page safe-top safe-x relative z-20 flex shrink-0 items-center bg-page">
+      <header data-swipe-tabs className="on-page safe-top safe-x relative z-20 flex shrink-0 touch-pan-y touch-pinch-zoom items-center bg-page">
         <div className="@container flex h-14 w-full min-w-0 items-center gap-0.5 px-1.5 sm:px-3 lg:h-[52px]">
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />

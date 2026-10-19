@@ -23,6 +23,7 @@ import { useBindings } from "@/lib/client/shortcuts";
 import { keysFor } from "@/lib/keybindings";
 import type { Settings as SettingValues } from "@/lib/settings-schema";
 import { absoluteTime, capCount, capRows, groupByProject, groupRows, relativeTime, sortSessions, tabStop, rovingTarget, type RecentsGroup, type SidebarSort } from "@/lib/client/sidebar";
+import { useRowSwipe } from "@/lib/client/gestures";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -213,7 +214,7 @@ const Row = memo(function Row({ id, title, tip, status, time, agent, active, whe
         aria-current={active ? "page" : undefined}
         aria-keyshortcuts="F2 Delete"
         title={tip}
-        className={`side-row gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
+        className={`side-row touch-pan-y touch-pinch-zoom gap-2.5 text-[13.5px] pointer-coarse:pr-12 ${active || status === "unread" ? "text-ink" : "text-ink-2"}`}
       >
         <span className="flex w-1.5 shrink-0 justify-center" aria-hidden>
           {status && <span className={`size-1.5 rounded-full ${STATUS_DOT[status]}`} />}
@@ -983,6 +984,28 @@ export const SessionList = memo(function SessionList({
     say(transcript ? "Session and transcript deleted." : "Session deleted.");
   };
   const requestArchive = (s: SessionSummary) => (confirmFirst === "both" ? setArchiving(s) : archiveNow(s));
+  const [gestures] = useSetting("touchGestures");
+  useRowSwipe(listRef, {
+    enabled: gestures,
+    labels: (id) => {
+      const s = byId.get(id);
+      return { left: s?.archived ? "Unarchive" : "Archive", right: s?.pinned ? "Unpin" : "Pin" };
+    },
+    onLeft: (id) => {
+      const s = byId.get(id);
+      if (!s) return;
+      if (!s.archived) return requestArchive(s);
+      void change(s, { archived: false });
+      say("Unarchived.", () => void change(s, { archived: true }));
+    },
+    onRight: (id) => {
+      const s = byId.get(id);
+      if (!s) return;
+      const was = Boolean(s.pinned);
+      void change(s, { pinned: !was });
+      say(was ? "Unpinned." : "Pinned.", () => void change(s, { pinned: was }));
+    },
+  });
   const requestDelete = (s: SessionSummary) => {
     /* a running session can't go; the dialog says why */
     if (confirmFirst !== "never" || isBusy(s) || s.web?.pending.length) return setDeleting(s);

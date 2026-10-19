@@ -27,6 +27,7 @@ import { shortPath } from "@/lib/client/api";
 import { commandFor, isCommand, isMac, terminalOwns } from "@/lib/client/shortcuts";
 import type { SessionSummary } from "@/lib/types";
 import { useShareLanding } from "@/lib/client/share";
+import { useEdgeSwipe, useTabSwipe } from "@/lib/client/gestures";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
@@ -179,6 +180,12 @@ export function App() {
     [open],
   );
   useShareLanding(newTab);
+  const [gestures] = useSetting("touchGestures");
+  const panelRef = useRef<HTMLDivElement>(null);
+  const swipeState = useRef({ drawer, sheet, tabs: 0 });
+  swipeState.current = { drawer, sheet, tabs: openTabs.length };
+  useEdgeSwipe({ enabled: gestures, drawer: drawerRef, open: () => setDrawer(true), blocked: () => swipeState.current.drawer || swipeState.current.sheet });
+  useTabSwipe(panelRef, { enabled: gestures, cycle: (d) => swipeState.current.tabs > 1 && cycle(d) });
 
   /* Tab shortcuts. Ctrl+Tab when the browser lets it through; Alt+arrows, Alt+1..9,
    * Alt+T (Alt+Shift+T reopens) and Alt+W otherwise, so the browser's own Ctrl+T/W keep working.
@@ -402,7 +409,7 @@ export function App() {
             <TabBar tabs={infos} active={active} onSelect={open} onClose={close} onNew={newTab} onMove={move} />
           </div>
         )}
-        <div id="session-panel" role="tabpanel" aria-labelledby={activeIndex >= 0 ? `tab-${activeIndex}` : undefined} className="flex min-h-0 flex-1 flex-col outline-none">
+        <div ref={panelRef} id="session-panel" role="tabpanel" aria-labelledby={activeIndex >= 0 ? `tab-${activeIndex}` : undefined} className="flex min-h-0 flex-1 flex-col outline-none">
           {!ready ? null : active === FILES_TAB ? (
             <FilesScreen onMenu={() => setDrawer(true)} extra={tabsButton} start={filesStart.path} startKey={filesStart.n} />
           ) : active === INBOX_TAB ? (
