@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initial, reducer, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
+import { initial, parseEvent, reducer, RESET, serverId, type Pending, type SessionView } from "@/lib/client/useSession";
 import type { Entry, RunState, ServerEvent } from "@/lib/types";
 
 const now = Date.parse("2026-10-15T10:00:00Z");
@@ -221,5 +221,26 @@ describe("stream reconnects", () => {
     let s = ev(withPending(pending("p1", "a")), history([], run("running")), true);
     s = ev(s, history([], run("idle")));
     expect(s.pending[0].state).toBe("sent");
+  });
+});
+
+describe("stream frames", () => {
+  it("malformed frames and ones without a type are skipped instead of dropping the connection", () => {
+    expect(parseEvent("{not json")).toBeNull();
+    expect(parseEvent("null")).toBeNull();
+    expect(parseEvent('"text"')).toBeNull();
+    expect(parseEvent('{"entries":[]}')).toBeNull();
+    expect(parseEvent('{"type":"title","title":"x"}')).toEqual({ type: "title", title: "x" });
+  });
+
+  it("a reset or gap marker asks for a fresh load", () => {
+    expect(parseEvent('{"type":"reset"}')).toBe(RESET);
+    expect(parseEvent('{"type":"gap","reason":"rewritten"}')).toBe(RESET);
+  });
+
+  it("event types this client doesn't know leave the view as it was", () => {
+    const s = ev(initial(), history([user("a", "x")]), true);
+    const unknown = parseEvent('{"type":"somethingNew","payload":1}') as ServerEvent;
+    expect(reducer(s, { type: "event", event: unknown })).toBe(s);
   });
 });

@@ -284,6 +284,22 @@ export function reducer(state: SessionView, action: Action): SessionView {
   }
 }
 
+/** the server can't continue the stream from where it was (the transcript was rewritten, say): load it afresh */
+export const RESET = Symbol("reset");
+const RESET_TYPES = new Set(["reset", "gap"]);
+
+/** one SSE frame's data; malformed frames come back null, so they can't drop the connection */
+export function parseEvent(data: string): ServerEvent | typeof RESET | null {
+  let event: unknown;
+  try {
+    event = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (!event || typeof event !== "object" || typeof (event as { type?: unknown }).type !== "string") return null;
+  return RESET_TYPES.has((event as { type: string }).type) ? RESET : (event as ServerEvent);
+}
+
 export function useSession(id: string | null, onRedirect: (id: string) => void) {
   const [view, dispatch] = useReducer(reducer, undefined, initial);
   const redirectRef = useRef(onRedirect);
@@ -310,25 +326,30 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
      * read with fetch (not EventSource): some tunnels buffer GET event streams until they close. */
     (async () => {
       let from: string | number = 0;
-      /* only a 404 means the session is gone; anything else is the network, so keep trying */
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
-          if (abort.signal.aborted) return;
-          dispatch({ type: "event", event: first, initial: true });
-          from = first.end;
-          break;
-        } catch (err) {
-          if (abort.signal.aborted) return;
-          if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-            dispatch({ type: "status", status: "missing" });
-            return;
+      /* false when there is nothing to stream: the session is gone, or the view closed */
+      const loadHistory = async () => {
+        /* only a 404 means the session is gone; anything else is the network, so keep trying */
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
+            if (abort.signal.aborted) return false;
+            dispatch({ type: "event", event: first, initial: true });
+            from = first.end;
+            return true;
+          } catch (err) {
+            if (abort.signal.aborted) return false;
+            if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+              dispatch({ type: "status", status: "missing" });
+              return false;
+            }
+            if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
+            await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
           }
-          if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
-          await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
         }
-      }
+      };
+      if (!(await loadHistory())) return;
       for (let attempt = 0; !abort.signal.aborted; attempt++) {
+        let reset = false;
         try {
           const res = await fetch(`/api/sessions/${id}/events`, {
             method: "POST",
@@ -365,7 +386,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
             if (done) break;
             buf += value;
             let cut;
-            while ((cut = buf.indexOf("\n\n")) !== -1) {
+            while (!reset && (cut = buf.indexOf("\n\n")) !== -1) {
               const frame = buf.slice(0, cut);
               buf = buf.slice(cut + 2);
               let data = "";
@@ -375,16 +396,27 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
               }
               if (!data) continue;
               attempt = 0;
-              const event = JSON.parse(data) as ServerEvent;
-              if (event.type === "redirect") {
+              const event = parseEvent(data);
+              if (!event) continue;
+              if (event === RESET) reset = true;
+              else if (event.type === "redirect") {
                 carryOver(id, event.sessionId, pendingNow.current);
                 redirectRef.current(event.sessionId);
               }
               else if (event.type !== "ping") dispatch({ type: "event", event });
             }
+            if (reset) {
+              void reader.cancel().catch(() => undefined);
+              break;
+            }
           }
         } catch {
           if (abort.signal.aborted) return;
+        }
+        if (reset) {
+          if (!(await loadHistory())) return;
+          attempt = -1;
+          continue;
         }
         dispatch({ type: "status", status: "reconnecting" });
         await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
