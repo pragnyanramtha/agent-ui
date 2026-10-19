@@ -439,7 +439,7 @@ export function CommandPalette({
     const actionItems = words.length ? actions.filter((a) => words.every((w) => score(`${a.label} ${a.keywords}`, w) >= 60)) : actions;
     /* "fil" means the Files action more than a session that mentions files */
     const typed = words.join(" ");
-    const prefix = (a: Item) => (typed && a.label.toLowerCase().startsWith(typed) ? 0 : 1);
+    const prefix = (a: Item) => (!typed ? 1 : a.label.toLowerCase().startsWith(typed) ? 0 : score(a.label, typed) >= 80 ? 0.5 : 1);
     const ranked = [...actionItems].sort((a, b) => prefix(a) - prefix(b));
     const messageItems: Item[] = messages.hits.map((h) => ({
       id: `m:${h.key}`,
@@ -452,7 +452,7 @@ export function CommandPalette({
         onOpen(h.key);
       },
     }));
-    const head = ranked.length && prefix(ranked[0]) === 0 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
+    const head = ranked.length && prefix(ranked[0]) < 1 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
     return [...head, ...messageItems];
   }, [pickerItems, query, sessions, activeId, dark, messages.hits, onOpen, onNew, onView, toggleTheme, openPicker]);
 
