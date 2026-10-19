@@ -17,6 +17,7 @@ import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./Messag
 import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
 import { TurnChanges, TurnFold } from "./TurnFold";
+import "./thread.css";
 
 /** Dispatched on the thread's scroll box to stop following new content before jumping to an earlier spot. */
 export const RELEASE_PIN_EVENT = "cui:release-pin";
@@ -182,10 +183,10 @@ const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }:
   /* a message still being sent has nothing settled to copy or time yet. The caller's wrapper carries ACTIONS_GAP. */
   const actions = !pending && Boolean(text || ts);
   return (
-    <div className={`flex flex-col items-end pl-8 sm:pl-20 ${actions ? ACTIONS_PAD : ""}`} style={enter}>
+    <div className={`flex flex-col items-end ${actions ? ACTIONS_PAD : ""}`} style={enter}>
       <SentFiles paths={paths} />
       <div
-        className={`flex max-w-full min-w-0 flex-col gap-1.5 rounded-[14px] bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink shadow-hairline sm:py-2 sm:text-[13.5px] ${pending ? "opacity-60" : ""}`}
+        className={`flex max-w-[80%] min-w-0 flex-col gap-1.5 rounded-2xl bg-field px-3.5 py-2.5 text-[15px] leading-relaxed text-ink sm:px-4 sm:py-3 sm:text-[14px] ${pending ? "opacity-60" : ""}`}
         aria-busy={pending || undefined}
       >
         {images ? (
@@ -384,7 +385,7 @@ export function Thread({
   const showWorking = busy && liveText.length === 0 && !thinkingAlone && (!lastIsRun || view.pending.length > 0);
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="thread-prose relative min-h-0 flex-1">
       <div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain" role="log" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
         <div ref={contentRef} className="mx-auto flex w-full max-w-[740px] flex-col gap-5 px-4 pt-5 sm:px-8 sm:pt-8" style={{ paddingBottom: bottomPad + 24 }}>
           {view.cursor !== null && (
