@@ -215,17 +215,33 @@ function stringify(v: unknown): string {
  * run_shell_command's report to the model: "<untrusted_context>\nOutput: …\nExit Code: 3\nProcess Group PGID: 7\n</untrusted_context>"
  * (Exit Code only when non-zero; "Output: (empty)" when there was none) -> the output, and whether the command failed.
  */
-export function shellReport(raw: string): { text: string; failed: boolean } {
+export function shellReport(raw: string, display?: unknown): { text: string; failed: boolean } {
   const body = raw.trim().replace(/^<untrusted_context>\s*/, "").replace(/\s*<\/untrusted_context>$/, "");
   if (!body.startsWith("Output: ")) return { text: raw, failed: false };
-  const code = /\nExit Code: (-?\d+)\s*(?:\n|$)/.exec(body);
-  const text = body
-    .slice("Output: ".length)
-    .replace(/\n(?:Background PIDs|Process Group PGID):.*$/gm, "")
-    .replace(/^\(empty\)(?=\n|$)/, "")
-    .trim();
+  const rest = body.slice("Output: ".length);
+  /* the trailer follows the output in a fixed order, so it's read from the end: the command's own output can
+   * contain "Exit Code: 1" too. With the display string the output's exact length is known. */
+  let output = rest;
+  let trailer: string[] = [];
+  if (typeof display === "string" && display && rest.startsWith(display) && (rest.length === display.length || rest[display.length] === "\n")) {
+    output = display;
+    trailer = rest.slice(display.length).split("\n").filter(Boolean);
+  } else {
+    const lines = rest.split("\n");
+    let order = TRAILER.length;
+    while (lines.length > 1) {
+      const at = TRAILER.findIndex((k) => lines[lines.length - 1].startsWith(`${k}: `));
+      if (at < 0 || at >= order) break;
+      order = at;
+      trailer.unshift(lines.pop()!);
+    }
+    output = lines.join("\n");
+  }
+  const code = trailer.map((l) => /^Exit Code: (-?\d+)\s*$/.exec(l)).find(Boolean);
+  const text = output.replace(/^\(empty\)$/, "").trim();
   return { text, failed: !!code && Number(code[1]) !== 0 };
 }
+const TRAILER = ["Error", "Exit Code", "Signal", "Background PIDs", "Process Group PGID"];
 
 /** What the model was told a tool call returned. */
 function modelResult(tc: GeminiToolCall): string {
@@ -260,8 +276,10 @@ function partsOf(content: unknown): Part[] {
   return [];
 }
 
-/* context the CLI injects, and slash commands ("/stats", not "/usr/bin/x is broken") */
-const SKIP_USER = /^(<session_context>|<hook_context>|\/[a-z][\w-]*(\s|$))/i;
+/* context the CLI injects, and its built-in slash commands ("/stats", not "/tmp is full, clean it") */
+const COMMANDS =
+  "about|agents|auth|bug|chat|clear|commands|compact|compress|copy|corgi|dir|directory|docs|editor|exit|extensions|help|hooks|ide|init|login|logout|mcp|memory|model|permissions|plan|policies|privacy|profile|quit|restore|resume|rewind|settings|setup-github|shortcuts|skills|stats|status|tasks|terminal-setup|theme|tools|trust|upgrade|usage|vim|voice";
+const SKIP_USER = new RegExp(`^(<session_context>|<hook_context>|/(${COMMANDS})(\\s|$))`, "i");
 const CONTEXT_PART = /^\s*<(session_context|hook_context)>/;
 /** Gemini models all have a 1M window */
 const WINDOW = 1_048_576;
@@ -304,7 +322,7 @@ export function geminiEntries(fold: GeminiFold): Entry[] {
         const status = String(tc.status ?? "").toLowerCase();
         if (DONE.has(status) || (!status && tc.result !== undefined)) {
           /* a failing command is still a "success" of the tool; only its report says it exited non-zero */
-          const isError = (status !== "success" && status !== "") || (tc.name === "run_shell_command" && shellReport(modelResult(tc)).failed);
+          const isError = (status !== "success" && status !== "") || (tc.name === "run_shell_command" && shellReport(modelResult(tc), tc.resultDisplay).failed);
           const body = toolResultText(tc) || (status === "cancelled" || status === "canceled" ? "Cancelled" : "");
           out.push({ kind: "result", id: `${m.id}:${callId}:r`, ts, toolUseId: callId, result: clipResult(body, isError) });
         }

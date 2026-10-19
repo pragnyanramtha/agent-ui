@@ -34,3 +34,27 @@ describe("snapshots with a nested repository", () => {
     expect(sh(["status", "--porcelain"])).toBe(status);
   });
 });
+
+describe("snapshots with an unreadable file", () => {
+  const root = typeof process.getuid === "function" && process.getuid() === 0;
+  it.skipIf(root)("record what they skipped, and rewinding leaves it alone", async () => {
+    const notes = path.join(repo, "notes.txt");
+    fs.writeFileSync(notes, "mine\n");
+    fs.chmodSync(notes, 0o000);
+    const cp = await g.checkpoint(repo, "s2", "unreadable");
+    fs.chmodSync(notes, 0o644);
+    expect(sh(["ls-tree", "--name-only", cp!.tree])).not.toContain("notes.txt");
+    expect(sh(["show", "-s", "--format=%b", cp!.commit])).toContain('Skipped: "notes.txt"');
+    fs.writeFileSync(path.join(repo, "c.txt"), "c\n");
+    const r = await g.rewind(repo, "s2", cp!.id);
+    expect(r.removed).toBe(1);
+    expect(fs.existsSync(path.join(repo, "c.txt"))).toBe(false);
+    expect(fs.readFileSync(notes, "utf8")).toBe("mine\n");
+  });
+
+  it("names the paths git couldn't add", () => {
+    const err = "error: open(\"a b.txt\"): Permission denied\nerror: unable to index file 'a b.txt'\nerror: 'sub/' does not have a commit checked out\n";
+    expect(g.skippedPaths(err)).toEqual(["a b.txt", "sub"]);
+    expect(g.skippedPaths("error: something else\n")).toEqual([]);
+  });
+});
