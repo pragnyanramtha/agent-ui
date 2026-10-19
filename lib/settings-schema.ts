@@ -1195,6 +1195,22 @@ export const SETTINGS = {
       { value: "plain", label: "Plain sentence" },
     ],
   }),
+
+  limitAction: choice({
+    section: "agents",
+    group: "Usage limits",
+    label: "When a turn hits a usage limit",
+    description: "Waiting needs the agent to say when the limit resets; when it doesn't, the fallback profile takes over. Fallbacks are set per profile.",
+    keywords: ["rate limit", "quota", "fallback", "resume", "retry", "wait", "resets", "429"],
+    scope: "synced",
+    default: "fallback",
+    control: "select",
+    options: [
+      { value: "fallback", label: "Switch to the fallback profile" },
+      { value: "wait", label: "Wait and resend when the limit resets" },
+      { value: "stop", label: "Stop" },
+    ],
+  }),
 } as const satisfies Record<string, SettingDef>;
 
 type ValueOf<D> = D extends BooleanSetting ? boolean : D extends NumberSetting ? number : D extends EnumSetting<infer T> ? T : string;

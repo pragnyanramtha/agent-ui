@@ -159,11 +159,14 @@ function Notifications() {
 
 function Agents({ onAgents }: SectionProps) {
   return (
-    <Card>
-      <Row label="Profiles and terminals" note="Accounts, proxies, models and running agents.">
-        <SmallButton onClick={onAgents}>Open</SmallButton>
-      </Row>
-    </Card>
+    <>
+      <Card>
+        <Row label="Profiles and terminals" note="Accounts, proxies, models and running agents.">
+          <SmallButton onClick={onAgents}>Open</SmallButton>
+        </Row>
+      </Card>
+      <RegistryCards section="agents" />
+    </>
   );
 }
 
