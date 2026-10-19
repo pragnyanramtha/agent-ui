@@ -209,3 +209,29 @@ describe("web terminal backend: internal API", () => {
     expect(Array.isArray(JSON.parse(ok.body).terminals)).toBe(true);
   });
 });
+
+describe.skipIf(!hasTmux)("web terminal backend: tmux metadata", () => {
+  const list = async () => (await (await internal("/internal/terminals")).json()).terminals as { id: string; label: string; cwd: string; kind: string; session: string | null }[];
+
+  it("a label or folder with tabs and newlines can't forge fields or entries", async () => {
+    const forged = "agentu-deadbeef\t0\t0\t0\t1\t1\tForged\tagent\tx\t\t\t0";
+    const dir = path.join(home, `odd\tdir\n${forged}`);
+    fs.mkdirSync(dir);
+    const label = `evil\tshell\n${forged} 100% #{session_name};`;
+    const res = await internal("/internal/launch", { cmd: "sh", args: ["-c", "sleep 30"], cwd: dir, label, session: "s\t1", profile: "p\nq" });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    const all = await list();
+    expect(all.some((t) => t.id === "agentu-deadbeef")).toBe(false);
+    expect(all.find((t) => t.id === id)).toMatchObject({ label, cwd: dir, kind: "agent", session: "s\t1", profile: "p\nq" });
+    await internal("/internal/kill", { id });
+  });
+
+  it("still lists sessions started before values were encoded", async () => {
+    const env = { ...process.env, TMUX: undefined, TMUX_TMPDIR: home };
+    const name = "agentu-0ld0ld01";
+    spawnSync("tmux", ["new-session", "-d", "-s", name, "sleep 30", ";", "set-option", "@agentu_label", "Old label 100%", ";", "set-option", "@agentu_cwd", "/tmp/old%20dir", ";", "set-option", "@agentu_kind", "agent"], { env, stdio: "ignore" });
+    expect((await list()).find((t) => t.id === name)).toMatchObject({ label: "Old label 100%", cwd: "/tmp/old%20dir" });
+    await internal("/internal/kill", { id: name });
+  });
+});

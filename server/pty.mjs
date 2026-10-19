@@ -236,11 +236,21 @@ const tmuxHas = (name) => {
 };
 
 const META = ["label", "kind", "cwd", "profile", "session", "created"];
+/* values are stored URI-encoded (marked by @agentu_enc), so a tab or newline in a label or folder name can't split
+ * the list below into fields or entries of its own; sessions started before that are read as they are */
+const encodeMeta = (v) => encodeURIComponent(String(v));
+const decodeMeta = (v) => {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+};
 function tmuxList() {
   if (!TMUX) return [];
   let out = "";
   try {
-    const fmt = ["#{session_name}", "#{session_attached}", "#{pane_dead}", "#{pane_dead_status}", "#{pane_pid}", ...META.map((k) => `#{@agentu_${k}}`)].join("\t");
+    const fmt = ["#{session_name}", "#{session_attached}", "#{pane_dead}", "#{pane_dead_status}", "#{pane_pid}", "#{@agentu_enc}", ...META.map((k) => `#{@agentu_${k}}`)].join("\t");
     out = tmux(["list-panes", "-a", "-F", fmt]);
   } catch {
     return [];
@@ -250,9 +260,9 @@ function tmuxList() {
     .split("\n")
     .filter(Boolean)
     .map((line) => line.split("\t"))
-    .filter(([name]) => name.startsWith(TMUX_PREFIX) && !seen.has(name) && seen.add(name))
-    .map(([name, attached, dead, deadStatus, pid, ...meta]) => {
-      const m = Object.fromEntries(META.map((k, i) => [k, meta[i] ?? ""]));
+    .filter((f) => f.length === 6 + META.length && TMUX_NAME.test(f[0]) && f[0].startsWith(TMUX_PREFIX) && !seen.has(f[0]) && seen.add(f[0]))
+    .map(([name, attached, dead, deadStatus, pid, enc, ...meta]) => {
+      const m = Object.fromEntries(META.map((k, i) => [k, enc === "1" ? decodeMeta(meta[i] ?? "") : (meta[i] ?? "")]));
       return {
         id: name,
         backing: "tmux",
@@ -301,7 +311,8 @@ function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, 
   /* -c is format-expanded: a folder named "#(cmd)" would run cmd; "##" is a literal "#" */
   const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd.replace(/#/g, "##")), tmuxArg(line)];
   const meta = { label, kind, cwd, profile, session, created: Date.now() };
-  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, tmuxArg(String(v)));
+  argv.push(";", "set-option", "@agentu_enc", "1");
+  for (const [k, v] of Object.entries(meta)) if (v !== undefined && v !== null && v !== "") argv.push(";", "set-option", `@agentu_${k}`, encodeMeta(v));
   /* phones can't spare a status bar's worth of rows; the mouse wheel scrolls tmux history */
   argv.push(";", "set-option", "-w", "remain-on-exit", "on", ";", "set-option", "status", "off", ";", "set-option", "mouse", "on");
   const [bin, all] = SYSTEMD_RUN ? [SYSTEMD_RUN, ["--user", "--scope", "--quiet", "--collect", TMUX, ...argv]] : [TMUX, argv];
