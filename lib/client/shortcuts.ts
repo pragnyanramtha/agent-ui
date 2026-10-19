@@ -37,15 +37,16 @@ export const setRecording = (on: boolean) => {
 };
 
 /** Whether a key event is the command's shortcut (never while an input method composes or a shortcut is being recorded). */
-export function isCommand(e: KeyEventLike, id: CommandId, mac = isMac()): boolean {
-  return !recording && matchesCommand(e, id, currentBindings(), mac);
+export function isCommand(e: KeyEventLike & { target?: EventTarget | null }, id: CommandId, mac = isMac()): boolean {
+  return !recording && matchesCommand(e, id, currentBindings(), mac, isTyping(e.target ?? null));
 }
 
 /** The first of `ids` whose shortcut this event is. */
-export function commandFor<T extends CommandId>(e: KeyEventLike, ids: readonly T[], mac = isMac()): T | null {
+export function commandFor<T extends CommandId>(e: KeyEventLike & { target?: EventTarget | null }, ids: readonly T[], mac = isMac()): T | null {
   if (recording) return null;
   const b = currentBindings();
-  return ids.find((id) => matchesCommand(e, id, b, mac)) ?? null;
+  const inField = isTyping(e.target ?? null);
+  return ids.find((id) => matchesCommand(e, id, b, mac, inField)) ?? null;
 }
 
 /** Ctrl+letter inside a terminal: a control character for the shell, so app shortcuts leave it alone. */
@@ -69,5 +70,6 @@ export const modalOpen = () => typeof document !== "undefined" && Boolean(docume
 
 /** True when keyboard focus is in a field, where single-key shortcuts must not fire. */
 export const isTyping = (t: EventTarget | null) =>
+  typeof HTMLElement !== "undefined" &&
   t instanceof HTMLElement &&
   (t.isContentEditable || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)) || Boolean(t.closest(".xterm")));
