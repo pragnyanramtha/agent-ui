@@ -1,4 +1,5 @@
 import { AGENT_LABEL, type SessionSummary } from "@/lib/types";
+import { clockTime, type TimeFormat } from "@/lib/time-format";
 
 /* The sidebar's list logic, apart from React so it can be tested: the order sessions show in, how they group, how a
  * row says when, and where arrow keys move focus. */
@@ -90,10 +91,10 @@ export function relativeTime(ms: number, now: number, locale?: string): string {
   return new Date(ms).toLocaleDateString(locale, sameYear ? { month: "short", day: "numeric" } : { month: "short", year: "numeric" });
 }
 
-/** A row's time as a clock or a date: "2:05 PM" (or "14:05") today, "Mar 4" this year, "3/4/25" before. */
-export function absoluteTime(ms: number, now: number, locale?: string): string {
+/** A row's time as a clock or a date: "2:05 PM" (or "14:05", as Time format says) today, "Mar 4" this year, "3/4/25" before. */
+export function absoluteTime(ms: number, now: number, locale?: string, fmt: TimeFormat = "system"): string {
   const d = new Date(ms);
-  if (daysAgo(ms, now) === 0) return d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  if (daysAgo(ms, now) === 0) return clockTime(d, fmt, locale);
   if (d.getFullYear() === new Date(now).getFullYear()) return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
   return d.toLocaleDateString(locale, { year: "2-digit", month: "numeric", day: "numeric" });
 }

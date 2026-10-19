@@ -832,6 +832,7 @@ export const SessionList = memo(function SessionList({
   const [archivedOn] = useSetting("sidebarShowArchived");
   const [agentIcon] = useSetting("sidebarAgentIcon");
   const [timeStyle] = useSetting("sidebarTime");
+  const [timeFmt] = useSetting("timeFormat");
   const [confirmFirst] = useSetting("sidebarConfirm");
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -1091,7 +1092,7 @@ export const SessionList = memo(function SessionList({
   };
 
   const showAgents = agentIcon && agentsPresent.length > 1;
-  const timeOf = (ms: number) => (timeStyle === "absolute" ? absoluteTime(ms, now) : relativeTime(ms, now));
+  const timeOf = (ms: number) => (timeStyle === "absolute" ? absoluteTime(ms, now, undefined, timeFmt) : relativeTime(ms, now));
   const row = (s: SessionSummary, where: RowWhere, time?: string) => (
     <Row
       key={s.id}

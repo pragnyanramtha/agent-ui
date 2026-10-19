@@ -141,6 +141,8 @@ describe("absoluteTime", () => {
     expect(absoluteTime(at(2026, 10, 21, 14, 5), now, "en-US")).toBe("2:05 PM");
     expect(absoluteTime(at(2026, 10, 20, 23, 59), now, "en-US")).toBe("Oct 20");
     expect(absoluteTime(at(2025, 3, 4), now, "en-US")).toBe("3/4/25");
+    expect(absoluteTime(at(2026, 10, 21, 14, 5), now, "en-US", "24h")).toBe("14:05");
+    expect(absoluteTime(at(2026, 10, 21, 14, 5), now, "en-GB", "12h")).toMatch(/^2:05\s?pm$/i);
   });
 });
 
