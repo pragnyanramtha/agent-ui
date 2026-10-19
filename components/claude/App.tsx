@@ -22,6 +22,7 @@ import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setAttention, setBaseTitle } from "@/lib/client/attention";
 import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
+import { hasMod, isMac } from "@/lib/client/shortcuts";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
@@ -67,9 +68,6 @@ export function App() {
   const sidebar = useSidebar();
   const [sheet, setSheet] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
-  /* the sidebar's theme pill reads the theme once on mount; remount it after the palette flips the theme */
-  const [themeKey, setThemeKey] = useState(0);
-  const onTheme = useCallback(() => setThemeKey((k) => k + 1), []);
   const { sessions, projects, error, refresh } = useSessions();
   useKeyboardInset();
   const [terminal, setTerminal] = useState<TerminalTarget | null>(null);
@@ -198,22 +196,27 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [cycle, reopen, close, select, active, newTab, drawer, sheet]);
 
-  /* Ctrl/Cmd+J: open a shell in the current session's folder, or show/hide the docked terminal.
-   * Capture phase, so a focused terminal can't swallow it. */
+  /* Mod+J or Ctrl+`: open a shell in the current session's folder, or show/hide the terminal.
+   * Capture phase, so a focused terminal can't swallow Ctrl+`. Ctrl+J inside a terminal is a line feed
+   * (newline in Claude Code, accept-line in bash), so off a Mac it's left to the terminal. */
   const activeCwd = sessionId ? byId.get(sessionId)?.cwd || undefined : undefined;
   useEffect(() => {
+    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.code !== "KeyJ" || e.isComposing) return;
+      if (e.altKey || e.shiftKey || e.isComposing) return;
+      const inTerm = e.target instanceof Element && Boolean(e.target.closest(".xterm"));
+      const backquote = e.code === "Backquote" && e.ctrlKey && !e.metaKey;
+      const modJ = e.code === "KeyJ" && hasMod(e, mac) && (mac || !inTerm);
+      if (!backquote && !modJ) return;
       e.preventDefault();
       e.stopPropagation();
       if (!terminal) {
         window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: activeCwd, label: activeCwd ? `Shell: ${shortPath(activeCwd)}` : "Shell" } }));
-      } else if (!docked) setDock(true);
-      else setTermHidden((h) => !h);
+      } else setTermHidden((h) => !h);
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [terminal, docked, activeCwd, setDock]);
+  }, [terminal, activeCwd]);
 
   /* Ctrl/Cmd+, opens Settings */
   useEffect(() => {
@@ -279,7 +282,7 @@ export function App() {
   const dismissSheet = useCallback(() => setSheet(false), []);
   const closeDrawer = useCallback(() => setDrawer(false), []);
   const list = (onCollapse: () => void) => (
-    <SessionList key={themeKey} sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} />
+    <SessionList sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onCollapse={onCollapse} error={error} onView={openView} activeView={active} inbox={inbox} />
   );
   const tabsButton = (
     <TabsButton count={infos.length} attention={infos.some((t) => t.needsYou && t.id !== active)} onClick={() => setSheet(true)} />
@@ -382,7 +385,7 @@ export function App() {
             target={terminal}
             onClose={() => setTerminal(null)}
             docked={docked}
-            hidden={docked && termHidden}
+            hidden={termHidden}
             onDock={(next) => {
               setDock(next);
               setTermHidden(false);
@@ -392,7 +395,7 @@ export function App() {
       </div>
 
       <OfflineBanner />
-      <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} onTheme={onTheme} />
+      <CommandPalette sessions={sessions} activeId={sessionId} onOpen={openSession} onNew={newTab} onView={openView} />
       <AskHost />
       <ShortcutsDialog />
     </main>

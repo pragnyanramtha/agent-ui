@@ -211,9 +211,24 @@ function stringify(v: unknown): string {
   }
 }
 
-/** The text a finished tool call shows: its display string, else what the model was told. */
-export function toolResultText(tc: GeminiToolCall): string {
-  if (typeof tc.resultDisplay === "string" && tc.resultDisplay) return tc.resultDisplay;
+/**
+ * run_shell_command's report to the model: "<untrusted_context>\nOutput: …\nExit Code: 3\nProcess Group PGID: 7\n</untrusted_context>"
+ * (Exit Code only when non-zero; "Output: (empty)" when there was none) -> the output, and whether the command failed.
+ */
+export function shellReport(raw: string): { text: string; failed: boolean } {
+  const body = raw.trim().replace(/^<untrusted_context>\s*/, "").replace(/\s*<\/untrusted_context>$/, "");
+  if (!body.startsWith("Output: ")) return { text: raw, failed: false };
+  const code = /\nExit Code: (-?\d+)\s*(?:\n|$)/.exec(body);
+  const text = body
+    .slice("Output: ".length)
+    .replace(/\n(?:Background PIDs|Process Group PGID):.*$/gm, "")
+    .replace(/^\(empty\)(?=\n|$)/, "")
+    .trim();
+  return { text, failed: !!code && Number(code[1]) !== 0 };
+}
+
+/** What the model was told a tool call returned. */
+function modelResult(tc: GeminiToolCall): string {
   const parts = Array.isArray(tc.result) ? tc.result : tc.result !== undefined ? [tc.result] : [];
   const out: string[] = [];
   for (const p of parts) {
@@ -223,6 +238,13 @@ export function toolResultText(tc: GeminiToolCall): string {
     else if (isObj(p) && typeof p.text === "string") out.push(p.text);
   }
   return out.filter(Boolean).join("\n");
+}
+
+/** The text a finished tool call shows: its display string, else what the model was told. */
+export function toolResultText(tc: GeminiToolCall): string {
+  if (typeof tc.resultDisplay === "string" && tc.resultDisplay) return tc.resultDisplay;
+  const text = modelResult(tc);
+  return tc.name === "run_shell_command" ? shellReport(text).text : text;
 }
 
 const DONE = new Set(["success", "error", "cancelled", "canceled"]);
@@ -238,7 +260,8 @@ function partsOf(content: unknown): Part[] {
   return [];
 }
 
-const SKIP_USER = /^(<session_context>|<hook_context>|\/|\?)/;
+/* context the CLI injects, and slash commands ("/stats", not "/usr/bin/x is broken") */
+const SKIP_USER = /^(<session_context>|<hook_context>|\/[a-z][\w-]*(\s|$))/i;
 const CONTEXT_PART = /^\s*<(session_context|hook_context)>/;
 /** Gemini models all have a 1M window */
 const WINDOW = 1_048_576;
@@ -269,7 +292,8 @@ export function geminiEntries(fold: GeminiFold): Entry[] {
         const text = [t.subject ? `**${t.subject}**` : "", t.description ?? ""].filter(Boolean).join("\n\n").trim();
         if (text) out.push({ kind: "thinking", id: `${m.id}:t${i}`, ts, msgId: m.id, text });
       });
-      const thought = parts.filter((p) => p.thought && p.text).map((p) => p.text!).join("\n").trim();
+      /* a resumed chat's $patch can rewrite content with the same thinking as thought parts */
+      const thought = m.thoughts?.length ? "" : parts.filter((p) => p.thought && p.text).map((p) => p.text!).join("\n").trim();
       if (thought) out.push({ kind: "thinking", id: `${m.id}:tp`, ts, msgId: m.id, text: thought });
       const text = parts.filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text!).join("").trim();
       if (text) out.push({ kind: "text", id: `${m.id}:x`, ts, msgId: m.id, text });
@@ -279,7 +303,8 @@ export function geminiEntries(fold: GeminiFold): Entry[] {
         out.push({ kind: "tool", id: `${m.id}:${callId}`, ts: tc.timestamp ?? ts, msgId: m.id, toolUseId: callId, name, input });
         const status = String(tc.status ?? "").toLowerCase();
         if (DONE.has(status) || (!status && tc.result !== undefined)) {
-          const isError = status !== "success" && status !== "";
+          /* a failing command is still a "success" of the tool; only its report says it exited non-zero */
+          const isError = (status !== "success" && status !== "") || (tc.name === "run_shell_command" && shellReport(modelResult(tc)).failed);
           const body = toolResultText(tc) || (status === "cancelled" || status === "canceled" ? "Cancelled" : "");
           out.push({ kind: "result", id: `${m.id}:${callId}:r`, ts, toolUseId: callId, result: clipResult(body, isError) });
         }

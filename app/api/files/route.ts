@@ -84,8 +84,13 @@ export async function POST(req: NextRequest) {
       const p = await fs.realpath(abs).catch(() => abs);
       const tmp = `${p}.agentu-${process.pid}-${crypto.randomBytes(6).toString("hex")}.tmp`;
       const mode = await fs.stat(p).then((s) => s.mode & 0o777).catch(() => 0o644);
-      await fs.writeFile(tmp, text, { mode });
-      await fs.rename(tmp, p);
+      try {
+        await fs.writeFile(tmp, text, { mode });
+        await fs.rename(tmp, p);
+      } catch (err) {
+        await fs.rm(tmp, { force: true }).catch(() => undefined);
+        throw err;
+      }
       return NextResponse.json({ path: abs });
     }
     return NextResponse.json({ error: "Unknown action." }, { status: 400 });

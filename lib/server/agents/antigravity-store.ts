@@ -19,7 +19,7 @@ import { clipResult } from "./cursor-tools";
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
 
-export const agyDir = () => path.join(os.homedir(), ".gemini", "antigravity-cli");
+export const agyDir = (home = os.homedir()) => path.join(home, ".gemini", "antigravity-cli");
 export const agyDbPath = (dir = agyDir()) => path.join(dir, "conversation_summaries.db");
 export const agyTranscriptPaths = (id: string, dir = agyDir()) =>
   ["transcript_full.jsonl", "transcript.jsonl"].map((f) => path.join(dir, "brain", id, ".system_generated", "logs", f));
@@ -106,6 +106,9 @@ function dbSig(file: string): string | null {
 }
 
 const rowsCache = new Map<string, { sig: string; rows: AgyRow[] }>();
+/* when a read last failed: list and get run often and sync, so a locked db isn't retried (and waited on) each time */
+const failedAt = new Map<string, number>();
+const RETRY_MS = 5000;
 
 /** Every top-level CLI conversation, newest first; empty when the db is missing or unreadable. */
 export function readSummaries(file = agyDbPath()): AgyRow[] {
@@ -113,18 +116,20 @@ export function readSummaries(file = agyDbPath()): AgyRow[] {
   if (!sig) return [];
   const hit = rowsCache.get(file);
   if (hit && hit.sig === sig) return hit.rows;
+  if (Date.now() - (failedAt.get(file) ?? 0) < RETRY_MS) return hit?.rows ?? [];
   const mod = sqlite();
   if (!mod) return [];
   let db: DatabaseSync | null = null;
   let rows: AgyRow[] = [];
   try {
-    db = new mod.DatabaseSync(file, { readOnly: true, timeout: 2000 } as ConstructorParameters<Sqlite["DatabaseSync"]>[1]);
+    db = new mod.DatabaseSync(file, { readOnly: true, timeout: 100 } as ConstructorParameters<Sqlite["DatabaseSync"]>[1]);
     rows = (db.prepare("SELECT * FROM conversation_summaries").all() as Obj[])
       .map(agyRow)
       .filter((r): r is AgyRow => r !== null)
       .sort((a, b) => b.mtime - a.mtime);
   } catch {
     /* locked, or another schema: keep what we had */
+    failedAt.set(file, Date.now());
     return hit?.rows ?? [];
   } finally {
     try {
@@ -133,6 +138,7 @@ export function readSummaries(file = agyDbPath()): AgyRow[] {
       /* closed */
     }
   }
+  failedAt.delete(file);
   rowsCache.set(file, { sig, rows });
   return rows;
 }
@@ -219,8 +225,32 @@ export function mapAgyTool(rawName: string, rawArgs: unknown): { name: string; i
 /* ── transcript ────────────────────────────────────────────── */
 
 const stepType = (v: unknown) => String(v ?? "").toUpperCase().replace(/^CORTEX_STEP_TYPE_/, "");
-/* steps that never answer a tool call */
-const NOT_RESULTS = new Set(["USER_INPUT", "PLANNER_RESPONSE", "CHECKPOINT", "EPHEMERAL_MESSAGE", "CONVERSATION_HISTORY", "SYSTEM_MESSAGE", "KNOWLEDGE_ARTIFACTS", "MEMORY", "FINISH"]);
+/* steps that answer a tool call; others (checkpoints, memories, ones we don't know) never take a result's place */
+const TOOL_STEPS = new Set([
+  "RUN_COMMAND",
+  "COMMAND_STATUS",
+  "SEND_COMMAND_INPUT",
+  "VIEW_FILE",
+  "VIEW_FILE_OUTLINE",
+  "VIEW_CODE_ITEM",
+  "VIEW_CONTENT_CHUNK",
+  "CODE_ACTION",
+  "WRITE_TO_FILE",
+  "LIST_DIRECTORY",
+  "LIST_DIR",
+  "GREP_SEARCH",
+  "FIND",
+  "FIND_BY_NAME",
+  "CODEBASE_SEARCH",
+  "SEARCH_WEB",
+  "READ_URL_CONTENT",
+  "MCP_TOOL",
+  "READ_RESOURCE",
+  "LIST_RESOURCES",
+  "GENERATE_IMAGE",
+  "ERROR_MESSAGE",
+]);
+const isToolStep = (type: string, call: string) => TOOL_STEPS.has(type) || type.startsWith("BROWSER_") || type === call.toUpperCase();
 
 function stringify(v: unknown): string {
   if (typeof v === "string") return v;
@@ -251,7 +281,8 @@ function resultText(content: unknown): string {
 /** A transcript_full.jsonl as UI entries. Malformed lines and unknown steps are skipped, never thrown on. */
 export function agyTranscriptEntries(raw: string): Entry[] {
   const out: Entry[] = [];
-  const pending: string[] = [];
+  /* calls of the latest planner step still waiting for their result, in order */
+  const pending: { id: string; name: string }[] = [];
   let lastTs = new Date(0).toISOString();
   let n = 0;
   for (const line of raw.split("\n")) {
@@ -274,11 +305,13 @@ export function agyTranscriptEntries(raw: string): Entry[] {
     const status = String(st.status ?? "").toUpperCase();
     try {
       if (type === "USER_INPUT") {
+        pending.length = 0;
         const t = userRequest(st.content);
         if (t) out.push({ kind: "user", id: `${base}:u`, ts, text: t, images: 0 });
         continue;
       }
       if (type === "PLANNER_RESPONSE") {
+        pending.length = 0;
         const thinking = stringify(st.thinking).trim();
         if (thinking) out.push({ kind: "thinking", id: `${base}:t`, ts, msgId: base, text: thinking });
         const body = (isObj(st.content) ? resultText(st.content) : stringify(st.content)).trim();
@@ -287,9 +320,10 @@ export function agyTranscriptEntries(raw: string): Entry[] {
         calls.forEach((c, i) => {
           if (!isObj(c)) return;
           const callId = `${base}:c${i}`;
-          const { name, input } = mapAgyTool(String(c.name ?? "tool"), c.args ?? c.arguments ?? c.argumentsJson);
+          const raw = String(c.name ?? "tool");
+          const { name, input } = mapAgyTool(raw, c.args ?? c.arguments ?? c.argumentsJson);
           out.push({ kind: "tool", id: callId, ts, msgId: base, toolUseId: callId, name, input });
-          pending.push(callId);
+          pending.push({ id: callId, name: raw });
         });
         continue;
       }
@@ -298,8 +332,8 @@ export function agyTranscriptEntries(raw: string): Entry[] {
         if (t) out.push({ kind: "notice", id: `${base}:x`, ts, tone: "warn", text: t.slice(0, 2000) });
         continue;
       }
-      if (NOT_RESULTS.has(type) || !pending.length) continue;
-      const callId = pending.shift()!;
+      if (!pending.length || !isToolStep(type, pending[0].name)) continue;
+      const callId = pending.shift()!.id;
       const isError = type === "ERROR_MESSAGE" || /ERROR|FAIL|CANCEL|DENIED|REJECT/.test(status);
       out.push({ kind: "result", id: `${callId}:r`, ts, toolUseId: callId, result: clipResult(resultText(st.content), isError) });
     } catch {

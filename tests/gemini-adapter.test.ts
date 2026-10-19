@@ -117,7 +117,8 @@ describe("gemini chat entries", () => {
 
   it("maps thoughts, text, tool calls, results and usage with stable ids", () => {
     expect(byId("g1:t0")).toMatchObject({ kind: "thinking", msgId: "g1", text: "**Planning**\n\nList the folder first." });
-    expect(byId("g1:tp")).toMatchObject({ kind: "thinking", text: "pondering" });
+    /* the thought part repeats `thoughts` (a resume rewrites content that way) */
+    expect(byId("g1:tp")).toBeUndefined();
     expect(byId("g1:x")).toMatchObject({ kind: "text", msgId: "g1", text: "Here they are." });
     expect(byId("g1:call-1")).toMatchObject({ kind: "tool", toolUseId: "call-1", name: "Bash", input: { command: "ls -la", description: "List files", cwd: "/proj" } });
     expect(byId("g1:call-1:r")).toMatchObject({ kind: "result", toolUseId: "call-1", result: { text: "a.txt\nb.txt", isError: false } });
@@ -137,6 +138,40 @@ describe("gemini chat entries", () => {
 
   it("gives the same ids on a re-fold", () => {
     expect(geminiEntries(fold).map((e) => e.id)).toEqual(entries.map((e) => e.id));
+  });
+
+  it("shows thought parts when there are no thoughts", () => {
+    const [e] = geminiEntries(foldChat(jsonl(header, { id: "g2", type: "gemini", content: [{ text: "pondering", thought: true }] })));
+    expect(e).toMatchObject({ kind: "thinking", id: "g2:tp", text: "pondering" });
+  });
+
+  it("skips slash commands only, not messages that start with / or ?", () => {
+    const typed = ["/stats", "/chat save x", "/memory-add", "/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails"];
+    const texts = geminiEntries(foldChat(jsonl(header, ...typed.map((t, i) => user(`u${i}`, t))))).map((e) => e.kind === "user" && e.text);
+    expect(texts).toEqual(["/usr/bin/node crashes", "/ is the root", "?", "? what now", "/path/to/file.ts fails"]);
+  });
+
+  it("marks failed shell commands and drops the report's wrapper", () => {
+    const report = (output: string) => [{ functionResponse: { id: "c", name: "run_shell_command", response: { output } } }];
+    const call = (id: string, output: string, resultDisplay = "") => ({ ...shellCall("success", { resultDisplay, result: report(output) }), id });
+    const out = geminiEntries(
+      foldChat(
+        jsonl(header, {
+          id: "g1",
+          type: "gemini",
+          content: "",
+          toolCalls: [
+            call("boom", "<untrusted_context>\nOutput: boom\nExit Code: 3\nProcess Group PGID: 46645\n</untrusted_context>", "boom"),
+            call("empty", "<untrusted_context>\nOutput: (empty)\nProcess Group PGID: 46643\n</untrusted_context>"),
+            call("bg", "<untrusted_context>\nOutput: two\nlines\nBackground PIDs: 12\nProcess Group PGID: 11\n</untrusted_context>"),
+          ],
+        }),
+      ),
+    );
+    const result = (id: string) => out.find((e) => e.kind === "result" && e.toolUseId === id);
+    expect(result("boom")).toMatchObject({ result: { text: "boom", isError: true } });
+    expect(result("empty")).toMatchObject({ result: { text: "", isError: false } });
+    expect(result("bg")).toMatchObject({ result: { text: "two\nlines", isError: false } });
   });
 });
 

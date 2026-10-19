@@ -29,16 +29,32 @@ function stampOf() {
 function load(): Store {
   const stamp = stampOf();
   if (held.cache && stamp && stamp === held.stamp) return held.cache;
+  let text: string;
   try {
-    const raw = JSON.parse(fs.readFileSync(PUSH_PATH, "utf8")) as Partial<Store>;
-    if (raw.publicKey && raw.privateKey) {
-      held.stamp = stamp;
-      return (held.cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
-    }
-  } catch {}
-  const keys = webpush.generateVAPIDKeys();
-  held.cache = { ...keys, subs: [] };
-  write();
+    text = fs.readFileSync(PUSH_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return unreadable(err, stamp);
+    held.cache = { ...webpush.generateVAPIDKeys(), subs: [] };
+    write();
+    return held.cache;
+  }
+  try {
+    const raw = JSON.parse(text) as Partial<Store>;
+    if (!raw.publicKey || !raw.privateKey) throw new Error("no key pair in it");
+    held.stamp = stamp;
+    return (held.cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
+  } catch (err) {
+    return unreadable(err, stamp);
+  }
+}
+
+/* new keys would silently unsubscribe every browser, so a damaged file is never replaced with fresh ones */
+function unreadable(err: unknown, stamp: string): Store {
+  const why = `Can't read ${PUSH_PATH}: ${err instanceof Error ? err.message : String(err)}`;
+  if (!held.cache) throw new Error(why);
+  console.warn(`${why} (using the keys loaded earlier)`);
+  /* warn once per version of the file, not on every poll */
+  held.stamp = stamp;
   return held.cache;
 }
 

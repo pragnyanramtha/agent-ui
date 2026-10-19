@@ -9,7 +9,8 @@ export function Sheet({ title, onClose, children, footer, wide }: { title: strin
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panel.current?.querySelector<HTMLElement>("input, textarea, select, button[data-autofocus]")?.focus({ preventScroll: true });
+    /* focus must leave the page behind (the composer's Esc stops the turn) */
+    (panel.current?.querySelector<HTMLElement>("input, textarea, select, button[data-autofocus]") ?? panel.current?.querySelector<HTMLElement>('button[aria-label="Close"]'))?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => {
