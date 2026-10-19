@@ -10,7 +10,8 @@ import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, Na
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { confirmAsk, promptAsk } from "./Ask";
-import { AgentMark } from "./SessionList";
+import { AgentIcon } from "./AgentIcon";
+import { chipModel } from "@/lib/model-chip";
 import { useMediaQuery } from "./settings/controls";
 import type { SessionCost } from "@/lib/client/usage";
 import { shortPath, timeAgo } from "@/lib/client/api";
@@ -514,10 +515,11 @@ export function Composer({
   const busy = sending && busyLabel;
   const profileChoices = onProfileChange ? (profiles ?? []).filter((p) => p.agent === agent && !p.hidden) : [];
   const profileOn = profileChoices.find((p) => p.id === profile);
-  /* "Default" is never the label: name the model the server will pick (the profile's), else the agent */
+  /* "Default" is never the label: name the model the server will pick (the profile's), else the one the session last
+   * reported using, else the agent */
   const activeProfile = (profiles ?? []).find((p) => p.id === (profile ?? agent));
   const defaultModel = activeProfile?.defaultModel || activeProfile?.models[0] || null;
-  const shownModel = model || defaultModel;
+  const shownModel = chipModel(model, activeProfile, usage?.model).model;
   const profilePrefix = profileOn && profileChoices.length > 1 && profileOn.id !== agent ? profileOn.label : null;
   const pickText = profilePrefix ? (shownModel ? `${profilePrefix} · ${modelName(shownModel)}` : profilePrefix) : shownModel ? modelName(shownModel) : agentLabel;
   const ModeIcon = MODE_ICON[mode];
@@ -1149,7 +1151,7 @@ export function Composer({
               }}
               className={`${chip} shrink ${openMenu === "pick" ? chipOn : chipOff}`}
             >
-              <AgentMark agent={agent} className="size-2" />
+              <AgentIcon agent={agent} size={14} />
               <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
               <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
             </button>

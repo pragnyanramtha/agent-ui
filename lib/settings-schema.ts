@@ -15,6 +15,7 @@ import type { AgentId } from "./types";
 import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
 import { TERMINAL_SCHEMES } from "./client/terminal-theme";
 import { accentVars, ACCENT_TOKENS, parseCustomTheme, themeVars, THEME_VARS, type Bases } from "./theme";
+import { SIDEBAR_DEFAULT, SIDEBAR_MAX, SIDEBAR_MIN } from "./sidebar-width";
 
 export type Scope = "device" | "synced";
 
@@ -1194,6 +1195,23 @@ export const SETTINGS = {
       { value: "conventional", label: "Conventional commits" },
       { value: "plain", label: "Plain sentence" },
     ],
+  }),
+
+  /* sidebar: size */
+  sidebarWidth: number({
+    section: "sidebar",
+    group: "Size",
+    label: "Sidebar width",
+    description: "On desktop, drag the sidebar's edge to change it. Double-click the edge to reset.",
+    keywords: ["resize", "wide", "narrow", "drag", "panel"],
+    scope: "device",
+    default: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    step: 1,
+    unit: "px",
+    control: "slider",
+    dom: { cssVar: "--sidebar-w", unit: "px" },
   }),
 } as const satisfies Record<string, SettingDef>;
 

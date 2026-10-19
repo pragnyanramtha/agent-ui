@@ -8,6 +8,7 @@ import type { TerminalTarget } from "./WebTerminal";
 import { TerminalDrawer } from "./TerminalDrawer";
 import { NewSession } from "./NewSession";
 import { SessionList, SessionRail } from "./SessionList";
+import { SidebarResizer } from "./SidebarResizer";
 import { SessionScreen } from "./SessionScreen";
 import { preloadMarkdown } from "./Markdown";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
@@ -331,19 +332,20 @@ export function App() {
       </a>
       <aside
         className="shell-sidebar relative z-20 hidden shrink-0 bg-sidebar lg:block"
-        style={{ width: sidebar.collapsed ? 52 : 260 }}
+        style={{ width: sidebar.collapsed ? 52 : "var(--sidebar-w, 260px)" }}
         data-anim={sidebar.anim || undefined}
         data-collapsed={sidebar.collapsed || undefined}
       >
         {/* phones never show the sidebar, so its list isn't mounted there (nor the drawer's on a desktop) */}
         <div className="shell-face absolute inset-0 overflow-hidden" data-hidden={sidebar.collapsed || undefined} inert={sidebar.collapsed}>
-          <div className="h-full w-[260px]" onScrollCapture={nearListEnd}>
+          <div className="h-full w-[var(--sidebar-w,260px)]" onScrollCapture={nearListEnd}>
             {wide !== false && list(sidebar.toggle)}
           </div>
         </div>
         <div className="shell-face absolute inset-y-0 left-0 w-[52px]" data-hidden={!sidebar.collapsed || undefined} inert={!sidebar.collapsed}>
           {wide !== false && <SessionRail sessions={sessions} activeId={sessionId} onPick={openSession} onNew={newTab} onExpand={sidebar.toggle} onView={openView} inbox={inbox} />}
         </div>
+        {!sidebar.collapsed && <SidebarResizer />}
       </aside>
 
       <div

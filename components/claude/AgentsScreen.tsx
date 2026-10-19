@@ -15,7 +15,7 @@ import { copyText } from "./CodeCard";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { FolderPicker } from "./FolderPicker";
 import { Select } from "./Select";
-import { AGENT_TONE } from "./SessionList";
+import { AgentIcon } from "./AgentIcon";
 import { area as areaBase, field, primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 
 /* Agents on the server: what's running in kept terminals (they carry on with every browser closed),
@@ -418,7 +418,7 @@ function Profiles() {
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
           {AGENT_IDS.flatMap((a) => profiles.filter((p) => p.agent === a)).map((p) => (
             <li key={p.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
-              <span className={`size-2 shrink-0 rounded-full ${AGENT_TONE[p.agent]} ${p.installed ? "" : "opacity-30"}`} aria-hidden />
+              <AgentIcon agent={p.agent} size={16} className={p.installed ? "" : "opacity-30"} />
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className={`truncate text-sm ${p.hidden ? "text-ink-3" : "text-ink"}`}>
                   {p.label}
