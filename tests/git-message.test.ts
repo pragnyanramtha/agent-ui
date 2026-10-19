@@ -15,6 +15,7 @@ const sh = (args: string[]) => execFileSync("git", args, { cwd: repo, encoding: 
 const write = (p: string, s: string) => fs.writeFileSync(path.join(repo, p), s);
 const fake = (name: string, script: string) => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
 const NONE = "/nonexistent/agent-u-test-bin";
+process.env.XDG_CACHE_HOME = path.join(tmp, "cache");
 const saved = { PATH: process.env.PATH, CLAUDE_BIN: process.env.CLAUDE_BIN, CODEX_BIN: process.env.CODEX_BIN, GEMINI_BIN: process.env.GEMINI_BIN };
 
 beforeAll(async () => {
@@ -146,6 +147,26 @@ describe("suggestCommitMessage", () => {
     agentsFrom("gemini");
     fake("gemini", "cat > /dev/null\nprintf '\\n\\n'");
     expect((await g.suggestCommitMessage(repo)).source).toBe("summary");
+  });
+
+  it("asks gemini last and removes the chat it saved", async () => {
+    agentsFrom("gemini");
+    const home = path.join(tmp, "gemini-home");
+    process.env.GEMINI_CLI_HOME = home;
+    const chats = path.join(home, ".gemini", "tmp", "commit-message", "chats");
+    fs.mkdirSync(chats, { recursive: true });
+    fs.writeFileSync(path.join(chats, "session-2026-01-01T00-00-keepme00.jsonl"), "{}\n");
+    fake(
+      "gemini",
+      `cat > /dev/null\nwhile [ $# -gt 0 ]; do\n  if [ "$1" = "--session-id" ]; then shift; id=$(printf %s "$1" | cut -c1-8); fi\n  shift\ndone\npwd > '${logs}/gemini.cwd'\necho '{}' > '${chats}'/session-2026-10-19T03-55-$id.jsonl\necho 'Speed up the greeting'`,
+    );
+    try {
+      expect(await g.suggestCommitMessage(repo)).toMatchObject({ message: "Speed up the greeting", source: "gemini" });
+    } finally {
+      delete process.env.GEMINI_CLI_HOME;
+    }
+    expect(fs.readFileSync(path.join(logs, "gemini.cwd"), "utf8").trim()).toBe(path.join(tmp, "cache", "agent-u", "commit-message"));
+    expect(fs.readdirSync(chats)).toEqual(["session-2026-01-01T00-00-keepme00.jsonl"]);
   });
 
   it("gives up on a slow agent at the timeout", async () => {

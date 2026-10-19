@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { parseUnifiedPatch, type PatchFile, type PatchStatus } from "@/lib/client/diff";
+import { geminiRoot } from "./agents/gemini-store";
 import { getProfile, type ResolvedProfile } from "./profiles";
 
 /* Git for a session's folder: checkpoints of the working tree before each turn (hidden refs, made through a
@@ -637,23 +638,43 @@ export function commitPrompt(o: { patch: string; cut: boolean; stats: { path: st
 /** a model id from the profile that looks cheap, if it lists any */
 const cheapModel = (p: ResolvedProfile) => p.models?.find((m) => /haiku|mini|flash|lite|nano|small|low/i.test(m));
 
-function messageArgs(agent: MessageAgent, p: ResolvedProfile, out: string): string[] {
+function messageArgs(agent: MessageAgent, p: ResolvedProfile, o: { lastMessageFile: string; sessionId: string }): string[] {
   const model = cheapModel(p);
   if (agent === "claude") return [...p.args, "-p", "--output-format", "text", "--model", model ?? (p.models?.length ? (p.defaultModel ?? p.models[0]) : "haiku"), "--max-turns", "1", "--no-session-persistence"];
   if (agent === "codex")
-    return [...p.args, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", 'model_reasoning_effort="low"', ...(model ? ["--model", model] : []), "--output-last-message", out, "-"];
-  return [...p.args, "-p", "", "--output-format", "text", "--skip-trust", ...(model ? ["-m", model] : [])];
+    return [...p.args, "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only", "-c", 'model_reasoning_effort="low"', ...(model ? ["--model", model] : []), "--output-last-message", o.lastMessageFile, "-"];
+  return [...p.args, "-p", "", "--output-format", "text", "--skip-trust", "--session-id", o.sessionId, ...(model ? ["-m", model] : [])];
+}
+
+/* runs start in an empty folder of their own, away from the repo, so the agent doesn't wander its files or file
+ * the run under the user's project; one fixed folder keeps agents' per-project bookkeeping to a single entry */
+const messageCwd = () => path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "agent-u", "commit-message");
+
+/** Gemini CLI has no way to skip saving a chat, so the one-shot's chat is removed after it ran. */
+async function forgetGeminiChat(p: ResolvedProfile, cwd: string, id: string) {
+  const root = geminiRoot(p.env.GEMINI_CLI_HOME || process.env.GEMINI_CLI_HOME || os.homedir());
+  let slug = path.basename(cwd).toLowerCase();
+  try {
+    const j = JSON.parse(await fs.readFile(path.join(root, "projects.json"), "utf8")) as { projects?: Record<string, unknown> };
+    const s = j.projects?.[cwd];
+    if (typeof s === "string" && s && !s.includes("/")) slug = s;
+  } catch {}
+  const chats = path.join(root, "tmp", slug, "chats");
+  const names = await fs.readdir(chats).catch(() => [] as string[]);
+  for (const n of names) if (n.startsWith("session-") && (n.endsWith(`-${id.slice(0, 8)}.jsonl`) || n.endsWith(`-${id.slice(0, 8)}.json`))) await fs.rm(path.join(chats, n), { force: true }).catch(() => undefined);
 }
 
 /** one print-mode run with the prompt on stdin; its answer, or null when it fails or runs out of time */
 async function askOnce(agent: MessageAgent, p: ResolvedProfile, prompt: string, timeoutMs: number): Promise<string | null> {
-  /* away from the repo, so the agent doesn't wander its files or file the run under the user's project */
+  const cwd = messageCwd();
+  await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agent-u-commit-msg-"));
   const out = path.join(dir, "last-message.txt");
+  const sessionId = crypto.randomUUID();
   try {
     const stdout = await new Promise<string | null>((resolve) => {
       /* its own process group, so a timeout also stops whatever the CLI started */
-      const child = spawn(p.binPath!, messageArgs(agent, p, out), { cwd: dir, env: { ...process.env, ...p.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "ignore"], detached: true });
+      const child = spawn(p.binPath!, messageArgs(agent, p, { lastMessageFile: out, sessionId }), { cwd, env: { ...process.env, ...p.env, NO_COLOR: "1" }, stdio: ["pipe", "pipe", "ignore"], detached: true });
       let text = "";
       const timer = setTimeout(() => {
         try {
@@ -674,6 +695,7 @@ async function askOnce(agent: MessageAgent, p: ResolvedProfile, prompt: string, 
     return stdout;
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    if (agent === "gemini") await forgetGeminiChat(p, cwd, sessionId).catch(() => undefined);
   }
 }
 
