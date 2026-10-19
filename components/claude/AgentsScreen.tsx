@@ -12,6 +12,7 @@ import { setProfilesCache, useProfiles } from "@/lib/client/useProfiles";
 import { copyText } from "./CodeCard";
 import { OPEN_TERMINAL_EVENT } from "./CommandPalette";
 import { FolderPicker } from "./FolderPicker";
+import { Select } from "./Select";
 import { AGENT_TONE } from "./SessionList";
 import { area as areaBase, field, primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 
@@ -94,14 +95,12 @@ function Launcher({ projects }: { projects: string[] }) {
       <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="text-[12px] font-medium text-ink-3">Agent</span>
-          <select value={chosen?.id ?? ""} onChange={(e) => setProfile(e.target.value)} className={field}>
-            {AGENT_IDS.flatMap((a) => usable.filter((p) => p.agent === a)).map((p) => (
-              <option key={p.id} value={p.id} disabled={!p.installed}>
-                {p.label}
-                {p.installed ? "" : " (not installed)"}
-              </option>
-            ))}
-          </select>
+          <Select
+            label="Agent"
+            value={chosen?.id ?? ""}
+            onChange={setProfile}
+            options={AGENT_IDS.flatMap((a) => usable.filter((p) => p.agent === a)).map((p) => ({ value: p.id, label: p.label, hint: p.installed ? undefined : "Not installed", disabled: !p.installed }))}
+          />
         </label>
         <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
           <span className="text-[12px] font-medium text-ink-3">Folder</span>
@@ -495,13 +494,7 @@ function ProfileEditor({
         {row(
           "Agent",
           "",
-          <select value={d.agent} onChange={(e) => set({ agent: e.target.value as AgentId })} disabled={builtin} className={field}>
-            {AGENT_IDS.map((a) => (
-              <option key={a} value={a}>
-                {AGENT_LABEL[a]}
-              </option>
-            ))}
-          </select>,
+          <Select label="Agent" value={d.agent} onChange={(v) => set({ agent: v as AgentId })} disabled={builtin} options={AGENT_IDS.map((a) => ({ value: a, label: AGENT_LABEL[a] }))} />,
         )}
         {row("Binary", "Name on PATH or absolute path. Empty for default.", <input value={d.bin} onChange={(e) => set({ bin: e.target.value })} className={`${field} font-mono`} placeholder={d.agent === "cursor" ? "cursor-agent" : d.agent === "antigravity" ? "agy" : d.agent} spellCheck={false} autoCapitalize="off" />)}
         {row("Arguments", "One per line, before the agent's own", <textarea rows={3} value={d.args} onChange={(e) => set({ args: e.target.value })} className={area} spellCheck={false} autoCapitalize="off" />)}

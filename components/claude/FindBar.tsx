@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { NavArrowDown, NavArrowUp, Xmark } from "iconoir-react";
 import { hasMod, isMac, modalOpen } from "@/lib/client/shortcuts";
 import { RELEASE_PIN_EVENT } from "./Thread";
+import { EXPAND_FOLD_EVENT } from "./TurnFold";
 
 const MAX = 2000;
 
@@ -32,7 +33,8 @@ function findRanges(root: Element, q: string): Range[] {
 
 /**
  * Find in the loaded messages of a session (Ctrl/Cmd+F). Matches are painted with the CSS
- * Custom Highlight API, so React's DOM is never touched. Collapsed tool output isn't searched.
+ * Custom Highlight API, so React's DOM is never touched. Collapsed tool output isn't searched;
+ * folded turns are, and the one holding the current match opens.
  */
 export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   const [open, setOpen] = useState(false);
@@ -72,9 +74,16 @@ export function FindBar({ scope }: { scope: RefObject<HTMLElement | null> }) {
   }, []);
 
   const reveal = useCallback(
-    (r: Range | undefined) => {
+    (r: Range | undefined, tries = 0) => {
       const log = scope.current?.querySelector<HTMLElement>('[role="log"]');
       if (!r || !log) return;
+      /* a match inside a collapsed turn: open it, then scroll once it has laid out */
+      const fold = r.startContainer.parentElement?.closest<HTMLElement>("[data-fold]:not([data-open])");
+      if (fold && tries < 3) {
+        fold.dispatchEvent(new Event(EXPAND_FOLD_EVENT));
+        requestAnimationFrame(() => requestAnimationFrame(() => reveal(r, tries + 1)));
+        return;
+      }
       const box = r.getBoundingClientRect();
       const view = log.getBoundingClientRect();
       if (box.top >= view.top + 60 && box.bottom <= view.bottom - 160) return;
