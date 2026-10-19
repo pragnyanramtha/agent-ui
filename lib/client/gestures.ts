@@ -180,7 +180,8 @@ export function useEdgeSwipe(opts: { enabled: boolean; drawer: RefObject<HTMLEle
   const latest = useRef(opts);
   latest.current = opts;
   useEffect(() => {
-    if (!opts.enabled) return;
+    /* its document-wide touchmove can't be passive, so only touch screens pay for it */
+    if (!opts.enabled || !window.matchMedia("(pointer: coarse)").matches) return;
     let saved: { panel: string; shade: string } | null = null;
     const parts = () => {
       const panel = latest.current.drawer.current;
@@ -276,7 +277,7 @@ export function useRowSwipe(list: RefObject<HTMLElement | null>, opts: RowSwipe)
         under = document.createElement("div");
         under.setAttribute("aria-hidden", "true");
         under.dataset.swipeUnder = "";
-        under.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;padding:0 14px;font-size:12.5px;font-weight:600;color:white;pointer-events:none";
+        under.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;padding:0 14px;font-size:12px;font-weight:600;color:white;pointer-events:none";
         under.style.borderRadius = getComputedStyle(row).borderRadius;
         wrap.style.overflow = "hidden";
         wrap.prepend(under);
