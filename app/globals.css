@@ -1087,7 +1087,7 @@ label {
 }
 .composer-pill:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(0 0 0 / 0.08)),
+    0 0 0 1px color-mix(in srgb, var(--accent) 30%, oklch(0 0 0 / 0.08)),
     0 12px 28px -18px oklch(0 0 0 / 0.4);
 }
 .composer-pill[data-invalid] {
@@ -1100,7 +1100,7 @@ label {
   box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
 }
 .dark .composer-pill:focus-within {
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(1 0 0 / 0.08));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, oklch(1 0 0 / 0.08));
 }
 .dark .composer-pill[data-invalid] {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--red) 55%, transparent);
