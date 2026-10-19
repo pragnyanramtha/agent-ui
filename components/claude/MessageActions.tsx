@@ -31,7 +31,7 @@ function CopyButton({ text, onCopied }: { text: string; onCopied: (v: boolean) =
       type="button"
       onClick={copy}
       aria-label={copied ? "Copied" : "Copy message"}
-      className={`tap relative flex h-8 items-center gap-1 rounded-[6px] px-1.5 font-medium transition-colors duration-100 hover:bg-hover pointer-fine:h-6 ${copied ? "text-green" : "hover:text-ink"}`}
+      className={`msg-copy tap relative flex h-8 items-center gap-1 rounded-[6px] px-1.5 font-medium transition-colors duration-100 hover:bg-hover pointer-fine:h-6 ${copied ? "text-green" : "hover:text-ink"}`}
     >
       {copied ? <Check width={13} height={13} strokeWidth={2.2} aria-hidden /> : <Copy width={13} height={13} strokeWidth={1.8} aria-hidden />}
       {copied ? "Copied" : "Copy"}
@@ -52,7 +52,7 @@ export function MessageActions({ text, ts, align = "start" }: { text: string; ts
   return (
     <div
       data-copied={copied || undefined}
-      className={`flex h-8 items-center gap-1 text-[12px] text-ink-3 select-none transition-opacity duration-150 motion-reduce:transition-none pointer-fine:absolute pointer-fine:bottom-0 pointer-fine:h-6 pointer-fine:opacity-0 pointer-fine:group-hover/msg:opacity-100 pointer-fine:focus-within:opacity-100 pointer-fine:data-copied:opacity-100 ${
+      className={`msg-actions flex h-8 items-center gap-1 text-[12px] text-ink-3 select-none transition-opacity duration-150 motion-reduce:transition-none pointer-fine:absolute pointer-fine:bottom-0 pointer-fine:h-6 pointer-fine:opacity-0 pointer-fine:group-hover/msg:opacity-100 pointer-fine:focus-within:opacity-100 pointer-fine:data-copied:opacity-100 ${
         align === "end" ? "flex-row-reverse self-end pointer-fine:right-0 -mr-1.5" : "self-start pointer-fine:left-0 -ml-1.5"
       }`}
     >

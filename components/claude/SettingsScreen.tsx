@@ -1,111 +1,155 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { Menu } from "iconoir-react";
-import { api } from "@/lib/client/api";
-import { disablePush, enablePush, pushStatus, type PushStatus } from "@/lib/client/push";
-import { applyTheme, useSetting, type Settings } from "@/lib/client/settings";
-import { ShortcutList } from "./ShortcutsDialog";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Menu, NavArrowLeft, NavArrowRight, Search, Xmark } from "iconoir-react";
+import { resetSection, sectionIsDefault, setSettings, useSettings } from "@/lib/client/settings";
+import { SECTIONS, searchSettings, sectionInfo, settingsIn, type SectionId, type Settings } from "@/lib/settings-schema";
+import { Row, SmallButton } from "./settings/controls";
+import { SettingField } from "./settings/SettingField";
+import { SECTION_ICONS, SectionBody } from "./settings/sections";
 
-const PUSH_NOTE: Partial<Record<PushStatus, string>> = {
-  install: "On iPhone and iPad, add agent-u to the Home Screen first.",
-  denied: "Blocked. Allow notifications in site settings.",
-  unsupported: "Not supported in this browser.",
-};
+const LAST_KEY = "cui:settings-section";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col">
-      <h2 className="px-1 pb-2 text-[12px] font-medium text-ink-3">{title}</h2>
-      <div className="divide-y divide-line rounded-[10px] border border-line bg-surface">{children}</div>
-    </section>
-  );
-}
-
-function Row({ label, note, children }: { label: string; note?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="flex min-h-12 items-center gap-4 px-3.5 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="text-[13.5px] text-ink">{label}</div>
-        {note && <div className="mt-0.5 text-[12px] text-ink-3">{note}</div>}
-      </div>
-      <div className="shrink-0">{children}</div>
-    </div>
-  );
-}
-
-function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`tap relative inline-flex h-5 w-9 items-center rounded-full transition-colors duration-150 disabled:opacity-50 ${on ? "bg-accent-solid" : "bg-line-strong"}`}
-    >
-      <span className={`size-4 rounded-full bg-white shadow-sm transition-transform duration-150 ${on ? "translate-x-[18px]" : "translate-x-0.5"}`} />
-    </button>
-  );
-}
-
-function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: [T, string][]; onChange: (v: T) => void; label: string }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[8px] bg-field p-0.5">
-      {options.map(([v, text]) => (
-        <button
-          key={v}
-          type="button"
-          role="radio"
-          aria-checked={value === v}
-          onClick={() => onChange(v)}
-          className={`tap relative h-7 rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors duration-150 ${value === v ? "bg-surface text-ink shadow-btn" : "text-ink-3 hover:text-ink-2"}`}
-        >
-          {text}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Notifications() {
-  const [status, setStatus] = useState<PushStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+function SectionHeader({ id }: { id: SectionId }) {
+  const values = useSettings();
+  const info = sectionInfo(id);
+  const own = settingsIn(id);
+  const [undo, setUndo] = useState<Partial<Settings> | null>(null);
+  useEffect(() => setUndo(null), [id]);
   useEffect(() => {
-    void pushStatus()
-      .then(setStatus)
-      .catch(() => setStatus("unsupported"));
-  }, []);
-  const toggle = async (on: boolean) => {
-    setBusy(true);
-    setNote(null);
-    try {
-      if (on) {
-        await enablePush();
-        setNote("Test notification sent.");
-      } else await disablePush();
-    } catch (err) {
-      setNote(err instanceof Error ? err.message : String(err));
-    } finally {
-      setStatus(await pushStatus().catch(() => "unsupported" as const));
-      setBusy(false);
-    }
-  };
-  const blocked = status ? PUSH_NOTE[status] : undefined;
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 6000);
+    return () => clearTimeout(t);
+  }, [undo]);
+  const atDefault = sectionIsDefault(values, id);
   return (
-    <Row label="Push notifications" note={note ?? blocked ?? "Finished turns, approvals and failures."}>
-      <Switch on={status === "on"} onChange={(v) => void toggle(v)} label="Push notifications" disabled={busy || status === null || Boolean(blocked)} />
-    </Row>
+    <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
+        <p className="mt-0.5 text-[13px] text-ink-3">{info.description}</p>
+      </div>
+      {own.length > 0 &&
+        (undo ? (
+          <SmallButton
+            onClick={() => {
+              setSettings(undo);
+              setUndo(null);
+            }}
+          >
+            Undo reset
+          </SmallButton>
+        ) : (
+          <SmallButton
+            disabled={atDefault}
+            onClick={() => {
+              setUndo(Object.fromEntries(own.map((d) => [d.key, values[d.key]])) as Partial<Settings>);
+              resetSection(id);
+            }}
+          >
+            Reset to defaults
+          </SmallButton>
+        ))}
+    </div>
   );
 }
 
-/** Device preferences: appearance, composer, terminal, notifications, shortcuts. */
+function SearchField({ value, onChange, inputRef }: { value: string; onChange: (v: string) => void; inputRef: React.RefObject<HTMLInputElement | null> }) {
+  return (
+    <div className="field-ring relative flex h-9 items-center gap-2 rounded-control border border-line bg-field px-2.5 md:h-8">
+      <Search width={14} height={14} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
+      <input
+        ref={inputRef}
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && value && (e.preventDefault(), onChange(""))}
+        placeholder="Search settings"
+        aria-label="Search settings"
+        className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-3 md:text-[13px] [&::-webkit-search-cancel-button]:hidden"
+      />
+      {value && (
+        <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
+          <Xmark width={14} height={14} strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Results({ query, onOpen }: { query: string; onOpen: (id: SectionId) => void }) {
+  const hits = searchSettings(query);
+  if (!hits.length) return <p className="px-1 py-10 text-center text-[13px] text-ink-3">No settings match &ldquo;{query.trim()}&rdquo;.</p>;
+  return (
+    <>
+      {hits.map((h) => {
+        const info = sectionInfo(h.section);
+        return (
+          <section key={h.section} className="flex flex-col">
+            <div className="flex items-center px-1 pb-2">
+              <h3 className="flex-1 text-[12px] font-medium text-ink-3">{info.label}</h3>
+              <button type="button" onClick={() => onOpen(h.section)} className="tap relative text-[12px] font-medium text-accent-ink hover:underline">
+                Open {info.label}
+              </button>
+            </div>
+            <div className="divide-y divide-line rounded-card border border-line bg-surface">
+              {h.settings.map((k) => (
+                <SettingField key={k} k={k} />
+              ))}
+              {h.items.map((id) => {
+                const item = info.items!.find((i) => i.id === id)!;
+                return (
+                  <Row key={id} label={item.label} note={item.description}>
+                    <SmallButton onClick={() => onOpen(h.section)}>Open</SmallButton>
+                  </Row>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
+/** Settings: a section list beside the open section on wide screens; on phones the list opens each section as a page. */
 export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void; extra?: ReactNode; onAgents: () => void }) {
-  const [theme] = useSetting("theme");
-  const [sendWithEnter, setSendWithEnter] = useSetting("sendWithEnter");
-  const [docked, setDocked] = useSetting("terminalDocked");
+  const [section, setSection] = useState<SectionId>("general");
+  /* phones only: a section page is open instead of the list */
+  const [paged, setPaged] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(LAST_KEY) as SectionId | null;
+    if (saved && SECTIONS.some((s) => s.id === saved)) setSection(saved);
+  }, []);
+
+  const open = (id: SectionId) => {
+    setSection(id);
+    setPaged(true);
+    setQuery("");
+    sessionStorage.setItem(LAST_KEY, id);
+    contentRef.current?.scrollTo({ top: 0 });
+  };
+
+  /* "/" or Ctrl/Cmd+F jumps to the search field */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = t?.closest("input, textarea, select, [contenteditable]");
+      if ((e.key === "/" && !typing) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f")) {
+        if (!searchRef.current?.offsetParent) return;
+        e.preventDefault();
+        searchRef.current.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const searching = query.trim().length > 0;
+  const info = sectionInfo(section);
 
   return (
     <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -114,75 +158,62 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">Settings</h1>
+          {paged && !searching && (
+            <button type="button" onClick={() => setPaged(false)} aria-label="All settings" className="icon-btn md:hidden">
+              <NavArrowLeft width={19} height={19} strokeWidth={1.9} />
+            </button>
+          )}
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[14.5px]">
+            <span className={paged && !searching ? "hidden md:inline" : ""}>Settings</span>
+            {paged && !searching && <span className="md:hidden">{info.label}</span>}
+          </h1>
           {extra}
         </div>
       </header>
-      <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[680px] flex-col gap-7 px-3 pt-2 pb-16 sm:px-6">
-          <Section title="Appearance">
-            <Row label="Theme">
-              <Segmented<Settings["theme"]>
-                label="Theme"
-                value={theme}
-                onChange={applyTheme}
-                options={[
-                  ["system", "System"],
-                  ["light", "Light"],
-                  ["dark", "Dark"],
-                ]}
-              />
-            </Row>
-          </Section>
 
-          <Section title="Composer">
-            <Row label="Send with Enter" note={sendWithEnter ? "Shift+Enter adds a new line." : "Enter adds a new line. Ctrl+Enter sends."}>
-              <Switch on={sendWithEnter} onChange={setSendWithEnter} label="Send with Enter" />
-            </Row>
-          </Section>
+      <div className="safe-x min-h-0 flex-1 overflow-y-auto overscroll-contain md:flex md:overflow-hidden">
+        <nav aria-label="Settings sections" className={`shrink-0 flex-col gap-3 px-3 pt-2 pb-4 md:flex md:w-60 md:overflow-y-auto md:border-r md:border-line md:px-2.5 md:pb-6 ${paged && !searching ? "hidden" : "flex"}`}>
+          <SearchField value={query} onChange={setQuery} inputRef={searchRef} />
+          <ul className={`flex-col gap-px md:flex ${searching ? "hidden" : "flex"} max-md:divide-y max-md:divide-line max-md:rounded-card max-md:border max-md:border-line max-md:bg-surface`}>
+            {SECTIONS.map((s) => {
+              const Icon = SECTION_ICONS[s.id];
+              const current = s.id === section;
+              return (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => open(s.id)}
+                    aria-current={current ? "page" : undefined}
+                    className={`tap relative flex w-full items-center gap-3 text-left text-ink max-md:min-h-13 max-md:px-3.5 max-md:py-2.5 md:h-8 md:gap-2.5 md:rounded-control md:px-2.5 md:text-[13.5px] ${
+                      current ? "md:bg-sidebar-active md:font-medium" : "md:text-ink-2 md:hover:bg-hover md:hover:text-ink"
+                    }`}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-field text-ink-2 md:size-4 md:bg-transparent md:text-current">
+                      <Icon width={15} height={15} strokeWidth={1.8} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14.5px] md:text-[13.5px]">{s.label}</span>
+                      <span className="block truncate text-[12px] text-ink-3 md:hidden">{s.description}</span>
+                    </span>
+                    <NavArrowRight width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-3 md:hidden" aria-hidden />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
 
-          <Section title="Terminal">
-            <Row label="Open in a panel" note="On desktop, terminals open under the session. Off opens them full size.">
-              <Switch on={docked} onChange={setDocked} label="Open terminals in a panel" />
-            </Row>
-          </Section>
-
-          <Section title="Notifications">
-            <Notifications />
-          </Section>
-
-          <Section title="Agents">
-            <Row label="Profiles and terminals" note="Accounts, proxies, models and running agents.">
-              <button type="button" onClick={onAgents} className="tap relative h-8 rounded-[8px] px-3 text-[12.5px] font-medium text-ink shadow-btn hover:bg-hover">
-                Open
-              </button>
-            </Row>
-          </Section>
-
-          <section className="flex flex-col">
-            <h2 className="px-1 pb-2 text-[12px] font-medium text-ink-3">Keyboard shortcuts</h2>
-            <div className="rounded-[10px] border border-line bg-surface px-3.5 py-3">
-              <ShortcutList />
-            </div>
-          </section>
-
-          <Section title="Account">
-            <Row label="Sign out" note="Ends this browser's session. Agents keep running.">
-              <button
-                type="button"
-                onClick={() =>
-                  void api("/api/auth/logout", {})
-                    .catch(() => undefined)
-                    .then(() => {
-                      window.location.href = "/login";
-                    })
-                }
-                className="tap relative h-8 rounded-[8px] px-3 text-[12.5px] font-medium text-red-ink shadow-btn hover:bg-hover"
-              >
-                Sign out
-              </button>
-            </Row>
-          </Section>
+        <div ref={contentRef} className={`safe-bottom min-w-0 md:block md:flex-1 md:overflow-y-auto md:overscroll-contain ${paged || searching ? "block" : "hidden"}`}>
+          <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 pt-2 pb-16 sm:px-6 md:pt-6">
+            {searching ? (
+              <Results query={query} onOpen={open} />
+            ) : (
+              <>
+                <SectionHeader id={section} />
+                <SectionBody id={section} onAgents={onAgents} />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </section>

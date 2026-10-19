@@ -1,0 +1,23 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { readSynced, updateSynced } from "@/lib/server/settings";
+
+export const dynamic = "force-dynamic";
+
+/** the settings shared by every browser signed in to this server */
+export function GET() {
+  return NextResponse.json(readSynced());
+}
+
+/** a JSON merge of synced settings: `{ "palette": "nord", "accent": null }` (null goes back to the default) */
+export async function PUT(req: NextRequest) {
+  const patch: unknown = await req.json().catch(() => undefined);
+  let res: ReturnType<typeof updateSynced>;
+  try {
+    res = updateSynced(patch);
+  } catch (err) {
+    console.error("settings: save failed", err);
+    return NextResponse.json({ error: "Couldn't save settings on the server." }, { status: 500 });
+  }
+  if (!res.ok) return NextResponse.json({ error: res.errors.join(" "), errors: res.errors }, { status: 400 });
+  return NextResponse.json(res.file);
+}
