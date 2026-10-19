@@ -15,6 +15,7 @@ import { toast } from "@/lib/client/toast";
 import { confirmAsk, promptAsk } from "./Ask";
 import { MODES, modelLabel } from "./Composer";
 import { isAsleep } from "./SessionList";
+import { canGoBack } from "@/lib/client/tab-history";
 
 const KEYS = ["gitPanel", "changesPanel", "prevSession", "nextSession", "nextNeedsYou", "pin", "archive", "back", "forward", "modelPicker", "modePicker", "effortPicker"] as const satisfies readonly CommandId[];
 
@@ -118,8 +119,9 @@ export function useSessionCommands({ sessions, activeId, finished, onOpen }: { s
       const all = sessions ?? [];
       if (id === "back" || id === "forward") {
         e.preventDefault();
-        if (id === "back") window.history.back();
-        else window.history.forward();
+        if (id === "back") {
+          if (canGoBack()) window.history.back();
+        } else window.history.forward();
         return;
       }
       if (id === "prevSession" || id === "nextSession") {
