@@ -1245,6 +1245,7 @@ export function SessionList({
           onClose={closeDelete}
           onDeleted={(transcript) => {
             setDeleting(null);
+            if (finished[deleting.id]) onUnread?.(deleting, false);
             onDeleted?.(deleting.id);
             say(transcript ? "Session and transcript deleted." : "Session deleted.");
           }}
