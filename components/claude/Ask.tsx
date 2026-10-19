@@ -73,7 +73,7 @@ export function AskHost() {
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && value.trim() && ok()}
+          onKeyDown={(e) => !e.nativeEvent.isComposing && e.keyCode !== 229 && e.key === "Enter" && value.trim() && ok()}
           onFocus={(e) => {
             const dot = e.target.value.lastIndexOf(".");
             e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length);

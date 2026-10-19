@@ -388,6 +388,7 @@ export default function ApprovalCard({
                             if (question.type === "radio") setAnswers((current) => ({ ...current, [qIdx]: [] }));
                           }}
                           onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                             if (event.key === "Enter" && hasAnswer) {
                               event.preventDefault();
                               advance();

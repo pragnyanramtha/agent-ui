@@ -472,6 +472,7 @@ export function CommandPalette({
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const n = items.length;
     switch (e.key) {
       case "ArrowDown":
