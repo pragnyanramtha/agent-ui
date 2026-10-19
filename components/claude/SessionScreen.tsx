@@ -28,7 +28,7 @@ import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
-import { hasMod, isMac } from "@/lib/client/shortcuts";
+import { isCommand } from "@/lib/client/shortcuts";
 import { useDefaultEffort, useSetting } from "@/lib/client/settings";
 
 function useMeasure<T extends HTMLElement>() {
@@ -97,13 +97,11 @@ export function SessionScreen({
   }, []);
   /* which panels have something to show; read at key time */
   const available = useRef({ changes: false, git: false });
-  /* Ctrl/Cmd+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
+  /* Mod+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
   useEffect(() => {
-    const mac = isMac();
     const onKey = (e: KeyboardEvent) => {
-      if (!hasMod(e, mac) || !e.altKey || e.shiftKey || e.code !== "KeyB") return;
-      /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts, so it's text there */
-      if (!mac && e.getModifierState?.("AltGraph")) return;
+      /* AltGr arrives as Ctrl+Alt on Windows and Linux layouts; the matcher treats it as text */
+      if (!isCommand(e, "sidePanel")) return;
       e.preventDefault();
       setPanel((cur) => {
         if (cur) return null;

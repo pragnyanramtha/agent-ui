@@ -6,7 +6,7 @@ import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@
 import { toast } from "@/lib/client/toast";
 import { sendTestNotification } from "@/lib/client/useNotifications";
 import { settingsIn, type SectionId } from "@/lib/settings-schema";
-import { ShortcutList } from "../ShortcutsDialog";
+import { KeyboardSection } from "./KeyboardSection";
 import { Card, Row, SmallButton, Switch } from "./controls";
 import { SettingField } from "./SettingField";
 import { Preview } from "./Preview";
@@ -36,6 +36,7 @@ export const SECTION_ICONS: Record<SectionId, ComponentType<{ width?: number; he
 export function RegistryCards({ section }: { section: SectionId }) {
   const groups = new Map<string, ReturnType<typeof settingsIn>>();
   for (const d of settingsIn(section)) {
+    if (d.hidden) continue;
     /* a setting listed in another section keeps its rows together under that section's name */
     const g = d.section === section ? (d.group ?? "") : "";
     groups.set(g, [...(groups.get(g) ?? []), d]);
@@ -155,17 +156,6 @@ function Notifications() {
   );
 }
 
-function Keyboard() {
-  return (
-    <section className="flex flex-col">
-      <div className="rounded-card border border-line bg-surface px-3.5 py-3">
-        <ShortcutList />
-      </div>
-      <p className="px-1 pt-2 text-[12px] text-ink-3">Press ? outside a text field to see these anywhere.</p>
-    </section>
-  );
-}
-
 function Agents({ onAgents }: SectionProps) {
   return (
     <Card>
@@ -191,7 +181,7 @@ export const SECTION_VIEWS: Partial<Record<SectionId, ComponentType<SectionProps
   general: General,
   appearance: Appearance,
   notifications: Notifications,
-  keyboard: Keyboard,
+  keyboard: KeyboardSection,
   agents: Agents,
   git: Git,
   data: DataSection,

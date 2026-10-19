@@ -146,6 +146,153 @@ export function buildTerminalTheme({ dark, page, ink, accent }: { dark: boolean;
   };
 }
 
+type Scheme = { bg: string; fg: string; cursor: string; selection: string; ansi: Ansi };
+
+const scheme = ({ bg, fg, cursor, selection, ansi }: Scheme): TerminalTheme => ({
+  background: bg,
+  foreground: fg,
+  cursor,
+  cursorAccent: bg,
+  selectionBackground: selection,
+  selectionInactiveBackground: mix(bg, fg, 0.12),
+  ...ansi,
+});
+
+/** Classic terminal color schemes, for people who want the terminal to look the same whatever the app palette. */
+export const TERMINAL_SCHEMES = [
+  {
+    id: "one-dark",
+    label: "One Dark",
+    theme: scheme({
+      bg: "#282c34",
+      fg: "#abb2bf",
+      cursor: "#528bff",
+      selection: "#3e4451",
+      ansi: { ...DARK_ANSI, black: "#282c34", white: "#abb2bf", brightBlack: "#5c6370" },
+    }),
+  },
+  {
+    id: "dracula",
+    label: "Dracula",
+    theme: scheme({
+      bg: "#282a36",
+      fg: "#f8f8f2",
+      cursor: "#f8f8f2",
+      selection: "#44475a",
+      ansi: {
+        black: "#21222c",
+        red: "#ff5555",
+        green: "#50fa7b",
+        yellow: "#f1fa8c",
+        blue: "#bd93f9",
+        magenta: "#ff79c6",
+        cyan: "#8be9fd",
+        white: "#f8f8f2",
+        brightBlack: "#6272a4",
+        brightRed: "#ff6e6e",
+        brightGreen: "#69ff94",
+        brightYellow: "#ffffa5",
+        brightBlue: "#d6acff",
+        brightMagenta: "#ff92df",
+        brightCyan: "#a4ffff",
+        brightWhite: "#ffffff",
+      },
+    }),
+  },
+  {
+    id: "solarized-dark",
+    label: "Solarized Dark",
+    theme: scheme({
+      bg: "#002b36",
+      fg: "#93a1a1",
+      cursor: "#93a1a1",
+      selection: "#0d4a5a",
+      ansi: {
+        black: "#073642",
+        red: "#dc322f",
+        green: "#859900",
+        yellow: "#b58900",
+        blue: "#268bd2",
+        magenta: "#d33682",
+        cyan: "#2aa198",
+        white: "#eee8d5",
+        brightBlack: "#586e75",
+        brightRed: "#cb4b16",
+        brightGreen: "#9cb200",
+        brightYellow: "#d4a000",
+        brightBlue: "#4aa3e6",
+        brightMagenta: "#6c71c4",
+        brightCyan: "#3cc0b5",
+        brightWhite: "#fdf6e3",
+      },
+    }),
+  },
+  {
+    id: "solarized-light",
+    label: "Solarized Light",
+    theme: scheme({
+      bg: "#fdf6e3",
+      fg: "#586e75",
+      cursor: "#586e75",
+      selection: "#eee1bc",
+      ansi: {
+        black: "#073642",
+        red: "#c4271f",
+        green: "#5f6f00",
+        yellow: "#7f6000",
+        blue: "#1a6eb0",
+        magenta: "#b02a6b",
+        cyan: "#1a7a72",
+        white: "#6b7f85",
+        brightBlack: "#586e75",
+        brightRed: "#b8400f",
+        brightGreen: "#6b7d00",
+        brightYellow: "#8a6900",
+        brightBlue: "#2a7cc0",
+        brightMagenta: "#5a5fb0",
+        brightCyan: "#1f8a80",
+        brightWhite: "#002b36",
+      },
+    }),
+  },
+  {
+    id: "gruvbox-dark",
+    label: "Gruvbox Dark",
+    theme: scheme({
+      bg: "#282828",
+      fg: "#ebdbb2",
+      cursor: "#ebdbb2",
+      selection: "#504945",
+      ansi: {
+        black: "#282828",
+        red: "#cc241d",
+        green: "#98971a",
+        yellow: "#d79921",
+        blue: "#458588",
+        magenta: "#b16286",
+        cyan: "#689d6a",
+        white: "#a89984",
+        brightBlack: "#928374",
+        brightRed: "#fb4934",
+        brightGreen: "#b8bb26",
+        brightYellow: "#fabd2f",
+        brightBlue: "#83a598",
+        brightMagenta: "#d3869b",
+        brightCyan: "#8ec07c",
+        brightWhite: "#ebdbb2",
+      },
+    }),
+  },
+  {
+    id: "github-light",
+    label: "GitHub Light",
+    theme: scheme({ bg: "#ffffff", fg: "#24292f", cursor: "#0969da", selection: "#cce4ff", ansi: LIGHT_ANSI }),
+  },
+] as const satisfies readonly { id: string; label: string; theme: TerminalTheme }[];
+
+/** A fixed scheme by id, or null for "app" (and anything unknown), which follows the page. */
+export const schemeTheme = (id: string): TerminalTheme | null => TERMINAL_SCHEMES.find((s) => s.id === id)?.theme ?? null;
+
 let probe: CanvasRenderingContext2D | null | undefined;
 
 /** Any CSS color (oklch, hsl, named...) as #rrggbb, via a 1px canvas; null when the browser can't parse it */

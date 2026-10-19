@@ -12,6 +12,8 @@
 
 import { effortOptions } from "./agent-traits";
 import type { AgentId } from "./types";
+import { COMMANDS, normalizeBindingsText, parseBindings, type Command } from "./keybindings";
+import { TERMINAL_SCHEMES } from "./client/terminal-theme";
 
 export type Scope = "device" | "synced";
 
@@ -44,7 +46,15 @@ export const SECTIONS: readonly SectionInfo[] = [
       { id: "test", label: "Send test notification", description: "Try every alert that's on.", keywords: ["alerts", "try", "check"] },
     ],
   },
-  { id: "keyboard", label: "Keyboard", description: "Shortcuts on devices with a keyboard.", items: [{ id: "shortcuts", label: "Keyboard shortcuts", keywords: ["keys", "hotkeys", "bindings"] }] },
+  {
+    id: "keyboard",
+    label: "Keyboard",
+    description: "Shortcuts on devices with a keyboard.",
+    items: [
+      { id: "shortcuts", label: "Keyboard shortcuts", keywords: ["keys", "hotkeys", "bindings", "rebind", "keybindings"] },
+      ...COMMANDS.map((c: Command) => ({ id: `cmd:${c.id}`, label: c.label, keywords: ["shortcut", "keys", c.group, ...(c.keywords ?? [])] })),
+    ],
+  },
   { id: "agents", label: "Agents", description: "Agent CLIs, accounts and running terminals.", items: [{ id: "profiles", label: "Profiles and terminals", description: "Accounts, proxies, models and running agents.", keywords: ["claude", "codex", "models", "accounts", "proxy"] }] },
   { id: "git", label: "Git", description: "Checkpoints, worktrees and commits." },
   {
@@ -89,19 +99,31 @@ type Common<T> = {
   dom?: Dom;
   /** listed only while another setting has this value (or one of these values) */
   showIf?: readonly [key: string, value: unknown];
+  /** not a row of its own: its section edits it with its own controls (still reset, exported and imported) */
+  hidden?: boolean;
 };
 
 export type BooleanSetting = Common<boolean> & { type: "boolean" };
 export type EnumOption<T extends string = string> = { value: T; label: string; hint?: string };
 export type EnumSetting<T extends string = string> = Common<T> & { type: "enum"; options: readonly EnumOption<T>[]; control?: "segmented" | "select" | "swatches" | "palette" };
 export type NumberSetting = Common<number> & { type: "number"; min: number; max: number; step: number; unit?: string; control?: "slider" | "segmented" | "hue" };
-export type StringSetting = Common<string> & { type: "string"; maxLength: number; placeholder?: string; pattern?: RegExp };
+export type StringSetting = Common<string> & {
+  type: "string";
+  maxLength: number;
+  placeholder?: string;
+  pattern?: RegExp;
+  /** the canonical form of a value, or null when it isn't valid */
+  normalize?: (value: string) => string | null;
+  /** how the value reads in an import summary */
+  summary?: (value: string) => string;
+};
 export type ColorSetting = Common<string> & { type: "color" };
 export type SettingDef = BooleanSetting | EnumSetting | NumberSetting | StringSetting | ColorSetting;
 
 const boolean = (d: Omit<BooleanSetting, "type">): BooleanSetting => ({ type: "boolean", ...d });
 const choice = <const T extends string>(d: Omit<EnumSetting<T>, "type">): EnumSetting<T> => ({ type: "enum", ...d });
 const number = (d: Omit<NumberSetting, "type">): NumberSetting => ({ type: "number", ...d });
+const text = (d: Omit<StringSetting, "type">): StringSetting => ({ type: "string", ...d });
 
 /* ── palettes ─────────────────────────────────────────────── */
 
@@ -526,6 +548,164 @@ export const SETTINGS = {
     default: true,
     storage: { key: "cui:term-docked", parse: (raw) => raw !== "sheet", format: (v) => (v ? "dock" : "sheet") },
   }),
+  terminalFont: choice({
+    section: "terminal",
+    group: "Text",
+    label: "Font",
+    description: "Code font follows Appearance.",
+    keywords: ["typeface", "font family", "monospace"],
+    scope: "synced",
+    default: "code",
+    control: "select",
+    options: [
+      { value: "code", label: "Code font" },
+      { value: "jetbrains", label: "JetBrains Mono" },
+      { value: "geist-mono", label: "Geist Mono" },
+      { value: "fira-code", label: "Fira Code" },
+      { value: "system", label: "System monospace" },
+    ],
+  }),
+  terminalFontSize: number({
+    section: "terminal",
+    group: "Text",
+    label: "Font size",
+    description: "A− and A+ in the terminal change it too.",
+    keywords: ["text size", "zoom", "bigger", "smaller"],
+    scope: "device",
+    default: 13,
+    min: 8,
+    max: 24,
+    step: 1,
+    unit: "px",
+    control: "slider",
+    /* the terminal's A-/A+ buttons stored a bare number here */
+    storage: { key: "cui:term-font", parse: (raw) => (/^\d+(\.\d+)?$/.test(raw) ? Number(raw) : undefined), format: (v) => String(v) },
+  }),
+  terminalLineHeight: number({
+    section: "terminal",
+    group: "Text",
+    label: "Line height",
+    keywords: ["spacing", "leading", "rows"],
+    scope: "device",
+    default: 1.12,
+    min: 1,
+    max: 1.6,
+    step: 0.02,
+    control: "slider",
+  }),
+  terminalCursor: choice({
+    section: "terminal",
+    group: "Cursor",
+    label: "Cursor style",
+    keywords: ["caret", "block", "bar", "underline", "beam"],
+    scope: "synced",
+    default: "block",
+    options: [
+      { value: "block", label: "Block" },
+      { value: "bar", label: "Bar" },
+      { value: "underline", label: "Underline" },
+    ],
+  }),
+  terminalCursorBlink: boolean({
+    section: "terminal",
+    group: "Cursor",
+    label: "Blinking cursor",
+    keywords: ["caret", "blink", "flash"],
+    scope: "synced",
+    default: true,
+  }),
+  terminalTheme: choice({
+    section: "terminal",
+    group: "Colors",
+    label: "Color scheme",
+    description: "App colors follow your palette and light or dark theme.",
+    keywords: ["theme", "colors", "palette", "ansi", ...TERMINAL_SCHEMES.map((t) => t.label.toLowerCase())],
+    scope: "synced",
+    default: "app",
+    control: "select",
+    options: [{ value: "app", label: "App colors" }, ...TERMINAL_SCHEMES.map((t) => ({ value: t.id, label: t.label }))],
+  }),
+  terminalCopyOnSelect: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Copy on select",
+    description: "Selected text goes to the clipboard right away.",
+    keywords: ["clipboard", "selection", "mouse"],
+    scope: "device",
+    default: false,
+  }),
+  terminalRightClickPaste: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Right-click pastes",
+    description: "Copies the selection if there is one. Long-press still opens the menu.",
+    keywords: ["clipboard", "context menu", "mouse", "paste"],
+    scope: "device",
+    default: false,
+  }),
+  terminalOptionMeta: boolean({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Option as Meta on a Mac",
+    description: "Option works as Alt, for word jumps in the shell. Off types characters like é.",
+    keywords: ["alt", "meta", "macos", "option key"],
+    scope: "device",
+    default: true,
+  }),
+  terminalBell: choice({
+    section: "terminal",
+    group: "Mouse and keys",
+    label: "Bell",
+    description: "When a program rings the terminal bell.",
+    keywords: ["beep", "alert", "sound", "flash"],
+    scope: "synced",
+    default: "none",
+    options: [
+      { value: "none", label: "None" },
+      { value: "visual", label: "Flash" },
+      { value: "sound", label: "Sound" },
+    ],
+  }),
+  terminalScrollback: number({
+    section: "terminal",
+    group: "Performance",
+    label: "Scrollback",
+    description: "Lines kept above the screen in each terminal.",
+    keywords: ["history", "buffer", "lines", "memory"],
+    scope: "device",
+    default: 10000,
+    min: 1000,
+    max: 100000,
+    step: 1000,
+    control: "slider",
+  }),
+  terminalWebgl: boolean({
+    section: "terminal",
+    group: "Performance",
+    label: "GPU rendering",
+    description: "Turn off if terminal text looks garbled or blank on this device.",
+    keywords: ["webgl", "renderer", "graphics", "gpu", "blurry"],
+    scope: "device",
+    default: true,
+  }),
+
+  /* keyboard */
+  keybindings: text({
+    section: "keyboard",
+    label: "Keyboard shortcuts",
+    description: "Shortcuts you changed on this device.",
+    keywords: ["keys", "hotkeys", "bindings"],
+    scope: "device",
+    default: "{}",
+    maxLength: 8000,
+    hidden: true,
+    normalize: normalizeBindingsText,
+    summary: (v) => {
+      const n = Object.keys(parseBindings(v)).length;
+      return n ? `${n} changed` : "Defaults";
+    },
+    storage: { key: "cui:keys", parse: (raw) => raw, format: (v) => v },
+  }),
 
   /* notifications: what notifies is synced (push reaches every device and follows it), how this device alerts isn't */
   notifyDnd: boolean({
@@ -689,7 +869,7 @@ export function searchSettings(query: string): SearchHit[] {
   return SECTIONS.flatMap((s) => {
     const settings = SETTING_KEYS.filter((k) => {
       const d = SETTINGS[k] as SettingDef;
-      return d.section === s.id && hit(d.label, d.description, d.keywords, d.group, s.label);
+      return d.section === s.id && !d.hidden && hit(d.label, d.description, d.keywords, d.group, s.label);
     });
     const items = (s.items ?? []).filter((i) => hit(i.label, i.description, i.keywords, s.label)).map((i) => i.id);
     return settings.length || items.length ? [{ section: s.id, settings, items }] : [];
@@ -724,6 +904,10 @@ export function parseValue(def: SettingDef, value: unknown): Parsed<unknown> {
       return { ok: true, value: roundTo(Math.min(def.max, Math.max(def.min, value)), def.step, def.min) };
     case "string": {
       if (typeof value !== "string") return { ok: false, error: "must be text" };
+      if (def.normalize) {
+        const n = def.normalize(value);
+        return n !== null && n.length <= def.maxLength ? { ok: true, value: n } : { ok: false, error: "isn't in the expected format" };
+      }
       const v = value.slice(0, def.maxLength);
       return def.pattern && !def.pattern.test(v) ? { ok: false, error: "isn't in the expected format" } : { ok: true, value: v };
     }
@@ -815,6 +999,7 @@ export function formatValue(def: SettingDef, value: unknown): string {
   if (def.type === "boolean") return value ? "On" : "Off";
   if (def.type === "enum") return def.options.find((o) => o.value === value)?.label ?? String(value);
   if (def.type === "number") return `${value}${def.unit ?? ""}`;
+  if (def.type === "string" && def.summary) return def.summary(String(value));
   return String(value);
 }
 
