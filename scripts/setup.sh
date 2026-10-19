@@ -38,7 +38,7 @@ HASH=""
 if [ -n "${SETUP_PASSWORD:-}" ]; then HASH=$(printf '%s\n' "$SETUP_PASSWORD" | node scripts/hash-password.mjs | sed 's/^UI_PASSWORD_HASH=//'); fi
 EXTRA=""; [ -f .env.server ] && EXTRA=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env.server || true)
 EXTRA64=$(printf '%s\n' "$EXTRA" | base64 | tr -d '\n')
-"${SSH[@]}" "HASH='$HASH' DIR='$DIR' EXTRA64='$EXTRA64' PUBLIC='${PUBLIC_HOSTNAME:-}' bash -s" <<'REMOTE'
+"${SSH[@]}" "HASH='$HASH' DIR='$DIR' EXTRA64='$EXTRA64' PUBLIC='${PUBLIC_HOSTNAME:-}' TUNNEL='${TUNNEL_NAME:-}' bash -s" <<'REMOTE'
 set -euo pipefail
 f="$HOME/$DIR/.env.local"
 extra=$(printf '%s' "$EXTRA64" | base64 -d)
@@ -60,6 +60,8 @@ elif ! grep -q '^UI_PASSWORD\(_HASH\)\?=.' "$f"; then
 fi
 # the app and the terminal backend only answer this name (plus loopback and ALLOWED_HOSTS)
 if [ -n "$PUBLIC" ]; then set_key PUBLIC_HOSTNAME "$PUBLIC"; fi
+# the Cloudflare tunnel sets cf-connecting-ip itself, so the login limiter can tell clients apart by it
+if [ -n "$PUBLIC" ] && [ -n "$TUNNEL" ]; then set_key TRUST_PROXY_HEADERS 1; fi
 while IFS= read -r line; do [ -n "$line" ] && set_key "${line%%=*}" "${line#*=}"; done <<< "$extra"
 echo "$(grep -c . "$f") keys in $f"
 REMOTE
