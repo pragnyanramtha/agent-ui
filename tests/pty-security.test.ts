@@ -17,7 +17,9 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), "agentu-ptysec-"));
 let server: ChildProcess;
 let logs = "";
 
-const cookie = (expires = Date.now() + 3600_000) => `cui_session=${expires}.${createHmac("sha256", SECRET).update(String(expires)).digest("base64url")}`;
+const PASSWORD_HASH = "scrypt:salt-in-env:hash-in-env";
+/* signed as lib/auth.ts does: expiry, session epoch and the password the server checks */
+const cookie = (expires = Date.now() + 3600_000, epoch = "") => `cui_session=${expires}.${createHmac("sha256", SECRET).update(`${expires}\n${epoch}\n${PASSWORD_HASH}`).digest("base64url")}`;
 
 /** raw request, so Host and the path go out exactly as written */
 function request(rawPath: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
@@ -67,7 +69,7 @@ beforeAll(async () => {
       TMUX_TMPDIR: home,
       ALLOWED_HOSTS: "agent.example,pinned.example:8443",
       UI_PASSWORD: "pw-in-env-123",
-      UI_PASSWORD_HASH: "scrypt:salt-in-env:hash-in-env",
+      UI_PASSWORD_HASH: PASSWORD_HASH,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -147,5 +149,44 @@ describe("web terminal backend: secrets", () => {
     expect(env).not.toMatch(LEAK);
     expect(env).not.toContain("from-request");
     await internal("/internal/kill", { id });
+  });
+});
+
+describe("web terminal backend: sign out everywhere", () => {
+  const authDir = path.join(home, ".config", "agent-u");
+  const opens = async (c: string) => {
+    const conn = connect(`cwd=${encodeURIComponent(home)}`, { Cookie: c });
+    const first = await Promise.race([conn.closed.then((x) => x.code), until(() => conn.msgs.some((m) => m.type === "hello")).then(() => 0)]);
+    if (!first) conn.ws.close();
+    return first === 0;
+  };
+
+  it("refuses cookies in the old format, which signed only the expiry", async () => {
+    const expires = Date.now() + 3600_000;
+    expect(await opens(`cui_session=${expires}.${createHmac("sha256", SECRET).update(String(expires)).digest("base64url")}`)).toBe(false);
+    expect(await opens(cookie())).toBe(true);
+  });
+
+  it("takes the app's cookies, and refuses them once the app starts a new epoch", async () => {
+    const saved = { AGENT_U_HOME: process.env.AGENT_U_HOME, UI_SECRET: process.env.UI_SECRET, UI_PASSWORD_HASH: process.env.UI_PASSWORD_HASH };
+    Object.assign(process.env, { AGENT_U_HOME: authDir, UI_SECRET: SECRET, UI_PASSWORD_HASH: PASSWORD_HASH });
+    try {
+      const { newSessionEpoch, signSession, verifySession } = await import("@/lib/auth");
+      const before = `cui_session=${await signSession()}`;
+      expect(await opens(before)).toBe(true);
+
+      const epoch = newSessionEpoch();
+      expect(fs.statSync(path.join(authDir, "auth.json")).mode & 0o777).toBe(0o600);
+      expect(await verifySession(before.slice("cui_session=".length))).toBe(false);
+      expect(await opens(before)).toBe(false);
+      expect(await opens(cookie(Date.now() + 3600_000, epoch))).toBe(true);
+      expect(await opens(`cui_session=${await signSession()}`)).toBe(true);
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      fs.rmSync(path.join(authDir, "auth.json"), { force: true });
+    }
   });
 });

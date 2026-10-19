@@ -85,6 +85,9 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 - `UI_SECRET`, `UI_PASSWORD` and `UI_PASSWORD_HASH` never reach child processes: every spawn takes its env from
   `lib/server/child-env.ts`, profiles can't expand them, and `server/pty.mjs` drops them from its own env at startup
   (and from the global env of a tmux server it reuses). Session cookies expiring more than 30 days out are refused.
+- The cookie HMAC covers the expiry, a session epoch (`auth.json` next to `config.json`, chmod 600) and the password, so
+  changing the password or "Sign out everywhere" (`POST /api/auth/logout` with `{"everywhere": true}`, which writes a new
+  epoch) ends every session; the terminal backend reads the same file and closes sockets whose session ended.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes

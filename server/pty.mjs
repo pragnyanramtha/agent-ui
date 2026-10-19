@@ -58,6 +58,8 @@ if (SECRET.length < 32) throw new Error("UI_SECRET must be set to at least 32 ch
 /* the cookie key and the login password stay in this process: shells, agents and any tmux server started from here
  * inherit process.env (the same keys as lib/server/child-env.ts) */
 const APP_SECRETS = ["UI_SECRET", "UI_PASSWORD", "UI_PASSWORD_HASH"];
+/* part of the cookie HMAC, as in lib/auth.ts: the hash wins when both are set */
+const PASSWORD = process.env.UI_PASSWORD_HASH || process.env.UI_PASSWORD || "";
 for (const k of APP_SECRETS) delete process.env[k];
 const CLAUDE_HOME = process.env.CLAUDE_HOME ?? path.join(os.homedir(), ".claude");
 const INTERNAL_KEY = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
@@ -78,6 +80,29 @@ const TMUX = which("tmux");
 /* a tmux server started from this service would live in its cgroup and die on restart; give it its own scope */
 const SYSTEMD_RUN = process.env.INVOCATION_ID && which("systemd-run") ? which("systemd-run") : null;
 
+/* the session epoch the app writes on "Sign out everywhere" (lib/auth.ts sessionEpoch, same file and rules) */
+const AUTH_FILE = path.join(process.env.AGENT_U_HOME || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "agent-u"), "auth.json");
+let epochCache = null;
+function sessionEpoch() {
+  let st;
+  try {
+    st = fs.statSync(AUTH_FILE);
+  } catch {
+    return "";
+  }
+  const key = `${st.ino}:${st.mtimeMs}:${st.size}`;
+  if (epochCache?.key === key) return epochCache.epoch;
+  let epoch = "invalid";
+  try {
+    const value = JSON.parse(fs.readFileSync(AUTH_FILE, "utf8")).epoch;
+    if (typeof value === "string" && value) epoch = value;
+  } catch {
+    /* unreadable or not JSON */
+  }
+  epochCache = { key, epoch };
+  return epoch;
+}
+
 function validCookie(header) {
   const raw = /(?:^|;\s*)cui_session=([^;]+)/.exec(header ?? "")?.[1];
   if (!raw) return false;
@@ -91,7 +116,7 @@ function validCookie(header) {
   /* the same lifetime as lib/auth.ts: SESSION_DAYS (30) plus a minute */
   const until = Number(expires);
   if (!/^\d+$/.test(expires ?? "") || !sig || extra !== undefined || until < Date.now() || until > Date.now() + 30 * 86_400_000 + 60_000) return false;
-  const want = createHmac("sha256", SECRET).update(expires).digest("base64url");
+  const want = createHmac("sha256", SECRET).update(`${expires}\n${sessionEpoch()}\n${PASSWORD}`).digest("base64url");
   return want.length === sig.length && timingSafeEqual(Buffer.from(want), Buffer.from(sig));
 }
 
@@ -433,12 +458,13 @@ function onClientMessage(ws, raw, isBinary, write, onResize) {
   }
 }
 
-/** Cloudflare drops idle sockets; ping, and drop sockets that stopped answering */
-function keepAlive(ws) {
+/** Cloudflare drops idle sockets; ping, and drop sockets that stopped answering or whose session ended */
+function keepAlive(ws, cookie) {
   let alive = true;
   ws.on("pong", () => (alive = true));
   const timer = setInterval(() => {
     if (!alive) return ws.terminate();
+    if (!validCookie(cookie)) return ws.close(4401, "Signed out. Reload to sign in.");
     alive = false;
     if (ws.readyState === ws.OPEN) ws.ping();
   }, 20_000);
@@ -521,13 +547,13 @@ function attachOnce(ws, cmd, cols, rows, hello) {
   });
 }
 
-function start(ws, url) {
+function start(ws, url, cookie) {
   const q = url.searchParams;
   const cols = clamp(Number(q.get("cols")), 10, 500, 100);
   const rows = clamp(Number(q.get("rows")), 5, 200, 30);
   sockets++;
   ws.on("close", () => sockets--);
-  keepAlive(ws);
+  keepAlive(ws, cookie);
 
   const termId = q.get("term");
   if (termId) {
@@ -683,7 +709,7 @@ server.on("upgrade", (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {
     if (why) return ws.close(why[0], why[1]);
     try {
-      start(ws, url);
+      start(ws, url, req.headers.cookie);
     } catch (err) {
       console.error("pty start failed:", err);
       if (ws.readyState === ws.OPEN) ws.close(4500, `The terminal failed to start: ${String(err?.message ?? err)}`.slice(0, 120));

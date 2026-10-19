@@ -18,7 +18,10 @@ for (const line of fs.readFileSync(path.join(root, ".env.local"), "utf8").split(
 const SECRET = process.env.UI_SECRET;
 const PORT = 3399;
 const expires = String(Date.now() + 3600_000);
-const cookie = `cui_session=${expires}.${createHmac("sha256", SECRET).update(expires).digest("base64url")}`;
+/* signed as lib/auth.ts does: expiry, session epoch (auth.json next to config.json) and password */
+const authFile = path.join(process.env.AGENT_U_HOME || path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "agent-u"), "auth.json");
+const epoch = fs.existsSync(authFile) ? (() => { try { return JSON.parse(fs.readFileSync(authFile, "utf8")).epoch || "invalid"; } catch { return "invalid"; } })() : "";
+const cookie = `cui_session=${expires}.${createHmac("sha256", SECRET).update(`${expires}\n${epoch}\n${process.env.UI_PASSWORD_HASH || process.env.UI_PASSWORD || ""}`).digest("base64url")}`;
 const key = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
 const host = `127.0.0.1:${PORT}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

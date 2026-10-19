@@ -54,11 +54,12 @@ describe("child process environment", () => {
 });
 
 describe("session cookie lifetime", () => {
-  const sign = (expires: number) => `${expires}.${createHmac("sha256", SECRETS.UI_SECRET).update(String(expires)).digest("base64url")}`;
+  const sign = (expires: number) => `${expires}.${createHmac("sha256", SECRETS.UI_SECRET).update(`${expires}\n\n${SECRETS.UI_PASSWORD_HASH}`).digest("base64url")}`;
 
   it("refuses a validly signed cookie that expires further out than a session can last", async () => {
     const { SESSION_DAYS, signSession, verifySession } = await import("@/lib/auth");
     expect(await verifySession(await signSession())).toBe(true);
+    expect(await verifySession(sign(Date.now() + 86_400_000))).toBe(true);
     expect(await verifySession(sign(Date.now() + (SESSION_DAYS + 1) * 86_400_000))).toBe(false);
     expect(await verifySession(sign(Date.now() + 100 * 365 * 86_400_000))).toBe(false);
   });
