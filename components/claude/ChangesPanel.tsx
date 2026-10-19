@@ -25,7 +25,7 @@ export function collectChanges(entries: Entry[], results: Record<string, ToolRes
     let edits: Edit[] = [];
     if (e.name === "Edit") edits = [{ before: str(e.input.old_string), after: str(e.input.new_string), ts: e.ts, kind: "edit", failed }];
     else if (e.name === "MultiEdit" && Array.isArray(e.input.edits))
-      edits = (e.input.edits as { old_string?: string; new_string?: string }[]).map((x) => ({ before: x.old_string ?? "", after: x.new_string ?? "", ts: e.ts, kind: "edit" as const, failed }));
+      edits = (e.input.edits as ({ old_string?: unknown; new_string?: unknown } | null)[]).map((x) => ({ before: str(x?.old_string), after: str(x?.new_string), ts: e.ts, kind: "edit" as const, failed }));
     else if (e.name === "Write") edits = [{ before: "", after: str(e.input.content), ts: e.ts, kind: "write", failed }];
     else if (e.name === "NotebookEdit") edits = [{ before: "", after: str(e.input.new_source), ts: e.ts, kind: "edit", failed }];
     else continue;
