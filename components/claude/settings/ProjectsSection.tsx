@@ -413,7 +413,7 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
   return (
     <section className="flex flex-col">
       <div className="flex flex-wrap items-end gap-2 px-1 pb-2">
-        <h3 className="flex-1 text-xs font-medium text-ink-3">Run actions</h3>
+        <h3 className="flex-1 basis-full whitespace-nowrap text-xs font-medium text-ink-3 sm:basis-0">Run actions</h3>
         <SmallButton onClick={() => void loadScripts()} disabled={seeding || full}>
           <Package width={14} height={14} strokeWidth={1.8} aria-hidden />
           {seeding ? "Reading package.json…" : "Add from package.json"}
