@@ -19,7 +19,7 @@ import { SSH_HOST } from "./editor-links";
 
 export type Scope = "device" | "synced";
 
-export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about";
+export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "storage";
 
 export type SectionInfo = {
   id: SectionId;
@@ -71,6 +71,15 @@ export const SECTIONS: readonly SectionInfo[] = [
     ],
   },
   { id: "about", label: "About", description: "Version and links.", items: [{ id: "version", label: "Version", keywords: ["build", "commit", "release", "server"] }] },
+  {
+    id: "storage",
+    label: "Storage",
+    description: "Disk used by worktrees, attachments and checkpoints.",
+    items: [
+      { id: "usage", label: "Disk usage", description: "Worktrees, attachments and checkpoints on the server.", keywords: ["space", "size", "disk", "bytes", "full"] },
+      { id: "clean-now", label: "Clean up now", description: "Lists what would go, then deletes it.", keywords: ["delete", "remove", "free space", "prune", "dry run"] },
+    ],
+  },
 ];
 
 /** How a setting shows on <html>: a data attribute with its value, and/or a CSS variable. Default values set nothing. */
@@ -1287,6 +1296,40 @@ export const SETTINGS = {
     placeholder: "my-server",
     pattern: SSH_HOST,
     showIf: ["editorLink", ["vscode", "cursor", "zed"]],
+  }),
+
+  /* storage */
+  worktreeCleanupDays: choice({
+    section: "storage",
+    group: "Cleanup",
+    label: "Remove worktrees",
+    description: "Once idle that long, or as soon as their branch is merged. Never ones with uncommitted changes or a running session. Unmerged branches stay.",
+    keywords: ["worktree", "delete", "prune", "idle", "merged", "disk"],
+    scope: "synced",
+    default: "off",
+    control: "select",
+    options: [
+      { value: "off", label: "Never" },
+      { value: "7", label: "After 7 days" },
+      { value: "14", label: "After 14 days" },
+      { value: "30", label: "After 30 days" },
+    ],
+  }),
+  attachmentCleanupDays: choice({
+    section: "storage",
+    group: "Cleanup",
+    label: "Remove attachments",
+    description: "Files uploaded with messages. Older messages show them as missing once they're gone.",
+    keywords: ["attachments", "uploads", "images", "delete", "prune", "disk"],
+    scope: "synced",
+    default: "14",
+    control: "select",
+    options: [
+      { value: "off", label: "Never" },
+      { value: "14", label: "After 14 days" },
+      { value: "30", label: "After 30 days" },
+      { value: "90", label: "After 90 days" },
+    ],
   }),
 } as const satisfies Record<string, SettingDef>;
 

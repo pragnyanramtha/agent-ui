@@ -50,5 +50,7 @@ describe("workflow settings in search", () => {
     expect(searchSettings("vscode")[0].settings).toContain("editorLink");
     expect(searchSettings("rate limit").flatMap((h) => h.settings)).toContain("limitAction");
     expect(searchSettings("star").flatMap((h) => h.settings)).toContain("favoriteModels");
+    expect(searchSettings("free space").map((h) => h.section)).toContain("storage");
+    expect(searchSettings("worktree").flatMap((h) => h.settings)).toContain("worktreeCleanupDays");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
+import { Bell, ChatLines, Cpu, Database, EditPencil, GitBranch, HardDrive, InfoCircle, KeyCommand, Palette, Settings as SettingsIcon, SidebarExpand, Terminal } from "iconoir-react";
 import { disablePush, enablePush, pushStatus, signOut, type PushStatus } from "@/lib/client/push";
 import { toast } from "@/lib/client/toast";
 import { sendTestNotification } from "@/lib/client/useNotifications";
@@ -12,6 +12,7 @@ import { SettingField } from "./SettingField";
 import { Preview } from "./Preview";
 import { DataSection } from "./DataSection";
 import { AboutSection } from "./AboutSection";
+import { StorageSection } from "./StorageSection";
 
 /* What each section shows. A section without an entry here lists its registry settings (lib/settings-schema.ts),
  * one card per `group`. Give it a component when it needs more than settings rows: buttons, lists, previews. */
@@ -31,6 +32,7 @@ export const SECTION_ICONS: Record<SectionId, ComponentType<{ width?: number; he
   git: GitBranch,
   data: Database,
   about: InfoCircle,
+  storage: HardDrive,
 };
 
 /** The section's registry settings as cards, one per group, in registry order. */
@@ -190,6 +192,7 @@ export const SECTION_VIEWS: Partial<Record<SectionId, ComponentType<SectionProps
   git: Git,
   data: DataSection,
   about: AboutSection,
+  storage: StorageSection,
 };
 
 export function SectionBody({ id, ...props }: SectionProps & { id: SectionId }): ReactNode {
