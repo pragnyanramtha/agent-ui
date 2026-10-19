@@ -19,6 +19,8 @@ type Status = {
   gh: boolean;
   defaultBranch: string | null;
   pr?: { number: number; url: string; state: string } | null;
+  fetchedAt: number | null;
+  fetchError: string | null;
 };
 type Checkpoint = { id: string; commit: string; at: number; label: string };
 type FileStat = { path: string; added: number; removed: number; binary: boolean };
@@ -26,6 +28,8 @@ type Data = { repo: Status | null; cwd: string; checkpoints?: Checkpoint[] };
 
 const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-[13px] font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
 const primary = `${btn} bg-ink text-surface`;
+const STATUS_POLL_MS = 20_000;
+
 const STATE: Record<string, string> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "copied", "?": "new", U: "conflict" };
 const stateOf = (s: string) => STATE[s.trim()[0] ?? ""] ?? s.trim();
 const aheadBehind = (s: { ahead: number; behind: number }) =>
@@ -128,14 +132,24 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
-  const load = useCallback(async () => {
-    try {
-      setData(await api<Data>(`/api/git?session=${encodeURIComponent(session)}`));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [session]);
+  const lastText = useRef("");
+  /** quiet: a background poll, which leaves the error line alone */
+  const load = useCallback(
+    async (quiet = false) => {
+      try {
+        const d = await api<Data>(`/api/git?session=${encodeURIComponent(session)}`);
+        const text = JSON.stringify(d);
+        if (text !== lastText.current) {
+          lastText.current = text;
+          setData(d);
+        }
+        if (!quiet) setError(null);
+      } catch (err) {
+        if (!quiet) setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [session],
+  );
 
   useEffect(() => {
     void load();
@@ -149,6 +163,17 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
   useEffect(() => {
     if (!busy) void load();
   }, [busy, load]);
+
+  /* each status read lets the server fetch in the background, so new commits on the remote show up */
+  useEffect(() => {
+    const tick = () => document.visibilityState === "visible" && void load(true);
+    const t = setInterval(tick, STATUS_POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [load]);
 
   useEffect(() => {
     if (!menu) return;
@@ -327,6 +352,11 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
                   "Not pushed yet."
                 ) : (
                   "No remote."
+                )}
+                {repo.fetchError && (
+                  <span className="mt-0.5 block truncate" title={repo.fetchError}>
+                    Couldn&apos;t check the remote: {repo.fetchError}
+                  </span>
                 )}
               </p>
               <div className="mb-2 flex items-center justify-between gap-2">

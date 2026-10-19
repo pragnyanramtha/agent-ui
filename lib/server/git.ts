@@ -393,6 +393,9 @@ export type GitStatus = {
   defaultBranch: string | null;
   /** the open (or merged/closed) pull request for this branch; undefined when gh can't tell */
   pr?: PullRequestInfo | null;
+  /** when the background fetch last finished, and why it failed if it did */
+  fetchedAt: number | null;
+  fetchError: string | null;
 };
 
 export type PullRequestInfo = { number: number; url: string; state: string };
@@ -466,13 +469,53 @@ export async function status(cwd: string): Promise<GitStatus | null> {
     if (state[0] === "R" || state[0] === "C") i++;
   }
   const remote = Boolean(remotes.trim());
-  const st: GitStatus = { root, branch, upstream, ahead, behind, files, remote, gh, defaultBranch };
+  const fetched = fetches.get(root);
+  const st: GitStatus = { root, branch, upstream, ahead, behind, files, remote, gh, defaultBranch, fetchedAt: fetched?.done ?? null, fetchError: fetched?.error ?? null };
   if (gh && remote && branch && branch !== defaultBranch) {
     if (upstream) st.pr = await prFor(root, branch);
     /* an unpublished branch has no pull request yet, if origin is on GitHub at all */
     else if (/github/i.test(await git(root, ["remote", "get-url", "origin"]).catch(() => ""))) st.pr = null;
   }
   return st;
+}
+
+/* ── background fetch ───────────────────────────────── */
+
+/** How often a repo someone is looking at gets fetched; 0 turns it off. */
+export const GIT_FETCH_INTERVAL_MS = 60_000;
+const FETCH_TIMEOUT_MS = 20_000;
+
+type FetchState = { started: number; done: number | null; error: string | null; p: Promise<void> | null };
+const fetches = new Map<string, FetchState>();
+
+/** Starts `git fetch` for a repo with a remote unless one ran within the interval or is still running.
+ * Never throws; a failure shows up as `fetchError` in its status. Resolves when the fetch (if any) is over. */
+export async function autoFetch(cwd: string, opts: { intervalMs?: number; timeoutMs?: number } = {}): Promise<void> {
+  const interval = opts.intervalMs ?? GIT_FETCH_INTERVAL_MS;
+  if (interval <= 0) return;
+  const root = await repoRoot(cwd);
+  if (!root) return;
+  const cur = fetches.get(root);
+  if (cur?.p) return cur.p;
+  if (cur && Date.now() - cur.started < interval) return;
+  if (!(await git(root, ["remote"]).catch(() => "")).trim()) return;
+  const again = fetches.get(root);
+  if (again?.p) return again.p;
+  if (again && again !== cur && Date.now() - again.started < interval) return;
+  const timeout = opts.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const st: FetchState = { started: Date.now(), done: cur?.done ?? null, error: cur?.error ?? null, p: null };
+  st.p = git(root, ["fetch", "--quiet", "--no-tags"], { timeout, env: { GCM_INTERACTIVE: "never" } })
+    .then(
+      () => void (st.error = null),
+      (err: Error) => void (st.error = Date.now() - st.started >= timeout ? `Fetch timed out after ${Math.round(timeout / 1000)} s.` : err.message),
+    )
+    .finally(() => {
+      st.done = Date.now();
+      st.p = null;
+    });
+  fetches.set(root, st);
+  if (fetches.size > 500) fetches.delete(fetches.keys().next().value!);
+  return st.p;
 }
 
 export async function commitAll(cwd: string, message: string) {

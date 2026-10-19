@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { readJson, str } from "@/lib/server/http";
 import { sessionCwd, turnRunning } from "@/lib/server/checkpoints";
-import { checkpoint, commitAll, GitError, listCheckpoints, pull, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
+import { autoFetch, checkpoint, commitAll, GitError, listCheckpoints, pull, pullRequest, push, rewind, sinceCheckpoint, status } from "@/lib/server/git";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
     if (!cwd) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const st = await status(cwd);
     if (!st) return NextResponse.json({ repo: null, cwd });
+    /* the panel polls this while it's open, which keeps ahead/behind current */
+    if (st.remote) void autoFetch(st.root);
     return NextResponse.json({ repo: st, cwd, checkpoints: await listCheckpoints(cwd, session) });
   } catch (err) {
     return fail(err);

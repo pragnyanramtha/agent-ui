@@ -63,3 +63,79 @@ describe("pull", () => {
     sh(["checkout", "-q", "main"]);
   });
 });
+
+describe("background fetch", () => {
+  let n = 0;
+  const fresh = () => {
+    const dir = path.join(tmp, `fetch-${n++}`);
+    execFileSync("git", ["clone", "-q", remote, dir], { env: ENV, stdio: "pipe" });
+    return dir;
+  };
+
+  it("brings in new remote commits, then waits out the interval", async () => {
+    const dir = fresh();
+    commitIn(other, "e.txt", "e\n");
+    sh(["push", "-q"], other);
+    const fetchHead = () => fs.statSync(path.join(dir, ".git", "FETCH_HEAD"), { throwIfNoEntry: false })?.mtimeMs;
+    await g.autoFetch(dir);
+    const st = await g.status(dir);
+    expect(st?.behind).toBe(1);
+    expect(st?.fetchError).toBeNull();
+    expect(st?.fetchedAt).toBeGreaterThan(0);
+    const first = fetchHead();
+    commitIn(other, "f.txt", "f\n");
+    sh(["push", "-q"], other);
+    await g.autoFetch(dir);
+    expect(fetchHead()).toBe(first);
+    expect((await g.status(dir))?.behind).toBe(1);
+    /* past the interval it fetches again */
+    await g.autoFetch(dir, { intervalMs: 1 });
+    expect((await g.status(dir))?.behind).toBe(2);
+  });
+
+  it("runs one fetch at a time per repo", async () => {
+    const dir = fresh();
+    const log = path.join(tmp, "uploads.log");
+    const pack = path.join(tmp, "counting-upload-pack");
+    fs.writeFileSync(pack, `#!/bin/sh\necho run >> '${log}'\nsleep 0.3\nexec git-upload-pack "$@"\n`, { mode: 0o755 });
+    sh(["config", "remote.origin.uploadpack", pack], dir);
+    const a = g.autoFetch(dir, { intervalMs: 1 });
+    await new Promise((r) => setTimeout(r, 100));
+    const b = g.autoFetch(dir, { intervalMs: 1 });
+    await Promise.all([a, b, g.autoFetch(dir, { intervalMs: 1 })]);
+    expect(fs.readFileSync(log, "utf8").trim().split("\n")).toHaveLength(1);
+    expect((await g.status(dir))?.fetchError).toBeNull();
+  });
+
+  it("keeps failures quiet but reports them in status", async () => {
+    const dir = fresh();
+    sh(["remote", "set-url", "origin", path.join(tmp, "gone.git")], dir);
+    await expect(g.autoFetch(dir)).resolves.toBeUndefined();
+    const st = await g.status(dir);
+    expect(st?.fetchError).toMatch(/gone\.git|repository/);
+    expect(st?.behind).toBe(0);
+  });
+
+  it("never fetches without a remote, or when turned off", async () => {
+    const dir = path.join(tmp, "lonely");
+    fs.mkdirSync(dir);
+    sh(["init", "-q"], dir);
+    await g.autoFetch(dir);
+    expect((await g.status(dir))?.fetchedAt).toBeNull();
+    const off = fresh();
+    await g.autoFetch(off, { intervalMs: 0 });
+    expect((await g.status(off))?.fetchedAt).toBeNull();
+  });
+
+  it("gives up after the timeout", async () => {
+    const dir = fresh();
+    const bin = path.join(tmp, "slow-bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "git-upload-pack"), "#!/bin/sh\nsleep 5\n", { mode: 0o755 });
+    sh(["config", "remote.origin.uploadpack", path.join(bin, "git-upload-pack")], dir);
+    const t = Date.now();
+    await g.autoFetch(dir, { timeoutMs: 400 });
+    expect(Date.now() - t).toBeLessThan(4000);
+    expect((await g.status(dir))?.fetchError).toMatch(/timed out/);
+  });
+});
