@@ -8,7 +8,8 @@ import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/c
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { saveEffort } from "@/lib/client/storage";
-import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { useProjectDefaults } from "@/lib/client/useProjectDefaults";
+import { ProjectDefaultsNote } from "./ProjectDefaultsNote";
 import { Composer, MODELS, type AgentOption } from "./Composer";
 import { FolderPicker } from "./lazy";
 import { Pulse } from "./Pulse";
@@ -82,15 +83,18 @@ export function NewSession({
     setProfile(saved && list.some((p) => p.id === saved && p.installed) ? saved : agent);
   }, [agent, profiles]);
   const pickProfile = (id: string) => {
+    /* the folder's project may have put another agent's profile on screen */
+    const a = profiles?.find((p) => p.id === id)?.agent ?? agent;
+    if (a !== agent) pickAgent(a);
     setProfile(id);
     setModel("");
-    localStorage.setItem(`cui:newProfile:${agent}`, id);
+    localStorage.setItem(`cui:newProfile:${a}`, id);
   };
-  const profileInfo = profiles?.find((p) => p.id === profile);
-  const settingsEffort = useDefaultEffort(agent);
-  /* until profiles load, the profile's own default is unknown: send none rather than one it would override */
-  const sentEffort = effort || (profiles ? profileInfo?.defaultEffort || settingsEffort || "" : "");
-  const agentModels = useAgentModels(agent, profile);
+  /* the folder's project defaults (Settings > Projects) under what's picked here */
+  const d = useProjectDefaults({ cwd: cwd.trim(), current: { agent, profile, model, mode, effort }, profiles });
+  const profileInfo = profiles?.find((p) => p.id === d.profile);
+  const sentEffort = d.sentEffort;
+  const agentModels = useAgentModels(d.agent, d.profile);
 
   const pickAgent = (a: AgentId) => {
     setAgent(a);
@@ -100,7 +104,7 @@ export function NewSession({
     setMode(a === "claude" ? "default" : "bypassPermissions");
     localStorage.setItem("cui:newAgent", a);
   };
-  const name = AGENT_LABEL[agent];
+  const name = AGENT_LABEL[d.agent];
 
   useEffect(() => {
     setNow(Date.now());
@@ -134,7 +138,7 @@ export function NewSession({
   const all = sessions ?? [];
   const rows = [...all.filter(isLive), ...all.filter((s) => !isLive(s))].slice(0, 3);
 
-  const [worktree, setWorktree] = useSetting("newSessionWorktree");
+  const { worktree, setWorktree } = d;
 
   const start = async (text: string) => {
     setError(null);
@@ -145,9 +149,9 @@ export function NewSession({
       return false;
     }
     try {
-      const { id } = await api<{ id: string }>("/api/sessions", { agent, profile, cwd: cwd.trim(), text, model: model || undefined, effort: sentEffort, permissionMode: mode, worktree, clientId: newClientId() });
+      const { id } = await api<{ id: string }>("/api/sessions", { agent: d.agent, profile: d.profile, cwd: cwd.trim(), text, model: d.model || undefined, effort: sentEffort, permissionMode: d.mode, worktree, clientId: newClientId() });
       localStorage.setItem("cui:lastCwd", cwd.trim());
-      saveEffort(id, effort);
+      saveEffort(id, d.effort);
       onOpen(id);
       return true;
     } catch (err) {
@@ -169,7 +173,7 @@ export function NewSession({
     }
     setLaunching(true);
     try {
-      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile, cwd: cwd.trim(), model: model || undefined, effort: sentEffort });
+      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile: d.profile, cwd: cwd.trim(), model: d.model || undefined, effort: sentEffort });
       localStorage.setItem("cui:lastCwd", cwd.trim());
       openServerTerminal(t, `${t.label} in ${cwd.trim().split("/").pop()}`);
     } catch (err) {
@@ -207,28 +211,29 @@ export function NewSession({
               onSend={start}
               running={false}
               slashCommands={[]}
-              mode={mode}
-              onModeChange={setMode}
-              model={model || null}
-              onModelChange={setModel}
-              models={profileModels(profileInfo, agent === "claude" ? MODELS : agentModels)}
-              cwd={agent === "claude" ? cwd.trim() || undefined : undefined}
+              mode={d.mode}
+              onModeChange={(m) => (d.pick("mode"), setMode(m))}
+              model={d.model || null}
+              onModelChange={(m) => (d.pick("model"), setModel(m))}
+              models={profileModels(profileInfo, d.agent === "claude" ? MODELS : agentModels)}
+              cwd={d.agent === "claude" ? cwd.trim() || undefined : undefined}
               profiles={profiles ?? undefined}
-              profile={profile}
-              onProfileChange={pickProfile}
+              profile={d.profile}
+              onProfileChange={(id) => (d.pick("profile"), pickProfile(id))}
               root={cwd.trim() || undefined}
-              effort={effort}
+              effort={d.effort}
               defaultEffort={profileInfo?.defaultEffort ?? null}
-              onEffortChange={setEffort}
+              onEffortChange={(e) => (d.pick("effort"), setEffort(e))}
               agents={agents}
-              agent={agent}
-              onAgentChange={pickAgent}
+              agent={d.agent}
+              onAgentChange={(a) => (d.pick("profile"), pickAgent(a))}
               folder={cwd}
               onPickFolder={() => setPicker(true)}
               folderInvalid={folderInvalid}
               busyLabel={`Starting ${name}…`}
               autoFocus
               context={
+                <>
                 <button
                   type="button"
                   aria-pressed={worktree}
@@ -241,6 +246,8 @@ export function NewSession({
                   </span>
                   New worktree
                 </button>
+                {d.project && d.fromProject.length > 0 && <ProjectDefaultsNote project={d.project} fields={d.fromProject} />}
+                </>
               }
               contextEnd={
                 <button
