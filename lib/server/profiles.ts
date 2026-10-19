@@ -256,6 +256,9 @@ const readState = (): State => {
 
 export const sessionProfile = (key: string) => readState().sessionProfiles?.[key] ?? null;
 
+/** Every session's profile, by session key (sessions without one run on their agent's own). */
+export const allSessionProfiles = (): Record<string, string> => ({ ...(readState().sessionProfiles ?? {}) });
+
 export function setSessionProfile(key: string, profile: string) {
   const s = readState();
   if (s.sessionProfiles?.[key] === profile) return;
