@@ -36,6 +36,6 @@ function loginUrl(req: NextRequest) {
 
 export const config = {
   runtime: "nodejs",
-  /* /api/files/upload runs the same checks itself (lib/guard.ts): middleware would buffer its body */
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/files/upload).*)"],
+  /* /api/files/upload and /share run the same checks themselves (lib/guard.ts): middleware would buffer their bodies */
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/files/upload|share$).*)"],
 };

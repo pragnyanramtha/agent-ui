@@ -26,6 +26,7 @@ import { registerWorker, resyncPush } from "@/lib/client/push";
 import { shortPath } from "@/lib/client/api";
 import { commandFor, isCommand, isMac, terminalOwns } from "@/lib/client/shortcuts";
 import type { SessionSummary } from "@/lib/types";
+import { useShareLanding } from "@/lib/client/share";
 
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !["checkbox", "radio", "button"].includes((t as HTMLInputElement).type)));
@@ -177,6 +178,7 @@ export function App() {
     },
     [open],
   );
+  useShareLanding(newTab);
 
   /* Tab shortcuts. Ctrl+Tab when the browser lets it through; Alt+arrows, Alt+1..9,
    * Alt+T (Alt+Shift+T reopens) and Alt+W otherwise, so the browser's own Ctrl+T/W keep working.
