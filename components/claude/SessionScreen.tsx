@@ -12,6 +12,7 @@ import { serverId, useSession } from "@/lib/client/useSession";
 import { postReliably, transient } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
+import { useGitInfo } from "@/lib/client/useGitInfo";
 import { HandoffDialog } from "./HandoffDialog";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
 import { terminalBusy } from "@/lib/status";
@@ -139,6 +140,9 @@ export function SessionScreen({
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
   available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
+  const turns = useMemo(() => view.entries.filter((e) => e.kind === "user").length, [view.entries]);
+  const [gitRev, setGitRev] = useState(0);
+  const git = useGitInfo(id, `${busy ? "busy" : "idle"}:${turns}:${gitRev}`);
   const usage = useMemo(() => {
     for (let i = view.entries.length - 1; i >= 0; i--) {
       const e = view.entries[i];
@@ -589,6 +593,7 @@ export function SessionScreen({
           />
         )}
         bottomPad={composerH}
+        changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
         footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} /> : null}
         empty={
           view.status === "missing" ? (

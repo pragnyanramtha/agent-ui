@@ -5,6 +5,7 @@ import { ChatBubble, EditPencil, Globe, NavArrowDown, Page, Search, Sparks, Task
 import type { Entry, ToolResult } from "@/lib/types";
 import { highlight } from "@/lib/client/highlight";
 import { cleanResult, hostOf, parsePatch, parseNumbered, parseWebSearch, prettyJson, relativeTo, splitPath, summarizeTool, type ToolIcon } from "@/lib/client/tools";
+import { failedCount, runSummary } from "@/lib/client/turns";
 import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
@@ -561,14 +562,6 @@ function LiveThinking({ text }: { text: string }) {
   );
 }
 
-function headerLabel(items: RunItem[]) {
-  const tools = items.filter((i) => i.kind === "tool").length;
-  const thoughts = items.length - tools;
-  if (!tools) return "Thought";
-  const t = `${tools} tool ${tools === 1 ? "call" : "calls"}`;
-  return thoughts ? `Thought, ${t}` : t;
-}
-
 /**
  * A run of tool calls and thinking between two pieces of prose, styled after Beautiful UI's ToolChips.
  * `results` holds only this run's results so memo skips runs whose results did not change.
@@ -594,6 +587,7 @@ export const ToolRun = memo(function ToolRun({
   const live = thinking?.trim() ? thinking : undefined;
   /* an open run's live thinking row carries the shimmer itself, so the header stays quiet while it streams */
   const shimmer = active && !(live && open);
+  const failed = failedCount(items, results);
 
   if (!items.length) {
     return (
@@ -617,11 +611,9 @@ export const ToolRun = memo(function ToolRun({
         {shimmer ? (
           <span className={`shrink-0 font-medium ${SHIMMER} ${PLAY}`}>{live || !lastSummary ? "Thinking…" : lastSummary.verb}</span>
         ) : (
-          <span className="shrink-0 tabular-nums">{headerLabel(items)}</span>
+          <span className="min-w-0 truncate tabular-nums">{runSummary(items)}</span>
         )}
-        {!open && !live && lastSummary?.chip && (
-          <span className={`min-w-0 truncate text-[11.5px] text-ink-3 ${lastSummary.mono ? "font-mono" : ""}`}>{lastSummary.chip}</span>
-        )}
+        {!shimmer && failed > 0 && <span className="shrink-0 text-red">· {failed} failed</span>}
       </button>
       {/* the collapse clips overflow; widen it by the rows' hover bleed so their backgrounds and focus rings aren't cut */}
       <Collapse open={open} className="-mx-1">
