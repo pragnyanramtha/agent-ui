@@ -2,7 +2,8 @@
 
 import { useState, type ReactNode } from "react";
 import { Menu } from "iconoir-react";
-import { api, timeAgo } from "@/lib/client/api";
+import { timeAgo } from "@/lib/client/api";
+import { answerAsk, failureText } from "@/lib/client/send";
 import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
 import { runFailed } from "@/lib/status";
@@ -156,10 +157,10 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
     setBusy(choice);
     setError(null);
     try {
-      await api(`/api/sessions/${encodeURIComponent(session)}/respond`, { requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" });
+      await answerAsk(session, { requestId: ask.requestId, allow: choice !== "deny", always: choice === "always" });
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(failureText(err));
       setBusy(null);
     }
   };

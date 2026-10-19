@@ -9,7 +9,7 @@ import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
 import { carryOver } from "@/lib/client/storage";
 import { serverId, useSession } from "@/lib/client/useSession";
-import { postReliably, transient } from "@/lib/client/send";
+import { answerAsk, postReliably, transient, type Answer } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { HandoffDialog } from "./HandoffDialog";
@@ -259,17 +259,8 @@ export function SessionScreen({
     [id],
   );
 
-  const respond = useCallback(
-    async (body: { requestId: string; allow: boolean; always?: boolean; answers?: Record<string, string> }) => {
-      try {
-        await api(`/api/sessions/${id}/respond`, body);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        throw err;
-      }
-    },
-    [id],
-  );
+  /* the cards show a failure themselves and offer the answer again */
+  const respond = useCallback((body: Answer) => answerAsk(id, body), [id]);
 
   /* status as a quiet mark + word; below 480px only the mark shows for calm states, states that need you keep the word */
   const chip = "flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-[13px]";
