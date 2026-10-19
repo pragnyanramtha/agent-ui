@@ -1,9 +1,10 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { NavArrowDown, Refresh } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
-import { splitRows, type PatchFile, type PatchLine, type PatchStatus } from "@/lib/client/diff";
+import type { PatchFile, PatchLine, PatchStatus } from "@/lib/client/diff";
+import { chunkRows, chunkText, diffRows, type DiffRow } from "@/lib/client/diff-chunks";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { useSetting } from "@/lib/client/settings";
 import { PathLabel } from "./PathLabel";
@@ -20,6 +21,19 @@ const SPLIT_MIN_WIDTH = 680;
 const BIG_FILE_LINES = 400;
 const HIGHLIGHT_MAX_LINES = 3000;
 const POLL_MS = 8000;
+/* files whose first rows mount straight away, so the top of the diff never shows the plain stand-in */
+const EAGER_FILES = 3;
+
+/** The box the diff scrolls in (null: the page), for deciding which rows are near the screen. */
+const ScrollRoot = createContext<Element | null | undefined>(undefined);
+
+function scrollParent(el: Element | null): Element | null {
+  for (let n = el?.parentElement; n; n = n.parentElement) {
+    const o = getComputedStyle(n).overflowY;
+    if (o === "auto" || o === "scroll") return n;
+  }
+  return null;
+}
 
 const STATUS: Record<PatchStatus, { letter: string; tone: string; label: string }> = {
   added: { letter: "A", tone: "text-green", label: "Added" },
@@ -80,6 +94,7 @@ export function DiffView({
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [wide, setWide] = useState(false);
+  const [scroller, setScroller] = useState<Element | null | undefined>(undefined);
   const root = useRef<HTMLDivElement>(null);
   const fileRefs = useRef(new Map<string, HTMLElement>());
   const seq = useRef(0);
@@ -97,6 +112,7 @@ export function DiffView({
   useEffect(() => {
     const el = root.current;
     if (!el) return;
+    setScroller(scrollParent(el));
     const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= SPLIT_MIN_WIDTH));
     ro.observe(el);
     return () => ro.disconnect();
@@ -307,19 +323,13 @@ export function DiffView({
             ))}
           </ul>
 
-          <div className="flex flex-col gap-3">
-            {files.map((f) => (
-              <FileDiff
-                key={f.path}
-                file={f}
-                open={isOpen(f)}
-                split={split}
-                wrap={wrap}
-                onToggle={toggleFile}
-                refCb={fileRef}
-              />
-            ))}
-          </div>
+          <ScrollRoot.Provider value={scroller}>
+            <div className="flex flex-col gap-3">
+              {files.map((f, i) => (
+                <FileDiff key={f.path} file={f} open={isOpen(f)} eager={i < EAGER_FILES} split={split} wrap={wrap} onToggle={toggleFile} refCb={fileRef} />
+              ))}
+            </div>
+          </ScrollRoot.Provider>
         </>
       )}
     </div>
@@ -342,6 +352,7 @@ function Counts({ f }: { f: PatchFile }) {
 const FileDiff = memo(function FileDiff({
   file: f,
   open,
+  eager,
   split,
   wrap,
   onToggle,
@@ -349,6 +360,7 @@ const FileDiff = memo(function FileDiff({
 }: {
   file: PatchFile;
   open: boolean;
+  eager: boolean;
   split: boolean;
   wrap: boolean;
   onToggle: (f: PatchFile) => void;
@@ -358,6 +370,7 @@ const FileDiff = memo(function FileDiff({
   const plain = isPlainText(f.path) || lines > HIGHLIGHT_MAX_LINES;
   const widest = useMemo(() => Math.max(1, ...f.hunks.map((h) => Math.max(h.oldStart, h.newStart) + h.lines.length)), [f.hunks]);
   const num = `calc(${String(widest).length}ch + 14px)`;
+  const chunks = useMemo(() => (open ? chunkRows(diffRows(f, split)) : []), [f, split, open]);
   const note =
     f.binary || f.status === "binary"
       ? "Binary file."
@@ -398,18 +411,8 @@ const FileDiff = memo(function FileDiff({
           {f.hunks.length > 0 && (
             <div tabIndex={0} translate="no" className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-xs leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!">
               <div className={`relative ${wrap && !split ? "" : "min-w-fit"}`}>
-                {f.hunks.map((h, hi) => (
-                  <div key={hi}>
-                    <div className="sticky left-0 truncate bg-inset px-3 py-0.5 text-2xs text-ink-3">{h.header}</div>
-                    {split
-                      ? splitRows(h.lines).map((r, i) => (
-                          <div key={i} className="grid items-stretch" style={{ gridTemplateColumns: `${num} minmax(0,1fr) ${num} minmax(0,1fr)` }}>
-                            <Cell line={r.left} side="old" plain={plain} wrap />
-                            <Cell line={r.right} side="new" plain={plain} wrap border />
-                          </div>
-                        ))
-                      : h.lines.map((l, i) => <UnifiedRow key={i} line={l} num={num} plain={plain} wrap={wrap} />)}
-                  </div>
+                {chunks.map((rows, i) => (
+                  <Chunk key={i} rows={rows} eager={eager && i === 0} num={num} plain={plain} wrap={wrap} split={split} />
                 ))}
               </div>
             </div>
@@ -418,6 +421,57 @@ const FileDiff = memo(function FileDiff({
         </div>
       )}
     </section>
+  );
+});
+
+/**
+ * A run of rows that mounts once it comes near the screen. Until then it is the rows' text in one block at the
+ * same line height: roughly the same height, nothing to highlight, and still found by the browser's find.
+ */
+const Chunk = memo(function Chunk({ rows, eager, num, plain, wrap, split }: { rows: DiffRow[]; eager: boolean; num: string; plain: boolean; wrap: boolean; split: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const root = useContext(ScrollRoot);
+  const [shown, setShown] = useState(eager);
+  useEffect(() => {
+    const el = ref.current;
+    if (shown || !el || root === undefined) return;
+    const io = new IntersectionObserver(
+      (seen) => {
+        if (!seen.some((e) => e.isIntersecting)) return;
+        io.disconnect();
+        /* interruptible, so a fast scroll keeps its frames while rows highlight */
+        startTransition(() => setShown(true));
+      },
+      { root, rootMargin: "800px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown, root]);
+
+  if (!shown) {
+    return (
+      <div ref={ref} className={`pr-4 text-ink-3 ${wrap || split ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"}`} style={{ paddingLeft: split ? 12 : `calc(${num} * 2 + 8px)` }}>
+        {chunkText(rows)}
+      </div>
+    );
+  }
+  return (
+    <div ref={ref}>
+      {rows.map((r, i) =>
+        r.kind === "hunk" ? (
+          <div key={i} className="sticky left-0 truncate bg-inset px-3 py-0.5 text-2xs text-ink-3">
+            {r.header}
+          </div>
+        ) : r.kind === "pair" ? (
+          <div key={i} className="grid items-stretch" style={{ gridTemplateColumns: `${num} minmax(0,1fr) ${num} minmax(0,1fr)` }}>
+            <Cell line={r.left} side="old" plain={plain} wrap />
+            <Cell line={r.right} side="new" plain={plain} wrap border />
+          </div>
+        ) : (
+          <UnifiedRow key={i} line={r.line} num={num} plain={plain} wrap={wrap} />
+        ),
+      )}
+    </div>
   );
 });
 
