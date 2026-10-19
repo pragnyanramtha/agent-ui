@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Xmark } from "iconoir-react";
+import { Alarm, Archive, Calendar, Check, Clock, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { api, shortPath, timeAgo } from "@/lib/client/api";
 import { patchSession, type SessionChange } from "@/lib/client/useSessions";
@@ -65,6 +65,9 @@ const rowTitle = (s: SessionSummary, now: number) =>
 
 /** Snoozed and quiet: out of the main lists. A session that's working or waiting on you always shows. */
 export const isAsleep = (s: SessionSummary, now: number) => (s.snoozedUntil ?? 0) > now && !s.archived && !isBusy(s) && !s.web?.pending.length;
+
+/** The id the agent itself knows the session by ("codex:abc" is abc), for its own resume command. */
+export const nativeId = (id: string) => id.slice(id.indexOf(":") + 1);
 
 /** The address that opens a session, the same one notifications use. */
 export const sessionLink = (id: string) => `${window.location.origin}/?s=${encodeURIComponent(id)}`;
@@ -335,9 +338,9 @@ function RenameRow({
   );
 }
 
-type RowAction = "pin" | "rename" | "read" | "archive" | "link" | "wake" | { snooze: number };
+type RowAction = "pin" | "rename" | "read" | "archive" | "path" | "id" | "link" | "wake" | { snooze: number };
 
-/** Pin, rename, mark read, snooze, archive and copy link for one row, floating at the pointer or under the "..." button.
+/** Pin, rename, mark read, snooze, archive and the copy actions for one row, floating at the pointer or under the "..." button.
  * Snooze opens its presets in place, so it works the same on a phone. */
 function RowMenu({
   s,
@@ -479,6 +482,8 @@ function RowMenu({
           )}
           {item("archive", s.archived ? "Unarchive" : "Archive", <Archive {...icon} />)}
           <div className="mx-2 my-1 h-px bg-line" />
+          {s.cwd && item("path", "Copy folder path", <Folder {...icon} />)}
+          {item("id", "Copy session ID", <Hashtag {...icon} />)}
           {item("link", "Copy link", <Link {...icon} />)}
         </>
       )}
@@ -842,6 +847,10 @@ export function SessionList({
       say("Archived.", () => void change(s, wasPinned ? { archived: false, pinned: true } : { archived: false }));
     } else if (action === "link") {
       void copyText(sessionLink(s.id)).then((ok) => say(ok ? "Link copied." : "Couldn't copy the link."));
+    } else if (action === "path") {
+      void copyText(s.cwd).then((ok) => say(ok ? "Folder path copied." : "Couldn't copy the folder path."));
+    } else if (action === "id") {
+      void copyText(nativeId(s.id)).then((ok) => say(ok ? "Session ID copied." : "Couldn't copy the session ID."));
     }
   };
   const ctl: RowControl = {

@@ -43,3 +43,11 @@ describe("sessionStatus", () => {
     expect(sessionStatus({ terminal: null, web: web("closed") }, false)).toBeNull();
   });
 });
+
+describe("nativeId", async () => {
+  const { nativeId } = await import("@/components/claude/SessionList");
+  it("drops the agent prefix, keeps a bare Claude id", () => {
+    expect(nativeId("codex:019a-thread")).toBe("019a-thread");
+    expect(nativeId("0b9c3d8e-1f2a-4b5c-8d7e-6f5a4b3c2d1e")).toBe("0b9c3d8e-1f2a-4b5c-8d7e-6f5a4b3c2d1e");
+  });
+});
