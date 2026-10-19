@@ -120,7 +120,8 @@ describe("commit message settings", () => {
     fake("claude", `cat > /dev/null\necho claude > '${logs}/claude.ran'\necho 'Wrong agent'`);
     fake("codex", `cat > '${logs}/codex.stdin'\nwhile [ $# -gt 0 ]; do\n  if [ "$1" = "--output-last-message" ]; then shift; printf 'feat: tidy a.txt\\n' > "$1"; fi\n  shift\ndone`);
     store({ commitMessageAgent: "codex", commitMessageStyle: "conventional" });
-    fs.writeFileSync(path.join(repo, "a.txt"), "two\n");
+    /* a different size, so git's stat check sees the edit even within the same second as the commit */
+    fs.writeFileSync(path.join(repo, "a.txt"), "one\ntwo\n");
     expect(await g.suggestCommitMessage(repo)).toMatchObject({ message: "feat: tidy a.txt", source: "codex" });
     expect(fs.existsSync(path.join(logs, "claude.ran"))).toBe(false);
     expect(fs.readFileSync(path.join(logs, "codex.stdin"), "utf8")).toMatch(/Conventional Commits/);
@@ -130,7 +131,7 @@ describe("commit message settings", () => {
     agentsFrom("claude");
     fake("claude", `cat > /dev/null\necho claude > '${logs}/claude.ran'\necho 'Nope'`);
     store({ commitMessageAgent: "off" });
-    fs.writeFileSync(path.join(repo, "a.txt"), "three\n");
+    fs.writeFileSync(path.join(repo, "a.txt"), "one\nthree\n");
     expect(await g.suggestCommitMessage(repo)).toMatchObject({ source: "summary", message: "Update a.txt" });
     expect(fs.existsSync(path.join(logs, "claude.ran"))).toBe(false);
   });
