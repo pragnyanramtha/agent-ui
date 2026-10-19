@@ -197,6 +197,16 @@ describe("non-Claude message queue", () => {
     expect(fake.sends.map((s) => s.model)).toEqual(["model-a", "model-b", undefined]);
   });
 
+  it("switching the approval mode applies to messages already queued", async () => {
+    await send("q0", { permissionMode: "bypassPermissions" });
+    await send("q1", { permissionMode: "bypassPermissions" });
+    await agentControl("cursor", session, { action: "mode", value: "default" });
+    await drained(2);
+    await idle();
+    expect(fake.sends.map((s) => s.mode)).toEqual(["bypassPermissions", "default"]);
+    expect((await onDisk()).queues[`cursor:${session}`] ?? []).toEqual([]);
+  });
+
   it("a send that fails to start reports the error and doesn't leave the session stuck", async () => {
     fake.failOn = "boom";
     const res = await agentMessage("cursor", session, { text: "boom now", clientId: "boom-now-1" });
