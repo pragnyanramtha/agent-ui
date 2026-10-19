@@ -21,7 +21,7 @@ import { SSH_HOST } from "./editor-links";
 
 export type Scope = "device" | "synced";
 
-export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "storage";
+export type SectionId = "general" | "appearance" | "sidebar" | "composer" | "conversation" | "terminal" | "notifications" | "keyboard" | "agents" | "git" | "data" | "about" | "storage" | "projects";
 
 export type SectionInfo = {
   id: SectionId;
@@ -80,6 +80,16 @@ export const SECTIONS: readonly SectionInfo[] = [
     items: [
       { id: "usage", label: "Disk usage", description: "Worktrees, attachments and checkpoints on the server.", keywords: ["space", "size", "disk", "bytes", "full"] },
       { id: "clean-now", label: "Clean up now", description: "Lists what would go, then deletes it.", keywords: ["delete", "remove", "free space", "prune", "dry run"] },
+    ],
+  },
+  {
+    id: "projects",
+    label: "Projects",
+    description: "Defaults for new sessions and run actions, per folder.",
+    items: [
+      { id: "project-defaults", label: "Project defaults", description: "Profile, model, approvals and worktrees for new sessions in a folder.", keywords: ["folder", "repository", "repo", "profile", "model", "approvals", "effort", "worktree"] },
+      { id: "branch-prefix", label: "Branch prefix", description: "How worktree branches for a project are named.", keywords: ["worktree", "branch", "naming", "git"] },
+      { id: "run-actions", label: "Run actions", description: "Commands the session header's Run menu starts in a terminal.", keywords: ["scripts", "package.json", "npm", "pnpm", "yarn", "bun", "dev server", "tasks", "commands"] },
     ],
   },
 ];
