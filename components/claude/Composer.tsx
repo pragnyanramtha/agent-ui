@@ -204,8 +204,9 @@ export function Composer({
   context?: React.ReactNode;
   /** the strip's right end, before the send shortcut hint */
   contextEnd?: React.ReactNode;
-  /** the box takes a note instead of a message (a reason for denying); the draft waits until it's done */
-  note?: { label: string; placeholder: string; onSend: (text: string) => Promise<boolean>; onCancel: () => void } | null;
+  /** the box takes a note instead of a message (a reason for denying, an edited prompt); the draft waits until it's done.
+   * `text` starts the box with it, `tone` "accent" for what isn't a denial */
+  note?: { label: string; placeholder: string; onSend: (text: string) => Promise<boolean>; onCancel: () => void; text?: string; tone?: "accent"; cancelLabel?: string } | null;
 }) {
   const [draft, setDraft] = useState("");
   const [caret, setCaret] = useState(0);
@@ -283,18 +284,20 @@ export function Composer({
   }, [draft, draftKey, rememberDrafts, note]);
   /* a note gets an empty box; the message draft comes back when it's sent or cancelled */
   const noting = Boolean(note);
+  const noteText = note?.text;
   const heldDraft = useRef<string | null>(null);
   useEffect(() => {
     if (noting) {
-      heldDraft.current = draft;
-      setDraft("");
+      if (heldDraft.current === null) heldDraft.current = draft;
+      setDraft(noteText ?? "");
+      if (noteText) caretAfter.current = noteText.length;
       inputRef.current?.focus();
     } else if (heldDraft.current !== null) {
       setDraft(heldDraft.current);
       heldDraft.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noting]);
+  }, [noting, noteText]);
 
   useEffect(() => {
     if (autoFocus && window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
@@ -967,9 +970,9 @@ export function Composer({
           <div className="flex min-w-0 flex-col gap-1 px-3 pt-2.5">
             {notice}
             {note && (
-              <span className="flex max-w-full min-w-0 items-center gap-1 self-start rounded-full bg-red-tint py-0.5 pr-0.5 pl-2.5 text-xs font-medium text-red-ink">
+              <span className={`flex max-w-full min-w-0 items-center gap-1 self-start rounded-full py-0.5 pr-0.5 pl-2.5 text-xs font-medium ${note.tone === "accent" ? "bg-accent-tint text-accent-ink" : "bg-red-tint text-red-ink"}`}>
                 <span className="min-w-0 truncate">{note.label}</span>
-                <button type="button" onClick={note.onCancel} aria-label="Cancel note" title="Cancel (Esc)" className="tap relative grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-red/15">
+                <button type="button" onClick={note.onCancel} aria-label={note.cancelLabel ?? "Cancel note"} title="Cancel (Esc)" className={`tap relative grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-150 ${note.tone === "accent" ? "hover:bg-accent/15" : "hover:bg-red/15"}`}>
                   <Xmark width={12} height={12} strokeWidth={2.2} />
                 </button>
               </span>

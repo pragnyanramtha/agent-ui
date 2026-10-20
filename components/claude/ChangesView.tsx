@@ -7,12 +7,27 @@ import { DiffBlock } from "./DiffBlock";
 import { PathLabel } from "./PathLabel";
 import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { modalOpen } from "@/lib/client/shortcuts";
+import { scrollBehavior } from "@/lib/client/motion";
 import { useReturnFocus } from "@/lib/client/a11y";
 import type { FileChange } from "./ChangesPanel";
 
 /** OpenCode-style review pane: files changed in this session, each expandable to its edits. */
-export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileChange[]; cwd: string; partial: boolean; onClose: () => void }) {
-  const [open, setOpen] = useState<string | null>(changes[0]?.path ?? null);
+export function ChangesView({
+  changes,
+  cwd,
+  partial,
+  onClose,
+  focus,
+  focusKey,
+}: {
+  changes: FileChange[];
+  cwd: string;
+  partial: boolean;
+  onClose: () => void;
+  focus?: string | null;
+  focusKey?: number;
+}) {
+  const [open, setOpen] = useState<string | null>(() => (focus && changes.some((f) => f.path === focus) ? focus : (changes[0]?.path ?? null)));
   const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -25,6 +40,18 @@ export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileC
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    if (!focus) return;
+    setOpen(focus);
+    const frame = requestAnimationFrame(() => {
+      const row = [...(ref.current?.querySelectorAll<HTMLElement>("[data-path]") ?? [])].find((n) => n.dataset.path === focus);
+      if (!row) return;
+      row.scrollIntoView({ block: "start", behavior: scrollBehavior() });
+      row.querySelector("button")?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focus, focusKey]);
 
   return (
     <aside
@@ -56,7 +83,7 @@ export function ChangesView({ changes, cwd, partial, onClose }: { changes: FileC
           changes.map((f) => {
             const expanded = open === f.path;
             return (
-              <div key={f.path} className="mb-1">
+              <div key={f.path} data-path={f.path} className="mb-1 scroll-mt-2">
                 <button
                   type="button"
                   onClick={() => setOpen(expanded ? null : f.path)}

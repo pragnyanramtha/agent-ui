@@ -317,6 +317,15 @@ export async function moveCheckpoints(cwd: string, from: string, to: string) {
   }
 }
 
+/** A fork or an edited copy of a session gets the checkpoints taken before `before` (epoch ms), so it can rewind too. */
+export async function copyCheckpoints(cwd: string, from: string, to: string, before = Infinity): Promise<number> {
+  const root = await repoRoot(cwd);
+  if (!root || from === to) return 0;
+  const list = (await listCheckpoints(root, from)).filter((c) => c.at < before).slice(0, MAX_CHECKPOINTS);
+  if (list.length) await git(root, ["update-ref", "--stdin"], { input: list.map((c) => `create ${refBase(to)}/${c.id} ${c.commit}\n`).join("") });
+  return list.length;
+}
+
 export type FileStat = { path: string; added: number; removed: number; binary: boolean };
 
 function numstat(out: string): FileStat[] {
