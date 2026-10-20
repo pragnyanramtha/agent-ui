@@ -1,5 +1,6 @@
 import type { Entry, ToolResult } from "@/lib/types";
 import { summarizeTool, type ToolIcon } from "./tools";
+import { writesFiles } from "./file-edits";
 
 export type RunItem = Extract<Entry, { kind: "tool" | "thinking" }>;
 type UserEntry = Extract<Entry, { kind: "user" }>;
@@ -14,7 +15,7 @@ export type Block =
   | { type: "notice"; key: string; entry: NoticeEntry }
   | { type: "run"; key: string; items: RunItem[] }
   /** a finished turn's work: runs and in-between prose, collapsed behind one row */
-  | { type: "fold"; key: string; blocks: Block[]; tools: number; ms: number | null }
+  | { type: "fold"; key: string; blocks: Block[]; tools: number; ms: number | null; /** the turn's tool calls that wrote files */ edits: ToolEntry[] }
   /** the files a finished turn edited; `turn` indexes splitTurns(entries) */
   | { type: "changes"; key: string; tools: ToolEntry[]; turn: number };
 
@@ -41,13 +42,11 @@ export function splitTurns(entries: Entry[]): Turn[] {
 
 /* questions and plans wait on the reader, so a fold never hides them */
 const PINNED_TOOLS = new Set(["ExitPlanMode", "AskUserQuestion"]);
-const EDIT_TOOLS = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
-const isEdit = (e: Entry): e is ToolEntry => e.kind === "tool" && EDIT_TOOLS.has(e.name) && Boolean(str(e.input?.file_path) || str(e.input?.notebook_path));
 
 /** the tool calls in a turn that wrote files (what the Changes panel counts) */
-export const editsIn = (entries: Entry[]) => entries.filter(isEdit);
+export const editsIn = (entries: Entry[]) => entries.filter(writesFiles);
 
 function plainBlocks(entries: Entry[], pin: boolean, thinking: boolean): Block[] {
   const blocks: Block[] = [];
@@ -118,12 +117,12 @@ export function toBlocks(entries: Entry[], live = false, opts: { thinking?: bool
     for (let i = end - 1; i >= 0 && (flat[i].type === "text" || isPinned(flat[i])); i--) if (flat[i].type === "text") start = i;
     const answer = (i: number) => end >= 0 && i >= start && i <= end && flat[i].type === "text";
     const folded = flat.filter((b, i) => !isPinned(b) && !answer(i));
-    if (folded.length) out.push({ type: "fold", key: `fold:${folded[0].key}`, blocks: folded, tools: toolCount(folded), ms: duration(turn) });
+    const edits = editsIn(turn.entries);
+    if (folded.length) out.push({ type: "fold", key: `fold:${folded[0].key}`, blocks: folded, tools: toolCount(folded), ms: duration(turn), edits });
     flat.forEach((b, i) => {
       if (isPinned(b)) out.push(b);
       else if (answer(i)) out.push(i === end ? { ...(b as Extract<Block, { type: "text" }>), final: true } : b);
     });
-    const edits = editsIn(turn.entries);
     if (edits.length) out.push({ type: "changes", key: `changes:${turn.user?.id ?? turn.entries[0]?.id}`, tools: edits, turn: t });
   });
   return out;

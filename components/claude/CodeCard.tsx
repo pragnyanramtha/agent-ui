@@ -98,7 +98,7 @@ export const CodeCard = memo(function CodeCard({ code, label, collapsible = fals
     });
 
   return (
-    <div ref={root} data-code-card className="not-prose w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-card">
+    <div ref={root} data-code-card data-lang={label || undefined} className="not-prose w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-card">
       <div className="flex h-9 items-center gap-2 border-b border-line pr-1.5 pl-3 text-xs">
         {label?.includes("/") ? <PathLabel path={label} /> : <span className="truncate font-mono text-ink-3">{label || "text"}</span>}
         <button

@@ -4,7 +4,10 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { NavArrowRight } from "iconoir-react";
 import type { Entry, ToolResult } from "@/lib/types";
 import { foldLabel } from "@/lib/client/turns";
+import { filesSummary, turnFiles, type TurnFile } from "@/lib/client/file-edits";
+import { OPEN_CHANGES_EVENT } from "@/lib/client/events";
 import { collectChanges } from "./ChangesPanel";
+import { PathLabel } from "./PathLabel";
 import "./diff.css";
 
 /** Dispatched on a fold's root (`[data-fold]`) to open it, so find can show a match inside. */
@@ -17,8 +20,29 @@ const FOCUS_INSET = "focus-visible:[outline-offset:-2px]! focus-visible:rounded-
  * Collapsed, the body stays in the DOM but hidden, so find in session still reaches its text.
  * `defaultOpen` (Settings > Conversation > Finished turns) opens or closes every fold when it changes.
  */
-export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: { ms: number | null; tools: number; failed: number; defaultOpen?: boolean; children: ReactNode }) {
+export function TurnFold({
+  ms,
+  tools,
+  failed,
+  defaultOpen = false,
+  edits,
+  results,
+  cwd,
+  children,
+}: {
+  ms: number | null;
+  tools: number;
+  failed: number;
+  defaultOpen?: boolean;
+  /** the turn's tool calls that wrote files, for "3 files changed +42 −7" and the list of them */
+  edits?: Entry[];
+  results?: Record<string, ToolResult>;
+  cwd?: string;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(defaultOpen);
+  const files = useMemo(() => (edits?.length ? turnFiles(edits, results ?? {}) : []), [edits, results]);
+  const sum = files.length ? filesSummary(files) : null;
   const [shown, setShown] = useState(defaultOpen);
   const ref = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -67,6 +91,18 @@ export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: {
           {title}
           {detail && <span className="text-ink-3/70"> · {detail}</span>}
           {failed > 0 && <span className="text-red-ink"> · {failed} failed</span>}
+          {sum && (
+            <span className="text-ink-3/70">
+              {" · "}
+              {sum.label}
+              {sum.added !== null && (
+                <span className="diff-tone tabular-nums">
+                  {" "}
+                  <span className="text-(--add-ink)">+{sum.added}</span> <span className="text-(--del-ink)">−{sum.removed}</span>
+                </span>
+              )}
+            </span>
+          )}
         </span>
         <NavArrowRight width={14} height={14} strokeWidth={1.6} className="shrink-0 transition-transform duration-200" style={{ transform: open ? "rotate(90deg)" : undefined }} aria-hidden />
       </button>
@@ -75,10 +111,40 @@ export function TurnFold({ ms, tools, failed, defaultOpen = false, children }: {
         style={{ gridTemplateRows: open ? "1fr" : "0fr", transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)" }}
       >
         <div className="min-h-0 min-w-0 overflow-hidden" hidden={!open && !shown}>
-          <div className="ms-1 flex min-w-0 flex-col gap-4 pt-2 pb-1">{children}</div>
+          <div className="ms-1 flex min-w-0 flex-col gap-4 pt-2 pb-1">
+            {files.length > 0 && <TurnFiles files={files} cwd={cwd} />}
+            {children}
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/** The files a turn changed, each opening the Changes panel at its diff. */
+function TurnFiles({ files, cwd }: { files: TurnFile[]; cwd?: string }) {
+  const root = cwd?.replace(/\/+$/, "");
+  const rel = (p: string) => (root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p);
+  return (
+    <ul aria-label="Changed files" className="-mx-1.5 flex min-w-0 flex-col">
+      {files.map((f) => (
+        <li key={f.path} className="min-w-0">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CHANGES_EVENT, { detail: { path: f.path } }))}
+            aria-label={`${rel(f.path)}: show changes`}
+            className={`flex h-10 w-full min-w-0 items-center gap-3 rounded-control px-1.5 text-left text-sm text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink pointer-fine:h-7 ${FOCUS_INSET}`}
+          >
+            <PathLabel path={rel(f.path)} className="min-w-0 flex-1 font-mono text-xs" />
+            {f.added !== null && f.removed !== null && (
+              <span className="diff-tone shrink-0 font-mono text-xs tabular-nums">
+                <span className="text-(--add-ink)">+{f.added}</span> <span className="text-(--del-ink)">−{f.removed}</span>
+              </span>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

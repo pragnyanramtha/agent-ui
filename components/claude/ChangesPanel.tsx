@@ -2,39 +2,29 @@
 
 import { lazyComponent } from "@/lib/client/lazy";
 import type { Entry, ToolResult } from "@/lib/types";
-import { lineDiff } from "@/lib/client/diff";
+import { editCounts, toolEdits } from "@/lib/client/file-edits";
 
-type Edit = { before: string; after: string; ts: string; kind: "edit" | "write"; failed: boolean };
+type Edit = { before: string; after: string; ts: string; kind: "edit" | "write" | "delete"; failed: boolean };
 export type FileChange = { path: string; edits: Edit[]; added: number; removed: number; last: string };
-
-const str = (v: unknown) => (typeof v === "string" ? v : "");
 
 /** Every file the loaded part of the conversation edited or wrote, newest first, with its diffs. */
 export function collectChanges(entries: Entry[], results: Record<string, ToolResult>): FileChange[] {
   const files = new Map<string, FileChange>();
   for (const e of entries) {
     if (e.kind !== "tool") continue;
-    const path = str(e.input.file_path) || str(e.input.notebook_path);
-    if (!path) continue;
     const failed = Boolean(results[e.toolUseId]?.isError);
-    let edits: Edit[] = [];
-    if (e.name === "Edit") edits = [{ before: str(e.input.old_string), after: str(e.input.new_string), ts: e.ts, kind: "edit", failed }];
-    else if (e.name === "MultiEdit" && Array.isArray(e.input.edits))
-      edits = (e.input.edits as ({ old_string?: unknown; new_string?: unknown } | null)[]).map((x) => ({ before: str(x?.old_string), after: str(x?.new_string), ts: e.ts, kind: "edit" as const, failed }));
-    else if (e.name === "Write") edits = [{ before: "", after: str(e.input.content), ts: e.ts, kind: "write", failed }];
-    else if (e.name === "NotebookEdit") edits = [{ before: "", after: str(e.input.new_source), ts: e.ts, kind: "edit", failed }];
-    else continue;
-    const f = files.get(path) ?? { path, edits: [], added: 0, removed: 0, last: e.ts };
-    for (const ed of edits) {
-      f.edits.push(ed);
-      if (ed.failed) continue;
-      for (const l of lineDiff(ed.before, ed.after)) {
-        if (l.tone === "add") f.added++;
-        else if (l.tone === "del") f.removed++;
+    for (const ed of toolEdits(e)) {
+      if (!ed.path) continue;
+      const f = files.get(ed.path) ?? { path: ed.path, edits: [], added: 0, removed: 0, last: e.ts };
+      f.edits.push({ before: ed.before, after: ed.after, ts: e.ts, kind: ed.kind, failed });
+      if (!failed) {
+        const c = editCounts(ed);
+        f.added += c.added;
+        f.removed += c.removed;
       }
+      f.last = e.ts;
+      files.set(ed.path, f);
     }
-    f.last = e.ts;
-    files.set(path, f);
   }
   return [...files.values()].sort((a, b) => b.last.localeCompare(a.last));
 }
