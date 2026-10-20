@@ -1,7 +1,7 @@
 "use client";
 
 import { parseHandoff } from "@/lib/handoff-text";
-import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ArrowDown, MediaImage } from "iconoir-react";
 import { Boundary } from "./Boundary";
 import { splitAttachments } from "@/lib/attachments";
@@ -21,7 +21,8 @@ import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
 import { TurnChanges, TurnFold } from "./TurnFold";
 import "./thread.css";
-import { scrollBehavior } from "@/lib/client/motion";
+import { reducedMotion, scrollBehavior } from "@/lib/client/motion";
+import { JUMP_MARGIN } from "@/lib/client/prompt-timeline";
 import { estimateHeight, growWindow, windowStart, WINDOW_FILL_STEP, WINDOW_INITIAL, WINDOW_STEP } from "@/lib/client/thread-window";
 
 /** Dispatched on the thread's scroll box to stop following new content before jumping to an earlier spot. */
@@ -30,6 +31,18 @@ export const RELEASE_PIN_EVENT = "cui:release-pin";
 export const SHOW_ALL_EVENT = "cui:show-all";
 /** Dispatched back on the scroll box once every loaded message is rendered; from then on it carries `data-all`. */
 export const SHOWN_ALL_EVENT = "cui:shown-all";
+
+/** What a thread overlay (the prompt timeline) gets: the scroll box, the blocks and the window, and a way to jump. */
+export type ThreadNav = {
+  scrollRef: RefObject<HTMLDivElement | null>;
+  contentRef: RefObject<HTMLDivElement | null>;
+  blocks: Block[];
+  /** index of the first rendered block */
+  start: number;
+  foldsOpen: boolean;
+  /** scroll a prompt (a user block's key) to the top of the view, rendering older blocks first if it isn't yet */
+  reveal: (key: string) => void;
+};
 
 const GAP_MS = 30 * 60_000;
 /* how long after opening a session "Never" auto-scroll still keeps the newest content in view, while history lands */
@@ -299,7 +312,7 @@ const BlockList = memo(function BlockList({ blocks, start, dividers, runs, resul
     if (b.type === "user") {
       const divider = dividers.get(b.key);
       return (
-        <div key={b.key} data-block className={`${ACTIONS_GAP} ${i ? "mt-4" : ""}`} style={style}>
+        <div key={b.key} data-block data-prompt={b.key} className={`${ACTIONS_GAP} ${i ? "mt-4" : ""}`} style={style}>
           {divider && (
             <div className="mb-4 flex items-center gap-3 text-[11.5px] font-medium text-ink-3" role="separator" aria-label={divider}>
               <span className="h-px flex-1 bg-line" />
@@ -380,7 +393,10 @@ export function Thread({
   empty,
   pendingSlot,
   changes,
+  overlay,
 }: {
+  /** drawn over the thread beside the scroll box (the prompt timeline) */
+  overlay?: (nav: ThreadNav) => ReactNode;
   /** renders a not-yet-recorded message (status, retry, discard) */
   pendingSlot?: (p: SessionView["pending"][number]) => ReactNode;
   view: SessionView;
@@ -473,6 +489,48 @@ export function Thread({
     else startTransition(() => setFirst(growWindow(keys, start, step)));
   }, []);
   const [filling, setFilling] = useState(false);
+
+  /* Jump to a prompt: older blocks render first when it's outside the window, then it scrolls to the top of the
+   * view. Following the bottom stops, like any jump to an earlier spot. */
+  const revealing = useRef<string | null>(null);
+  const scrollToPrompt = useCallback((key: string) => {
+    const el = scrollRef.current;
+    const node = el?.querySelector<HTMLElement>(`[data-prompt="${CSS.escape(key)}"]`);
+    if (!el || !node) return false;
+    jumpingRef.current = false;
+    el.dispatchEvent(new Event(RELEASE_PIN_EVENT));
+    const delta = () => node.getBoundingClientRect().top - el.getBoundingClientRect().top - JUMP_MARGIN;
+    const d = delta();
+    /* far jumps land at once: a long smooth scroll keeps chasing blocks that take their real height on the way */
+    if (Math.abs(d) > el.clientHeight * 2 || scrollBehavior() === "auto") {
+      el.scrollTop += d;
+      requestAnimationFrame(() => {
+        const again = delta();
+        if (Math.abs(again) >= 2) el.scrollTop += again;
+      });
+    } else el.scrollTo({ top: el.scrollTop + d, behavior: "smooth" });
+    const bubble = node.querySelector<HTMLElement>(".rounded-window");
+    if (bubble && !reducedMotion()) bubble.animate([{ boxShadow: "0 0 0 2px var(--accent)" }, { boxShadow: "0 0 0 2px transparent" }], { duration: 1200, easing: "ease-out" });
+    return true;
+  }, []);
+  const reveal = useCallback(
+    (key: string) => {
+      const { keys, start } = windowRef.current;
+      const i = keys.indexOf(key);
+      if (i === -1) return;
+      if (i >= start) {
+        scrollToPrompt(key);
+        return;
+      }
+      revealing.current = key;
+      setFirst(keys[i]);
+    },
+    [scrollToPrompt],
+  );
+  useLayoutEffect(() => {
+    const key = revealing.current;
+    if (key && scrollToPrompt(key)) revealing.current = null;
+  });
 
   /* Follow new content while the reader is at the bottom (Settings > Conversation > Auto-scroll):
    *   follow: scrolling up releases the pin, coming back to the bottom takes it again
@@ -632,6 +690,9 @@ export function Thread({
     onLoadOlder();
   };
 
+  const foldsOpen = workLog === "expanded";
+  const nav = useMemo<ThreadNav>(() => ({ scrollRef, contentRef, blocks, start, foldsOpen, reveal }), [blocks, start, foldsOpen, reveal]);
+
   /* "When complete" leaves text that's still arriving out; the working indicator stands in until it lands */
   const liveText = streamText === "live" ? view.streams.filter((s) => s.kind === "text" && s.text) : [];
   /* reasoning streaming in for the next step; shown as a live row in the active run */
@@ -670,7 +731,7 @@ export function Thread({
             runs={runs}
             results={view.results}
             timestamps={timestamps}
-            foldsOpen={workLog === "expanded"}
+            foldsOpen={foldsOpen}
             changesCard={changesCard}
             activeLast={busy && liveText.length === 0 && view.pending.length === 0}
             liveThinking={liveThinking}
@@ -708,6 +769,8 @@ export function Thread({
           {footer}
         </div>
       </div>
+
+      {overlay?.(nav)}
 
       {!atBottom && (
         <button

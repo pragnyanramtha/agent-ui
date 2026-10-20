@@ -947,6 +947,15 @@ export const SETTINGS = {
     default: true,
     showIf: ["turnChanges", true],
   }),
+  promptTimeline: boolean({
+    section: "conversation",
+    group: "Navigation",
+    label: "Prompt timeline",
+    description: "A strip along the right edge with a mark for each of your prompts. Click one to jump there.",
+    keywords: ["minimap", "scrollbar", "jump", "prompts", "outline", "overview"],
+    scope: "device",
+    default: true,
+  }),
   autoScroll: choice({
     section: "conversation",
     group: "Streaming",
