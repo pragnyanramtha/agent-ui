@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import { startRun } from "@/lib/server/runner";
+import { claudeInTmux, startClaudeTui, TuiStartError } from "@/lib/server/claude-tui";
 import { sessionRows } from "@/lib/server/rows";
 import { parseMode, readJson, str } from "@/lib/server/http";
 import type { AgentId } from "@/lib/types";
@@ -68,6 +69,15 @@ async function start(body: Record<string, unknown>) {
   const profile = pickProfile("claude", body.profile, null);
   const model = str(body.model) || undefined;
   const mode = parseMode(body.permissionMode) ?? "default";
+  if (await claudeInTmux()) {
+    try {
+      const { id, terminal } = await startClaudeTui({ profile, cwd, text, model, permissionMode: mode });
+      setSessionProfile(id, profile.id);
+      return NextResponse.json({ id, terminal });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : String(err), terminal: err instanceof TuiStartError ? err.terminal : undefined }, { status: 502 });
+    }
+  }
   const run = startRun({ cwd, model, permissionMode: mode, profile });
   run.send(text);
   const id = await Promise.race([run.sessionId(), new Promise<string>((r) => setTimeout(() => r(""), 90_000))]);

@@ -4,7 +4,7 @@ import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
-import type { ResolvedProfile } from "./profiles";
+import { modelFor, type ResolvedProfile } from "./profiles";
 
 /** "--flag value" / "--flag" pairs as the SDK's extraArgs */
 function extraArgs(args: string[]): Record<string, string | null> {
@@ -92,7 +92,7 @@ export class Run {
     this.cwd = opts.cwd;
     this.profile = opts.profile ?? null;
     const p = this.profile;
-    const model = opts.model ?? p?.defaultModel;
+    const model = modelFor(p, opts.model);
     this.state = {
       status: "starting",
       model: model ?? null,
@@ -182,7 +182,8 @@ export class Run {
     this.update({ permissionMode: mode });
   }
 
-  async setModel(model: string | undefined) {
+  async setModel(requested: string | undefined) {
+    const model = modelFor(this.profile, requested);
     await this.q.setModel(model);
     this.update({ model: model ?? null });
   }

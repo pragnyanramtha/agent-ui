@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo } from "@/lib/types";
+import { CLAUDE_DEFAULT_MODEL } from "./config";
 
 /* Agent profiles: which CLI to run for an agent kind, with what arguments and environment.
  * Every installed agent has a built-in profile under its own id ("claude", "codex", ...).
@@ -172,6 +173,13 @@ export function pickProfile(agent: AgentId, requested: unknown, sessionKey?: str
   const used = sessionKey ? getProfile(sessionProfile(sessionKey)) : null;
   if (used && used.agent === agent) return used;
   return getProfile(agent) ?? resolve(builtin(agent), true);
+}
+
+/** The model a turn runs on: the one asked for, else the profile's default, else (Claude only) Opus 5.5. */
+export function modelFor(p: ResolvedProfile | null, requested?: string | null): string | undefined {
+  if (requested) return requested;
+  if (p?.defaultModel || p?.models?.length) return p.defaultModel ?? p.models?.[0];
+  return !p || p.agent === "claude" ? CLAUDE_DEFAULT_MODEL : undefined;
 }
 
 const SECRET = /KEY|TOKEN|SECRET|PASSWORD|AUTH/i;

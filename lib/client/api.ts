@@ -1,5 +1,5 @@
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) {
+  constructor(message: string, readonly status: number, readonly code?: string, readonly terminal?: string) {
     super(message);
   }
 }
@@ -15,8 +15,8 @@ export async function api<T = unknown>(url: string, body?: unknown): Promise<T> 
     window.location.href = "/login";
     throw new ApiError("Signed out", 401);
   }
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string };
-  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.code);
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string; code?: string; terminal?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.code, data.terminal);
   return data;
 }
 

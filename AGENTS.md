@@ -15,7 +15,7 @@ Watch live sessions, type into the terminal they run in, start/resume sessions f
 All machine-specific values live in gitignored env files; `.env.example` documents every key.
 - `.env.local` on the server (chmod 600): `UI_PASSWORD` (plain) or `UI_PASSWORD_HASH` (`scrypt:salt:hash`, colon-separated
   because Next's dotenv expands `$`; wins if both are set), `UI_SECRET` (32+ chars, signs the session cookie), optional `CLAUDE_BIN`, `CLAUDE_HOME`, `HIDE_PROJECTS`,
- `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
+ `IDLE_REAP_MS`, `PTY_PORT`, `CLAUDE_WEB_DRIVER`, `CLAUDE_MODEL`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
  `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`), `AGENT_U_HOME`,
  `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
@@ -79,9 +79,13 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 ## Architecture notes
 - Transcripts (`~/.claude/projects/*/*.jsonl`) are the source of truth for history; `lib/server/tail.ts` streams appends.
 - Live terminal sessions come from `~/.claude/sessions/<pid>.json` (pid + start time checked).
-- Web runs (`lib/server/runner.ts`, Claude Agent SDK) only add deltas, status, and approvals.
+- Claude sessions started or resumed from the web run Claude's own TUI in a kept `agentu-*` tmux session
+  (`lib/server/claude-tui.ts`: `--session-id`/`--resume`, first message as the last argument, folder trust answered), so they
+  outlive the browser and app restarts, open interactively, attach from a shell, and take every command (`/goal`).
+  Without tmux, or with `CLAUDE_WEB_DRIVER=sdk`, they're web runs (`lib/server/runner.ts`, Agent SDK: deltas, status, approvals).
 - One agent process per session, never a copy: `POST /api/sessions/[id]/message` routes to the live web run, else types into
   the zellij/tmux pane (`lib/server/input.ts`, checks Claude's prompt first: agent focus, unsent text, dialogs), else resumes.
+- A headless (Agent SDK) process holding a session is stopped on request (`takeover`) so the session opens in a terminal.
 - Live stream is `POST /api/sessions/[id]/events` read with fetch (SSE framing, `id:` = resume offset, 40s stall reconnect).
 - Messages sent while Claude is mid-turn land in the transcript as `attachment` records (`queued_command`).
 - Other agents: `lib/server/agents/<agent>.ts` implement `AgentAdapter` (`lib/server/agents/types.ts`) and emit the same

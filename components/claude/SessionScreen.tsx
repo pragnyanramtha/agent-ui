@@ -13,6 +13,7 @@ import { postReliably } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { HandoffDialog } from "./HandoffDialog";
+import { confirmAsk } from "./Ask";
 import { OPEN_FILES_EVENT } from "./FilesScreen";
 import { terminalBusy } from "@/lib/status";
 import { AskCards } from "./AskCards";
@@ -96,7 +97,16 @@ export function SessionScreen({
   const busy = run ? run.status === "running" || run.status === "starting" : terminalBusy(terminal?.status);
   /* most other agents' print modes can't ask for approval on the web (Codex can), so like new sessions they default to Bypass */
   const mode = live?.permissionMode ?? localMode ?? run?.permissionMode ?? view.permissionMode ?? (agent === "claude" ? "default" : "bypassPermissions");
-  const model = localModel ?? run?.model ?? null;
+  const lastModel = useMemo(() => {
+    for (let i = view.entries.length - 1; i >= 0; i--) {
+      const e = view.entries[i];
+      if (e.kind === "usage" && e.model && !e.model.startsWith("<")) return e.model;
+    }
+    return null;
+  }, [view.entries]);
+  const model = localModel ?? run?.model ?? lastModel;
+  /* a Claude TUI in zellij/tmux the server can type into */
+  const typesInto = agent === "claude" && !live && /^(zellij|tmux)/.test(terminal?.multiplexer ?? "");
   const where = terminal ? (terminal.headless ? "another program" : (terminal.multiplexer ?? "a terminal")) : null;
   const agentName = AGENT_LABEL[agent];
   const profileId = localProfile ?? view.profile ?? agent;
@@ -289,14 +299,19 @@ export function SessionScreen({
       openServerTerminal(kept, `${kept.label}: ${view.title || "session"}`);
       return;
     }
-    if (terminal) {
+    /* a headless process (Agent SDK) or a turn from the web has no screen: hand the session over to a terminal */
+    let takeover = false;
+    if (terminal?.headless || (!terminal && run && busy && agent === "claude")) {
+      takeover = await confirmAsk(
+        terminal?.headless
+          ? { title: "Open this session in a terminal?", body: "Another program is running it through the Agent SDK, which has no screen. It will be stopped and the session opens in Claude's own terminal here.", confirm: "Stop it and open", danger: true }
+          : { title: "Open this session in a terminal?", body: `${agentName} is working on a message from the web. That turn stops, and the session opens in a terminal where you can carry on.`, confirm: "Stop turn and open", danger: true },
+      );
+      if (!takeover) return;
+    } else if (terminal) {
       /* only zellij and tmux can be joined from here; anything else stays where it runs */
       if (!/^(zellij|tmux)/.test(terminal.multiplexer ?? "")) {
-        setError(
-          terminal.headless
-            ? "Another program is running this session through the Agent SDK, so there's no terminal to open. It can be continued here once that program ends it."
-            : `This session is running in ${terminal.multiplexer === "screen" ? "GNU screen" : "a plain terminal"}, which the web can't join. Continue it there, or quit it there and open it here.`,
-        );
+        setError(`This session is running in ${terminal.multiplexer === "screen" ? "GNU screen" : "a plain terminal"}, which the web can't join. Continue it there, or quit it there and open it here.`);
         return;
       }
       window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { session: agent === "claude" ? id : undefined, pid: terminal.pid, label: `${agentName} in ${where ?? "terminal"}` } }));
@@ -304,7 +319,7 @@ export function SessionScreen({
     }
     setLaunching(true);
     try {
-      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { session: id, profile: profileId });
+      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { session: id, profile: profileId, takeover });
       openServerTerminal(t, `${t.label}: ${view.title || "session"}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't open the terminal.");
@@ -363,7 +378,7 @@ export function SessionScreen({
               <span className="max-[379px]:sr-only">{changes.length}</span>
             </button>
           )}
-          {view.status !== "missing" && (terminal || !busy) && (
+          {view.status !== "missing" && (terminal || !busy || agent === "claude") && (
             <button
               type="button"
               onClick={() => void openInteractive()}
@@ -639,7 +654,7 @@ export function SessionScreen({
               model={model}
               onModelChange={(m) => {
                 setLocalModel(m || null);
-                if (live) void control("model", m);
+                if (live || typesInto) void control("model", m);
               }}
               autoFocus
               cwd={agent === "claude" ? view.cwd || undefined : undefined}
@@ -661,9 +676,9 @@ export function SessionScreen({
                     agent === "claude"
                       ? (MODELS.find((x) => x.key === a || x.name.toLowerCase().startsWith(a))?.key ?? (a === "default" ? "" : null))
                       : a === "default" ? "" : arg.trim() || null;
-                  if (m === null) return setError(agent === "claude" ? "Use /model opus, sonnet, haiku, or default." : "Use /model <model id>, or /model default."), true;
+                  if (m === null) return setError(agent === "claude" ? "Use /model opus, sonnet, or haiku." : "Use /model <model id>, or /model default."), true;
                   setLocalModel(m || null);
-                  if (live) void control("model", m);
+                  if (live || typesInto) void control("model", m);
                 } else if (name === "mode") {
                   const m = MODE_ALIASES[a.replace(/\s+/g, "")];
                   if (!m) return setError("Use /mode ask, edits, plan, or bypass."), true;

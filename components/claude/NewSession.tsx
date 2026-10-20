@@ -149,6 +149,8 @@ export function NewSession({
       const msg = err instanceof ApiError ? err.message : "Couldn't start the session.";
       if (/^No folder at/.test(msg)) setFolderInvalid(true);
       setError(msg);
+      /* the TUI is up but stuck on a question at startup: show it */
+      if (err instanceof ApiError && err.terminal) openServerTerminal({ id: err.terminal, backing: "tmux" }, `${name} in ${cwd.trim().split("/").pop()}`);
       return false;
     }
   };

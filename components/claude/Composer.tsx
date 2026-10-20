@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
+import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck, TriangleFlag } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { promptAsk } from "./Ask";
@@ -27,16 +27,16 @@ export const MODES: { key: PermissionMode; name: string; short: string; desc: st
 /* the labels in the segmented approvals control */
 const MODE_SEG: Record<PermissionMode, string> = { default: "Ask", acceptEdits: "Edits", plan: "Plan", bypassPermissions: "Bypass" };
 
+/* full ids: the bare aliases lag behind (on current Claude Code "haiku" is still Haiku 4.5); the server defaults to the first */
 export const MODELS = [
-  { key: "", name: "Default" },
-  { key: "opus", name: "Opus" },
-  { key: "sonnet", name: "Sonnet" },
-  /* the "haiku" alias still resolves to Haiku 4.5 on current Claude Code */
+  { key: "claude-opus-5-5", name: "Opus 5.5" },
+  { key: "claude-sonnet-5-5", name: "Sonnet 5.5" },
   { key: "claude-haiku-5-5", name: "Haiku 5.5" },
 ];
 
 export function modelLabel(model: string | null) {
   if (!model) return "Default";
+  if (/^(opus|sonnet|haiku)$/.test(model)) return MODELS.find((x) => x.key.includes(model))!.name;
   const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/.exec(model);
   if (m) return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] && m[3].length < 3 ? `.${m[3]}` : ""}`;
   return MODELS.find((x) => x.key === model)?.name ?? model;
@@ -115,7 +115,7 @@ export function Composer({
   slashCommands,
   mode,
   onModeChange,
-  model,
+  model: chosenModel,
   onModelChange,
   notice,
   autoFocus,
@@ -178,6 +178,8 @@ export function Composer({
   profile?: string;
   onProfileChange?: (id: string) => void;
 }) {
+  /* lists without a "Default" row (Claude's) run their first model when none is chosen */
+  const model = chosenModel ?? (models.some((m) => m.key === "") ? null : (models[0]?.key ?? null));
   const [draft, setDraft] = useState("");
   const [menu, setMenu] = useState<Menu>(null);
   const [slashHidden, setSlashHidden] = useState(false);
@@ -542,6 +544,23 @@ export function Composer({
               <span>Commands</span>
               <span className="ml-auto text-[12px] text-ink-3">Type /</span>
             </button>
+            {agent === "claude" && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu(true);
+                  void promptAsk({ title: "Set a goal", body: "Claude keeps working until this holds, checking it before it stops. Send /goal clear to remove it.", confirm: "Set goal", value: "" }).then(
+                    (g) => g && void onSend(`/goal ${g}`),
+                  );
+                }}
+                className={menuRow}
+              >
+                <TriangleFlag width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+                <span>Set a goal</span>
+                <span className="ml-auto text-[12px] text-ink-3">/goal</span>
+              </button>
+            )}
           </div>
         </MenuShell>
       )}

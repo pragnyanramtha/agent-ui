@@ -4,7 +4,7 @@ export type SlashItem = { name: string; description: string; kind: SlashKind; hi
 
 /** Handled in the browser, never sent to Claude. */
 export const APP_COMMANDS: SlashItem[] = [
-  { name: "model", description: "Switch model: opus, sonnet, haiku, or default", kind: "app", hint: "opus" },
+  { name: "model", description: "Switch model: opus, sonnet, or haiku", kind: "app", hint: "opus" },
   { name: "mode", description: "Permission mode: ask, edits, plan, or bypass", kind: "app", hint: "plan" },
   { name: "stop", description: "Stop Claude's current turn", kind: "app" },
   { name: "new", description: "Start a new session", kind: "app" },
@@ -13,6 +13,7 @@ export const APP_COMMANDS: SlashItem[] = [
 
 /** Claude Code commands that work in SDK-driven sessions. */
 export const BUILTIN_COMMANDS: SlashItem[] = [
+  { name: "goal", description: "Set a goal Claude checks before stopping (or clear it)", kind: "builtin", hint: "all tests pass" },
   { name: "compact", description: "Summarize the conversation to free up context", kind: "builtin", hint: "focus on the API work" },
   { name: "context", description: "Show what's using the context window", kind: "builtin" },
   { name: "cost", description: "Show token usage and cost for this session", kind: "builtin" },
