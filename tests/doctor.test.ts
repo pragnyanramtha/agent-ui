@@ -14,7 +14,7 @@ const bin = path.join(tmp, "bin");
 const other = path.join(tmp, "other-bin");
 const SECRET = "sk-very-secret-value-123";
 const GEMINI = path.join(os.homedir(), ".local", "bin", "gemini");
-const saved = { PATH: process.env.PATH, AGENT_U_HOME: process.env.AGENT_U_HOME, AGENT_U_CONFIG: process.env.AGENT_U_CONFIG };
+const saved = { PATH: process.env.PATH, HOME: process.env.HOME, AGENT_U_HOME: process.env.AGENT_U_HOME, AGENT_U_CONFIG: process.env.AGENT_U_CONFIG };
 
 const script = (dir: string, name: string, body: string) => {
   fs.mkdirSync(dir, { recursive: true });
@@ -60,7 +60,9 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(tmp, "config.json"), JSON.stringify(config));
   process.env.AGENT_U_HOME = tmp;
   process.env.AGENT_U_CONFIG = path.join(tmp, "config.json");
-  process.env.PATH = `${bin}:${saved.PATH}`;
+  /* only the fakes, node and the system dirs: a CLI installed on this machine (PATH or ~/.local/bin) must not leak in */
+  process.env.PATH = [bin, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter);
+  process.env.HOME = tmp;
   profiles = await import("@/lib/server/profiles");
   doctor = await import("@/lib/server/doctor");
 });

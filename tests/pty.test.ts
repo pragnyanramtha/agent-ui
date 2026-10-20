@@ -81,8 +81,9 @@ describe("web terminal backend", () => {
     const c = connect(`cwd=${encodeURIComponent(home)}`);
     await until(() => c.msgs.some((m) => m.type === "hello"));
     const id = c.msgs.find((m) => m.type === "hello")!.id as string;
-    type(c, "echo first-part\r");
-    await until(() => c.out().includes("first-part\r\n"));
+    /* wait for the command's output, not the echo of what was typed, and its prompt after it, so nothing of it lands after `seen` */
+    type(c, "echo first-$((1))-part\r");
+    await until(() => /first-1-part\r\n.*\$ $/s.test(c.out()));
     const seen = Buffer.byteLength(c.out());
     c.ws.terminate();
     await c.closed;
@@ -92,11 +93,11 @@ describe("web terminal backend", () => {
     expect(r.msgs.find((m) => m.type === "hello")).toMatchObject({ id, offset: seen });
     type(r, "echo second-part\r");
     await until(() => r.out().includes("second-part\r\n"));
-    expect(r.out()).not.toContain("first-part");
+    expect(r.out()).not.toContain("first-1-part");
 
     const full = connect(`term=${id}&since=0`);
     await until(() => full.out().includes("second-part\r\n"));
-    expect(full.out()).toContain("first-part");
+    expect(full.out()).toContain("first-1-part");
     type(full, "exit\r");
     await until(() => full.msgs.some((m) => m.type === "exit"));
     r.ws.close();
