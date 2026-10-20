@@ -2,10 +2,10 @@
 
 import { isPlainText } from "@/lib/client/highlight";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NavArrowDown, Xmark } from "iconoir-react";
+import { NavArrowDown, Page, Xmark } from "iconoir-react";
 import { DiffBlock } from "./DiffBlock";
 import { PathLabel } from "./PathLabel";
-import { OPEN_FILES_EVENT } from "@/lib/client/events";
+import { openFilePanel } from "./FileLink";
 import { modalOpen } from "@/lib/client/shortcuts";
 import { scrollBehavior } from "@/lib/client/motion";
 import { useReturnFocus } from "@/lib/client/a11y";
@@ -88,12 +88,13 @@ export function ChangesView({
             const expanded = open === f.path;
             return (
               <div key={f.path} data-path={f.path} className="mb-1 scroll-mt-2">
+                <div className="group/file relative flex min-w-0 items-center">
                 <button
                   type="button"
                   onClick={() => setOpen(expanded ? null : f.path)}
                   aria-expanded={expanded}
                   title={f.path}
-                  className={`flex w-full min-w-0 items-center gap-2 rounded-control px-2 py-2 text-left font-mono text-[12.5px] transition-colors duration-100 hover:bg-hover ${expanded ? "bg-hover" : ""}`}
+                  className={`flex w-full min-w-0 items-center gap-2 rounded-control px-2 py-2 text-left font-mono text-[12.5px] transition-colors duration-100 hover:bg-hover ${f.path.startsWith("/") ? "pr-10" : ""} ${expanded ? "bg-hover" : ""}`}
                 >
                   <NavArrowDown width={12} height={12} strokeWidth={2.4} className={`shrink-0 text-ink-3 transition-transform duration-200 ${expanded ? "" : "-rotate-90"}`} />
                   <PathLabel path={rel(f.path)} className="min-w-0 flex-1" />
@@ -102,12 +103,24 @@ export function ChangesView({
                     <span className="text-(color:--add-ink)">+{f.added}</span> <span className="text-red-ink">-{f.removed}</span>
                   </span>
                 </button>
+                {f.path.startsWith("/") && (
+                  <button
+                    type="button"
+                    onClick={() => openFilePanel({ path: f.path })}
+                    aria-label={`Show ${rel(f.path)} in Files`}
+                    data-tip="Show in Files"
+                    className="tap absolute right-1 flex size-8 items-center justify-center rounded-[8px] text-ink-3 hover:bg-hover hover:text-ink"
+                  >
+                    <Page width={15} height={15} strokeWidth={1.8} aria-hidden />
+                  </button>
+                )}
+                </div>
                 {expanded && (
                   <div className="flex flex-col gap-2 px-1 pt-1 pb-3">
                     {f.path.startsWith("/") && (
                       <button
                         type="button"
-                        onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: f.path } }))}
+                        onClick={() => openFilePanel({ path: f.path })}
                         className="self-start rounded-full px-2.5 py-1 text-xs font-medium text-ink-2 shadow-btn hover:bg-hover"
                       >
                         Open the file as it is now

@@ -19,3 +19,11 @@ export const OPEN_TERMINAL_EVENT = "open-terminal";
 
 /** Fired on window with `detail: { path?: string }` to open the open session's Changes panel, scrolled to that file. */
 export const OPEN_CHANGES_EVENT = "agentu:open-changes";
+
+/** Fired on window with `detail: { path, line?, endLine? }` (absolute path) to show a file in the open session's
+ * Files panel. */
+export const OPEN_FILE_PANEL_EVENT = "agentu:open-file-panel";
+export type OpenFilePanel = { path: string; line?: number; endLine?: number };
+
+/** Fired on window to open the Mod+P file picker in the open session. */
+export const OPEN_FILE_PICKER_EVENT = "agentu:open-file-picker";
