@@ -286,7 +286,8 @@ export function FolderPicker({
         className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 text-base transition-colors duration-75 sm:min-h-9 sm:text-sm ${on ? "bg-hover text-ink" : "text-ink-2"}`}
       >
         <Folder width={16} height={16} strokeWidth={1.8} className={`shrink-0 ${on ? "text-ink-2" : "text-ink-3"}`} aria-hidden />
-        <span className="min-w-0 truncate" translate="no">
+        {/* the name keeps its width (up to 60%); a long path is what truncates */}
+        <span className="max-w-[60%] shrink-0 truncate" translate="no">
           {it.name}
         </span>
         {it.kind === "recent" ? (
