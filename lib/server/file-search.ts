@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { childEnv } from "./child-env";
-import { fuzzyCost } from "@/lib/file-match";
 
 /* Files under a session's folder for the composer's @ picker: what git tracks plus untracked files it
  * doesn't ignore, or a bounded walk outside a repo. Lists are cached per folder for a few seconds, so
@@ -80,23 +79,23 @@ function subsequence(hay: string, q: string) {
 
 /**
  * Best matches first: the file name (with or without its extension) equal to, starting with, then containing the query; then the path
- * containing it; then the query's characters in order along the path, tightest first. Ties go to shorter paths.
+ * containing it; then the query's characters in order along the path. Ties go to shorter paths.
  * An empty query lists the shallowest files.
  */
 export function rankFiles(files: string[], query: string, limit = 50): string[] {
   const q = query.trim().toLowerCase().replace(/^\.\//, "");
-  const scored: { f: string; s: number; cost: number }[] = [];
+  const scored: { f: string; s: number }[] = [];
   for (const f of files) {
     const p = f.toLowerCase();
     if (!q) {
-      scored.push({ f, s: 0, cost: 0 });
+      scored.push({ f, s: 0 });
       continue;
     }
     const base = p.slice(p.lastIndexOf("/") + 1);
     const s = base === q || base.replace(/\.[^.]*$/, "") === q ? 0 : base.startsWith(q) ? 1 : base.includes(q) ? 2 : p.includes(q) ? 3 : subsequence(p, q) ? 4 : -1;
-    if (s >= 0) scored.push({ f, s, cost: s === 4 ? fuzzyCost(f, q) : 0 });
+    if (s >= 0) scored.push({ f, s });
   }
   const depth = (f: string) => f.split("/").length;
-  scored.sort((a, b) => a.s - b.s || a.cost - b.cost || (q ? 0 : depth(a.f) - depth(b.f)) || a.f.length - b.f.length || a.f.localeCompare(b.f));
+  scored.sort((a, b) => a.s - b.s || (q ? 0 : depth(a.f) - depth(b.f)) || a.f.length - b.f.length || a.f.localeCompare(b.f));
   return scored.slice(0, limit).map((x) => x.f);
 }

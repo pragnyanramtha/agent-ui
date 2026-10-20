@@ -372,7 +372,7 @@ export function GitPanel({ session, busy, onClose, view: initialView = "diff" }:
         {!data && !error && <p className="py-8 text-center text-sm text-ink-3">Loading…</p>}
         {data && !repo && <p className="py-8 text-center text-sm text-ink-3">Not a git repository: {data.cwd}</p>}
 
-        {repo && view === "diff" && <DiffView key={target.n} session={session} busy={busy} checkpoints={cps} scope={target.scope} checkpoint={target.checkpoint} refreshKey={rev} root={repo.root} />}
+        {repo && view === "diff" && <DiffView key={target.n} session={session} busy={busy} checkpoints={cps} scope={target.scope} checkpoint={target.checkpoint} refreshKey={rev} />}
 
         {repo && view === "commit" && (
           <>

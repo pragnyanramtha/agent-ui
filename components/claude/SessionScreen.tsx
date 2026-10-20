@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, Page, StatsReport, Terminal, Xmark } from "iconoir-react";
+import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_CHANGES_EVENT, OPEN_TERMINAL_EVENT } from "@/lib/client/events";
@@ -15,14 +15,8 @@ import { answerAsk, failureText, postReliably, transient, type Answer } from "@/
 import { openServerTerminal } from "@/lib/client/terminals";
 import { profileModels, useAgentModels, useProfiles } from "@/lib/client/useProfiles";
 import { useGitInfo } from "@/lib/client/useGitInfo";
-import { AskCards, FilesPanel, GitPanel, HandoffDialog, QuickOpen, TerminalPeek, UsagePanel } from "./lazy";
+import { AskCards, GitPanel, HandoffDialog, TerminalPeek, UsagePanel } from "./lazy";
 import { OPEN_FILES_EVENT } from "@/lib/client/events";
-import { useFilesPanel } from "./useFilesPanel";
-import { FileRoot } from "./FileLink";
-import { ReviewPill } from "./ReviewPill";
-import { takeReview } from "@/lib/client/review-store";
-import { withReviewBlock } from "@/lib/client/review";
-import { toast } from "@/lib/client/toast";
 import { runFailed, terminalBusy } from "@/lib/status";
 import { Composer, MODELS } from "./Composer";
 import { MODE_ALIASES } from "@/lib/commands";
@@ -69,7 +63,7 @@ function useMeasure<T extends HTMLElement>() {
 const OFFLINE = "Couldn't reach the server.";
 const SEGMENT =
   "relative flex h-full shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-sm font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink disabled:opacity-60 pointer-coarse:px-2.5";
-type Panel = "changes" | "git" | "usage" | "files";
+type Panel = "changes" | "git" | "usage";
 const PANEL_KEY = "cui:panel";
 
 /** the composer chip while a denial note is written: "Denying Bash · npm test" */
@@ -112,13 +106,6 @@ export function SessionScreen({
   const [menuOpen, setMenuOpen] = useState(false);
   const [peek, setPeek] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
-  const openFilesPanel = useCallback(() => {
-    setPanel("files");
-    try {
-      localStorage.setItem(PANEL_KEY, "files");
-    } catch {}
-  }, []);
-  const filesPanel = useFilesPanel(view.cwd || "", openFilesPanel);
   const togglePanel = useCallback((p: Panel) => {
     setPanel((cur) => (cur === p ? null : p));
     try {
@@ -141,7 +128,7 @@ export function SessionScreen({
     return () => window.removeEventListener(OPEN_CHANGES_EVENT, open);
   }, []);
   /* which panels have something to show; read at key time */
-  const available = useRef({ changes: false, git: false, files: false });
+  const available = useRef({ changes: false, git: false });
   /* Mod+Alt+B shows or hides the side panel (the last one used), like VS Code's secondary sidebar */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -154,9 +141,8 @@ export function SessionScreen({
         try {
           last = localStorage.getItem(PANEL_KEY);
         } catch {}
-        const ok = (p: string | null): p is Panel =>
-          p === "usage" || (p === "files" && available.current.files) || (p === "changes" && available.current.changes) || (p === "git" && available.current.git);
-        return ok(last) ? last : ok("files") ? "files" : ok("changes") ? "changes" : "usage";
+        const ok = (p: string | null): p is Panel => p === "usage" || (p === "changes" && available.current.changes) || (p === "git" && available.current.git);
+        return ok(last) ? last : ok("changes") ? "changes" : "usage";
       });
     };
     window.addEventListener("keydown", onKey);
@@ -165,7 +151,6 @@ export function SessionScreen({
   const changesOpen = panel === "changes";
   const usageOpen = panel === "usage";
   const gitOpen = panel === "git";
-  const filesOpen = panel === "files";
   const [composerRef, composerH] = useMeasure<HTMLDivElement>();
   useEffect(() => {
     const take = (e: Event) => {
@@ -203,7 +188,7 @@ export function SessionScreen({
   const effort = localEffort || fallbackEffort;
   const runsOn = profileInfo && profileInfo.id !== agent ? profileInfo.label : agent !== "claude" ? agentName : null;
   const changes = useMemo(() => collectChanges(view.entries, view.results), [view.entries, view.results]);
-  available.current = { changes: changes.length > 0, git: Boolean(view.cwd), files: Boolean(view.cwd) };
+  available.current = { changes: changes.length > 0, git: Boolean(view.cwd) };
   useAutoOpenDiff(id, Boolean(busy && run), changes, () => setPanel((p) => p ?? "changes"));
   const editorLink = useEditorLink();
   const cost = useMemo(() => sessionCost(view.entries, view.run), [view.entries, view.run]);
@@ -352,29 +337,21 @@ export function SessionScreen({
   busyRef.current = Boolean(busy);
   const send = useCallback(
     async (text: string) => {
-      const { block, dropped } = await takeReview(id, view.cwd);
-      const message = withReviewBlock(text, block);
-      if (dropped) {
-        toast({
-          title: dropped === 1 ? "1 review comment was skipped because its lines changed." : `${dropped} review comments were skipped because their lines changed.`,
-          key: "review-stale",
-        });
-      }
-      const localId = addPending(message);
+      const localId = addPending(text);
       if (busySend !== "interrupt" || !busyRef.current) {
-        void deliver(localId, message);
+        void deliver(localId, text);
       } else if (agent === "claude" || !live) {
         if (live) await control("interrupt");
         else if (terminal) await pressKey("Escape");
-        void deliver(localId, message);
+        void deliver(localId, text);
       } else {
-        void deliver(localId, message).then((d) => {
+        void deliver(localId, text).then((d) => {
           if (d?.via === "queued") void control("sendQueued", d.clientId);
         });
       }
       return true;
     },
-    [deliver, addPending, busySend, agent, live, terminal, control, pressKey, id, view.cwd],
+    [deliver, addPending, busySend, agent, live, terminal, control, pressKey],
   );
 
   /* the cards show a failure themselves and offer the answer again */
@@ -454,8 +431,8 @@ export function SessionScreen({
     <>
       <button
         type="button"
-        onClick={() => filesPanel.browse()}
-        title={`${view.cwd}\nBrowse files`}
+        onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FILES_EVENT, { detail: { path: view.cwd } }))}
+        title={`${view.cwd}\nBrowse files here`}
         aria-label={`Folder: ${view.cwd}. Browse files`}
         className={`${stripBtn} max-w-[12rem] shrink-[2]`}
       >
@@ -551,7 +528,6 @@ export function SessionScreen({
   };
 
   return (
-    <FileRoot.Provider value={view.cwd || null}>
     <div className="relative flex min-h-0 min-w-0 flex-1">
     <section ref={sectionRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       <header data-swipe-tabs className="on-page safe-top safe-x relative z-20 flex shrink-0 touch-pan-y touch-pinch-zoom items-center bg-page">
@@ -615,19 +591,6 @@ export function SessionScreen({
               </button>
             )}
             {view.cwd && <RunMenu cwd={view.cwd} className={SEGMENT} />}
-            {view.cwd && (
-              <button
-                type="button"
-                onClick={() => (filesOpen ? togglePanel("files") : filesPanel.browse())}
-                aria-pressed={filesOpen}
-                aria-label="Browse files"
-                data-tip="Files"
-                data-tip-pos="bottom"
-                className={SEGMENT}
-              >
-                <Page width={16} height={16} strokeWidth={1.6} />
-              </button>
-            )}
             {view.cwd && (
               <button
                 type="button"
@@ -932,14 +895,6 @@ export function SessionScreen({
               </p>
             )}
             {showTasks(tasks, Boolean(busy)) && <TaskPill key={id} progress={tasks} live={Boolean(busy)} />}
-            {view.cwd && (
-              <ReviewPill
-                session={id}
-                root={view.cwd}
-                onSend={() => void send("")}
-                onShow={() => setPanel("git")}
-              />
-            )}
             <Composer
               draftKey={id}
               agent={agent}
@@ -1018,14 +973,9 @@ export function SessionScreen({
         {usageOpen && <UsagePanel view={view} onClose={() => setPanel(null)} />}
         {gitOpen && <GitPanel session={id} busy={Boolean(busy)} onClose={() => setPanel(null)} />}
         {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setPanel(null)} focus={changesFocus.path} focusKey={changesFocus.n} />}
-        {filesOpen && view.cwd && (
-          <FilesPanel root={view.cwd} target={filesPanel.target} onClose={() => setPanel(null)} onQuickOpen={filesPanel.openPicker} />
-        )}
       </PanelSlot>
     )}
-    {filesPanel.picking && view.cwd && <QuickOpen root={view.cwd} onPick={filesPanel.pick} onClose={filesPanel.closePicker} />}
     {handoffOpen && <HandoffDialog id={id} agent={agent} current={profileId} mode={mode} onClose={() => setHandoffOpen(false)} onOpen={onNavigate} />}
     </div>
-    </FileRoot.Provider>
   );
 }

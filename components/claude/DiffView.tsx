@@ -1,21 +1,15 @@
 "use client";
 
-import { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { NavArrowDown, Page, Plus, Refresh } from "iconoir-react";
+import { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { NavArrowDown, Refresh } from "iconoir-react";
 import { api, timeAgo } from "@/lib/client/api";
 import type { PatchFile, PatchLine, PatchStatus } from "@/lib/client/diff";
-import { CHUNK_ROWS, chunkRows, chunkText, diffRows, type DiffRow } from "@/lib/client/diff-chunks";
+import { chunkRows, chunkText, diffRows, type DiffRow } from "@/lib/client/diff-chunks";
 import { highlight, isPlainText } from "@/lib/client/highlight";
 import { useSetting } from "@/lib/client/settings";
 import { fileStartsOpen } from "@/lib/client/diff-prefs";
 import { PathLabel } from "./PathLabel";
 import { scrollBehavior } from "@/lib/client/motion";
-import { composing } from "@/lib/keybindings";
-import { bounds, covers, type LineRange } from "@/lib/client/line-range";
-import { anchorRow, clampToHunk, commentLabel, linesIn, type DiffSide, type ReviewComment, type ReviewLine } from "@/lib/client/review";
-import { addReview, editReview, removeReview, useReviewComments } from "@/lib/client/review-store";
-import { CommentCard, CommentEditor } from "./DiffComments";
-import { openFilePanel } from "./FileLink";
 import "./diff.css";
 
 /** "turn": the session's newest checkpoint against now, so what the last message changed */
@@ -81,7 +75,6 @@ export function DiffView({
   checkpoint: initialCheckpoint,
   busy = false,
   refreshKey,
-  root: repoRoot,
 }: {
   session: string;
   checkpoints?: CheckpointOption[];
@@ -90,8 +83,6 @@ export function DiffView({
   busy?: boolean;
   /** bump to reload (after a commit or rewind, say) */
   refreshKey?: unknown;
-  /** the repository's folder: lines take review comments, and files open in the Files panel */
-  root?: string;
 }) {
   const [scope, setScope] = useState<DiffScope>(initialScope);
   const [cp, setCp] = useState<string | undefined>(initialCheckpoint ?? (initialScope === "checkpoint" ? checkpoints[0]?.id : undefined));
@@ -123,10 +114,7 @@ export function DiffView({
     const el = root.current;
     if (!el) return;
     setScroller(scrollParent(el));
-    const ro = new ResizeObserver(([e]) => {
-      setWide(e.contentRect.width >= SPLIT_MIN_WIDTH);
-      el.style.setProperty("--diff-w", `${Math.round(e.contentRect.width)}px`);
-    });
+    const ro = new ResizeObserver(([e]) => setWide(e.contentRect.width >= SPLIT_MIN_WIDTH));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -324,25 +312,14 @@ export function DiffView({
 
           <ul aria-label="Changed files" className="diff-tone max-h-48 overflow-y-auto rounded-[10px] bg-inset py-1 font-mono text-xs shadow-hairline">
             {files.map((f) => (
-              <li key={f.path} className="relative">
-                <button type="button" onClick={() => jump(f.path)} className={`flex w-full min-w-0 items-center gap-2 px-2.5 py-1 text-left hover:bg-hover ${repoRoot && f.status !== "deleted" ? "pr-9" : ""}`}>
+              <li key={f.path}>
+                <button type="button" onClick={() => jump(f.path)} className="flex w-full min-w-0 items-center gap-2 px-2.5 py-1 text-left hover:bg-hover">
                   <span className={`w-3 shrink-0 text-center font-semibold ${STATUS[f.status].tone}`} title={STATUS[f.status].label}>
                     {STATUS[f.status].letter}
                   </span>
                   <PathLabel path={f.path} className="flex-1" />
                   {f.binary || f.status === "binary" ? <span className="shrink-0 text-ink-3">binary</span> : <Counts f={f} />}
                 </button>
-                {repoRoot && f.status !== "deleted" && (
-                  <button
-                    type="button"
-                    onClick={() => openFilePanel({ path: joinPath(repoRoot, f.path) })}
-                    aria-label={`Show ${f.path} in Files`}
-                    data-tip="Show in Files"
-                    className="absolute inset-y-0 right-1 my-auto flex size-7 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink"
-                  >
-                    <Page width={13} height={13} strokeWidth={1.8} aria-hidden />
-                  </button>
-                )}
               </li>
             ))}
           </ul>
@@ -350,7 +327,7 @@ export function DiffView({
           <ScrollRoot.Provider value={scroller}>
             <div className="flex flex-col gap-3">
               {files.map((f, i) => (
-                <FileDiff key={f.path} file={f} open={isOpen(f)} eager={i < EAGER_FILES} split={split} wrap={wrap} onToggle={toggleFile} refCb={fileRef} session={session} root={repoRoot} />
+                <FileDiff key={f.path} file={f} open={isOpen(f)} eager={i < EAGER_FILES} split={split} wrap={wrap} onToggle={toggleFile} refCb={fileRef} />
               ))}
             </div>
           </ScrollRoot.Provider>
@@ -373,11 +350,6 @@ function Counts({ f }: { f: PatchFile }) {
   );
 }
 
-const joinPath = (root: string, rel: string) => `${root.replace(/\/+$/, "")}/${rel}`;
-
-type Draft = { lines: ReviewLine[]; side: DiffSide };
-const NO_EXTRAS = new Map<number, ReactNode>();
-
 const FileDiff = memo(function FileDiff({
   file: f,
   open,
@@ -386,8 +358,6 @@ const FileDiff = memo(function FileDiff({
   wrap,
   onToggle,
   refCb,
-  session,
-  root,
 }: {
   file: PatchFile;
   open: boolean;
@@ -396,15 +366,12 @@ const FileDiff = memo(function FileDiff({
   wrap: boolean;
   onToggle: (f: PatchFile) => void;
   refCb: (path: string, el: HTMLElement | null) => void;
-  session: string;
-  root?: string;
 }) {
   const lines = lineCount(f);
   const plain = isPlainText(f.path) || lines > HIGHLIGHT_MAX_LINES;
   const widest = useMemo(() => Math.max(1, ...f.hunks.map((h) => Math.max(h.oldStart, h.newStart) + h.lines.length)), [f.hunks]);
   const num = `calc(${String(widest).length}ch + 14px)`;
-  const rows = useMemo(() => (open ? diffRows(f, split) : []), [f, split, open]);
-  const chunks = useMemo(() => chunkRows(rows), [rows]);
+  const chunks = useMemo(() => (open ? chunkRows(diffRows(f, split)) : []), [f, split, open]);
   const note =
     f.binary || f.status === "binary"
       ? "Binary file."
@@ -418,225 +385,8 @@ const FileDiff = memo(function FileDiff({
               ? "No content changes."
               : null;
 
-  /* ── review comments: only where the diff knows its repository ── */
-  const reviewable = Boolean(root) && f.status !== "binary" && !f.binary;
-  const all = useReviewComments(reviewable ? session : "");
-  const comments = useMemo(() => (reviewable ? all.filter((c) => c.path === f.path) : []), [all, f.path, reviewable]);
-  const [sel, setSel] = useState<{ range: LineRange; side: DiffSide } | null>(null);
-  /* the lines a new comment is for, kept as text so a reload of the diff under it doesn't move it */
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const draftEmpty = useRef(true);
-  const opener = useRef<HTMLElement | null>(null);
-  const suppressClick = useRef(false);
-  const section = useRef<HTMLElement | null>(null);
-  const rowsRef = useRef(rows);
-  rowsRef.current = rows;
-  const selRef = useRef(sel);
-  selRef.current = sel;
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-
-  const placed = useMemo(() => {
-    const at = new Map<number, ReviewComment[]>();
-    const loose: ReviewComment[] = [];
-    for (const c of comments) {
-      const i = anchorRow(rows, c);
-      if (i < 0) loose.push(c);
-      else at.set(i, [...(at.get(i) ?? []), c]);
-    }
-    return { at, loose };
-  }, [comments, rows]);
-
-  const lineButton = (i: number, side: DiffSide) => section.current?.querySelector<HTMLElement>(`button[data-ln][data-row="${i}"][data-side="${side}"]`) ?? null;
-  const backToLine = useCallback(() => {
-    const el = opener.current;
-    opener.current = null;
-    if (el?.isConnected) el.focus({ preventScroll: true });
-  }, []);
-  const startDraft = (range: LineRange, side: DiffSide, from: HTMLElement | null) => {
-    const [a, b] = bounds(range);
-    const picked = linesIn(rowsRef.current, a, b, side);
-    if (!picked.length) return;
-    opener.current = lineButton(range.anchor, side) ?? from;
-    draftEmpty.current = true;
-    setEditing(null);
-    setSel({ range, side });
-    setDraft({ lines: picked, side });
-  };
-  const closeDraft = () => {
-    setDraft(null);
-    setSel(null);
-    backToLine();
-  };
-
-  const target = (e: { target: EventTarget }) => {
-    const el = (e.target as Element).closest?.("[data-ln]") as HTMLElement | null;
-    return el ? { el, i: Number(el.dataset.row), side: el.dataset.side as DiffSide } : null;
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    const t = target(e);
-    if (!t || e.pointerType !== "mouse" || e.button !== 0) return;
-    /* no text selection while picking lines */
-    e.preventDefault();
-    if (e.shiftKey) return;
-    const anchor = t.i;
-    setSel({ range: { anchor, head: anchor }, side: t.side });
-    const move = (ev: PointerEvent) => {
-      const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-row]");
-      if (!row || !section.current?.contains(row)) return;
-      const head = clampToHunk(rowsRef.current, anchor, Number(row.dataset.row));
-      setSel((s) => (s && s.range.head !== head ? { ...s, range: { anchor, head } } : s));
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      suppressClick.current = true;
-      setTimeout(() => (suppressClick.current = false));
-      const s = selRef.current;
-      if (s) startDraft(s.range, s.side, t.el);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
-  const onClick = (e: React.MouseEvent) => {
-    const t = target(e);
-    if (!t) return;
-    if (suppressClick.current) {
-      suppressClick.current = false;
-      return;
-    }
-    const s = selRef.current;
-    const same = s && s.side === t.side;
-    /* on a phone, a tap on another line number while the new comment is still empty grows its range */
-    const touchGrow = draftRef.current && draftEmpty.current && (e.nativeEvent as PointerEvent).pointerType && (e.nativeEvent as PointerEvent).pointerType !== "mouse";
-    if (same && (e.shiftKey || touchGrow)) startDraft({ anchor: s.range.anchor, head: clampToHunk(rowsRef.current, s.range.anchor, t.i) }, t.side, t.el);
-    else if (same && e.detail === 0 && covers(s.range, t.i)) startDraft(s.range, t.side, t.el);
-    else startDraft({ anchor: t.i, head: t.i }, t.side, t.el);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const t = target(e);
-    if (!t || t.el.tagName !== "BUTTON" || composing(e.nativeEvent)) return;
-    if (e.key === "Escape" && selRef.current && !draftRef.current) {
-      e.preventDefault();
-      setSel(null);
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const all = [...(section.current?.querySelectorAll<HTMLElement>(`button[data-ln][data-side="${t.side}"]`) ?? [])];
-    const at = all.indexOf(t.el);
-    let next = all[at + (e.key === "ArrowDown" ? 1 : -1)];
-    if (!next) return;
-    if (e.shiftKey) {
-      const s = selRef.current;
-      const anchor = s && s.side === t.side && covers(s.range, t.i) ? s.range.anchor : t.i;
-      const head = clampToHunk(rowsRef.current, anchor, Number(next.dataset.row));
-      setSel({ range: { anchor, head }, side: t.side });
-      next = lineButton(head, t.side) ?? next;
-    } else if (!draftRef.current) setSel(null);
-    t.el.tabIndex = -1;
-    next.tabIndex = 0;
-    next.focus();
-  };
-
-  const save = (body: string) => {
-    if (!draft || !root) return;
-    addReview(session, { file: joinPath(root, f.path), path: f.path, lines: draft.lines, body });
-    closeDraft();
-  };
-
-  /* while a new comment is written, its lines stay marked where they are now */
-  const marked = useMemo(() => {
-    if (draft) {
-      const a = anchorRow(rows, { lines: draft.lines.slice(0, 1) });
-      const b = anchorRow(rows, draft);
-      return a >= 0 && b >= 0 ? { from: a, to: b, side: draft.side, end: b } : null;
-    }
-    if (!sel) return null;
-    const [from, to] = bounds(sel.range);
-    return { from, to, side: sel.side, end: -1 };
-  }, [draft, sel, rows]);
-
-  const card = (c: ReviewComment) => {
-    const label = commentLabel(f.path, c.lines);
-    return editing === c.id ? (
-      <CommentEditor
-        key={c.id}
-        label={label}
-        initial={c.body}
-        onSave={(body) => {
-          editReview(session, c.id, body);
-          setEditing(null);
-          backToLine();
-        }}
-        onCancel={() => {
-          setEditing(null);
-          backToLine();
-        }}
-      />
-    ) : (
-      <CommentCard
-        key={c.id}
-        comment={c}
-        label={label}
-        onEdit={() => {
-          opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          setDraft(null);
-          setSel(null);
-          setEditing(c.id);
-        }}
-        onDelete={() => {
-          removeReview(session, c.id);
-          const i = anchorRow(rowsRef.current, c);
-          requestAnimationFrame(() => (i >= 0 ? lineButton(i, split ? (c.lines.at(-1)?.type === "del" ? "old" : "new") : "both") : section.current)?.focus({ preventScroll: true }));
-        }}
-      />
-    );
-  };
-
-  const extras = useMemo(() => {
-    if (!reviewable) return [];
-    return chunks.map((rowsIn, k) => {
-      const from = k * CHUNK_ROWS;
-      const to = from + rowsIn.length - 1;
-      const m = new Map<number, ReactNode>();
-      for (const [i, list] of placed.at) if (i >= from && i <= to) m.set(i, list.map(card));
-      if (draft && marked && marked.end >= from && marked.end <= to) {
-        m.set(
-          marked.end,
-          <>
-            {m.get(marked.end)}
-            <CommentEditor
-              key={`new-${marked.from}`}
-              label={commentLabel(f.path, draft.lines)}
-              onSave={save}
-              onCancel={closeDraft}
-              onEmpty={(empty) => (draftEmpty.current = empty)}
-            />
-          </>,
-        );
-      }
-      return m.size ? m : NO_EXTRAS;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reviewable, chunks, placed, draft, marked, editing, f.path, split]);
-
-  const firstLine = reviewable ? rows.findIndex((r) => r.kind !== "hunk") : -1;
-  const count = comments.length;
-
   return (
-    <section
-      ref={(el) => {
-        section.current = el;
-        refCb(f.path, el);
-      }}
-      aria-label={f.path}
-      className="diff-tone scroll-mt-2 rounded-card bg-surface shadow-card"
-    >
+    <section ref={(el) => refCb(f.path, el)} aria-label={f.path} className="diff-tone scroll-mt-2 rounded-card bg-surface shadow-card">
       <button
         type="button"
         onClick={() => onToggle(f)}
@@ -653,51 +403,18 @@ const FileDiff = memo(function FileDiff({
           </>
         )}
         <PathLabel path={f.path} className="flex-1" />
-        {count > 0 && <span className="shrink-0 font-sans text-2xs text-accent-ink">{count === 1 ? "1 comment" : `${count} comments`}</span>}
         {f.status !== "modified" && <span className={`shrink-0 font-sans text-2xs ${STATUS[f.status].tone}`}>{STATUS[f.status].label}</span>}
         <Counts f={f} />
       </button>
       {open && (
         <div className="rounded-b-card">
           {note && <p className="px-3 py-2.5 text-[12.5px] text-ink-3">{note}</p>}
-          {placed.loose.length > 0 && (
-            <div className="border-b border-line px-1 pt-1.5 pb-0.5">
-              <p className="px-2 text-xs text-ink-3">{placed.loose.length === 1 ? "This comment's lines aren't in this diff." : "These comments' lines aren't in this diff."}</p>
-              {placed.loose.map(card)}
-            </div>
-          )}
           {f.hunks.length > 0 && (
-            <div
-              tabIndex={0}
-              translate="no"
-              onPointerDown={reviewable ? onPointerDown : undefined}
-              onClick={reviewable ? onClick : undefined}
-              onKeyDown={reviewable ? onKeyDown : undefined}
-              className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-xs leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!"
-            >
+            <div tabIndex={0} translate="no" className="overflow-x-auto overscroll-x-contain pb-1 font-mono text-xs leading-[1.65] text-ink-2 focus-visible:[outline-offset:-2px]!">
               <div className={`relative ${wrap && !split ? "" : "min-w-fit"}`}>
-                {chunks.map((rowsIn, i) => {
-                  const from = i * CHUNK_ROWS;
-                  const hit = marked && marked.to >= from && marked.from < from + rowsIn.length;
-                  return (
-                    <Chunk
-                      key={i}
-                      rows={rowsIn}
-                      offset={from}
-                      eager={(eager && i === 0) || Boolean(hit)}
-                      num={num}
-                      plain={plain}
-                      wrap={wrap}
-                      split={split}
-                      reviewable={reviewable}
-                      selFrom={hit ? marked.from : -1}
-                      selTo={hit ? marked.to : -1}
-                      selSide={hit ? marked.side : "both"}
-                      firstLine={firstLine}
-                      extras={extras[i] ?? NO_EXTRAS}
-                    />
-                  );
-                })}
+                {chunks.map((rows, i) => (
+                  <Chunk key={i} rows={rows} eager={eager && i === 0} num={num} plain={plain} wrap={wrap} split={split} />
+                ))}
               </div>
             </div>
           )}
@@ -712,41 +429,10 @@ const FileDiff = memo(function FileDiff({
  * A run of rows that mounts once it comes near the screen. Until then it is the rows' text in one block at the
  * same line height: roughly the same height, nothing to highlight, and still found by the browser's find.
  */
-const Chunk = memo(function Chunk({
-  rows,
-  offset,
-  eager,
-  num,
-  plain,
-  wrap,
-  split,
-  reviewable,
-  selFrom,
-  selTo,
-  selSide,
-  firstLine,
-  extras,
-}: {
-  rows: DiffRow[];
-  offset: number;
-  eager: boolean;
-  num: string;
-  plain: boolean;
-  wrap: boolean;
-  split: boolean;
-  reviewable: boolean;
-  selFrom: number;
-  selTo: number;
-  selSide: DiffSide;
-  firstLine: number;
-  extras: Map<number, ReactNode>;
-}) {
+const Chunk = memo(function Chunk({ rows, eager, num, plain, wrap, split }: { rows: DiffRow[]; eager: boolean; num: string; plain: boolean; wrap: boolean; split: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const root = useContext(ScrollRoot);
   const [shown, setShown] = useState(eager);
-  useEffect(() => {
-    if (eager) setShown(true);
-  }, [eager]);
   useEffect(() => {
     const el = ref.current;
     if (shown || !el || root === undefined) return;
@@ -770,34 +456,22 @@ const Chunk = memo(function Chunk({
       </div>
     );
   }
-  const on = (i: number, side: DiffSide) => i >= selFrom && i <= selTo && (side === selSide || selSide === "both");
   return (
     <div ref={ref}>
-      {rows.map((r, k) => {
-        const i = offset + k;
-        const extra = extras.get(i);
-        const row =
-          r.kind === "hunk" ? (
-            <div key={i} className="sticky left-0 truncate bg-inset px-3 py-0.5 text-2xs text-ink-3">
-              {r.header}
-            </div>
-          ) : r.kind === "pair" ? (
-            <div key={i} data-row={i} className="grid items-stretch" style={{ gridTemplateColumns: `${num} minmax(0,1fr) ${num} minmax(0,1fr)` }}>
-              <Cell line={r.left} side="old" plain={plain} wrap row={reviewable ? i : -1} selected={on(i, "old")} first={i === firstLine} />
-              <Cell line={r.right} side="new" plain={plain} wrap border row={reviewable ? i : -1} selected={on(i, "new")} first={i === firstLine && !r.left} />
-            </div>
-          ) : (
-            <UnifiedRow key={i} line={r.line} num={num} plain={plain} wrap={wrap} row={reviewable ? i : -1} selected={on(i, "both")} first={i === firstLine} />
-          );
-        return extra ? (
-          <div key={i}>
-            {row}
-            {extra}
+      {rows.map((r, i) =>
+        r.kind === "hunk" ? (
+          <div key={i} className="sticky left-0 truncate bg-inset px-3 py-0.5 text-2xs text-ink-3">
+            {r.header}
+          </div>
+        ) : r.kind === "pair" ? (
+          <div key={i} className="grid items-stretch" style={{ gridTemplateColumns: `${num} minmax(0,1fr) ${num} minmax(0,1fr)` }}>
+            <Cell line={r.left} side="old" plain={plain} wrap />
+            <Cell line={r.right} side="new" plain={plain} wrap border />
           </div>
         ) : (
-          row
-        );
-      })}
+          <UnifiedRow key={i} line={r.line} num={num} plain={plain} wrap={wrap} />
+        ),
+      )}
     </div>
   );
 });
@@ -807,62 +481,32 @@ const numTone = (t: PatchLine["type"]) => (t === "add" ? "text-(--add-ink)" : t 
 const Bar = ({ type }: { type: PatchLine["type"] }) =>
   type === "ctx" ? null : <span aria-hidden className="absolute inset-y-0 left-0 w-[3px]" style={{ background: type === "add" ? "var(--green)" : HATCH }} />;
 const NoEol = () => <span className="ml-2 select-none font-sans text-[10.5px] text-ink-3">no newline at end</span>;
-const SELECTED = "bg-accent-tint!";
 
-/** The "+" that starts a comment, over the edge of a line number; the number itself takes taps on a phone. */
-function CommentButton({ row, side, no, first }: { row: number; side: DiffSide; no: number | undefined; first: boolean }) {
+function UnifiedRow({ line: l, num, plain, wrap }: { line: PatchLine; num: string; plain: boolean; wrap: boolean }) {
   return (
-    <button
-      type="button"
-      data-ln=""
-      data-row={row}
-      data-side={side}
-      tabIndex={first ? 0 : -1}
-      aria-label={`Comment on line ${no ?? ""}`}
-      className="absolute top-px -right-2 z-[1] flex size-[18px] items-center justify-center rounded-[5px] bg-accent text-white opacity-0 shadow-btn transition-opacity duration-100 group-hover/ln:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden"
-    >
-      <Plus width={12} height={12} strokeWidth={2.6} aria-hidden />
-    </button>
-  );
-}
-
-const UnifiedRow = memo(function UnifiedRow({ line: l, num, plain, wrap, row, selected, first }: { line: PatchLine; num: string; plain: boolean; wrap: boolean; row: number; selected: boolean; first: boolean }) {
-  const review = row >= 0;
-  const ln = review ? { "data-ln": "", "data-row": row, "data-side": "both" } : {};
-  return (
-    <div data-row={review ? row : undefined} className={`group/ln relative grid items-start ${tint(l.type)} ${selected ? SELECTED : ""}`} style={{ gridTemplateColumns: `${num} ${num} minmax(0,1fr)` }}>
+    <div className={`relative grid items-start ${tint(l.type)}`} style={{ gridTemplateColumns: `${num} ${num} minmax(0,1fr)` }}>
       <Bar type={l.type} />
-      <span {...ln} className={`select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)} ${review ? "cursor-pointer" : ""}`}>
-        {l.oldNo ?? ""}
-      </span>
-      <span {...ln} className={`relative select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)} ${review ? "cursor-pointer" : ""}`}>
-        {l.newNo ?? ""}
-        {review && <CommentButton row={row} side="both" no={l.newNo ?? l.oldNo} first={first} />}
-      </span>
+      <span className={`select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)}`}>{l.oldNo ?? ""}</span>
+      <span className={`select-none pr-1.5 text-right text-2xs tabular-nums ${numTone(l.type)}`}>{l.newNo ?? ""}</span>
       <code className={`pr-4 pl-2 ${wrap ? "min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"}`}>
         {plain ? l.text : highlight(l.text)}
         {l.noEol && <NoEol />}
       </code>
     </div>
   );
-});
+}
 
-function Cell({ line: l, side, plain, wrap, border, row = -1, selected = false, first = false }: { line: PatchLine | null; side: "old" | "new"; plain: boolean; wrap?: boolean; border?: boolean; row?: number; selected?: boolean; first?: boolean }) {
+function Cell({ line: l, side, plain, wrap, border }: { line: PatchLine | null; side: "old" | "new"; plain: boolean; wrap?: boolean; border?: boolean }) {
   const edge = border ? "border-l border-line" : "";
   if (!l) return <span aria-hidden className={`col-span-2 bg-inset/60 ${edge}`} />;
   const no = side === "old" ? l.oldNo : l.newNo;
-  const review = row >= 0;
   return (
     <>
-      <span
-        {...(review ? { "data-ln": "", "data-row": row, "data-side": side } : {})}
-        className={`group/ln relative select-none pr-1.5 text-right text-2xs tabular-nums ${tint(l.type)} ${numTone(l.type)} ${edge} ${selected ? SELECTED : ""} ${review ? "cursor-pointer" : ""}`}
-      >
+      <span className={`relative select-none pr-1.5 text-right text-2xs tabular-nums ${tint(l.type)} ${numTone(l.type)} ${edge}`}>
         <Bar type={l.type} />
         {no ?? ""}
-        {review && <CommentButton row={row} side={side} no={no} first={first} />}
       </span>
-      <code className={`min-w-0 pr-3 pl-2 ${wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"} ${tint(l.type)} ${selected ? SELECTED : ""}`}>
+      <code className={`min-w-0 pr-3 pl-2 ${wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"} ${tint(l.type)}`}>
         {plain ? l.text : highlight(l.text)}
         {l.noEol && <NoEol />}
       </code>

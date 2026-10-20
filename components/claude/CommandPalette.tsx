@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Archive, ArrowRight, Bell, Brain, ChatLines, Check, Download, EditPencil, Folder, GitBranch, GitCompare, GitFork, HalfMoon, KeyCommand, LogOut, MailIn, Page, Palette, Pin, PinSlash, Search, Settings, ShieldCheck, SidebarCollapse, Sparks, StatsReport, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
+import { Archive, ArrowRight, Bell, Brain, ChatLines, Check, Download, EditPencil, Folder, GitBranch, GitCompare, GitFork, HalfMoon, KeyCommand, LogOut, MailIn, Palette, Pin, PinSlash, Search, Settings, ShieldCheck, SidebarCollapse, Sparks, StatsReport, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
 import { shortPath, timeAgo } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
@@ -65,7 +65,6 @@ const ACTION_ICONS: Record<PaletteIcon, ReactNode> = {
   mode: <ShieldCheck {...ic} />,
   effort: <Brain {...ic} />,
   needsYou: <Bell {...ic} />,
-  file: <Page {...ic} />,
 };
 const PICKER_ICONS: Record<string, ReactNode> = { model: ACTION_ICONS.model, mode: ACTION_ICONS.mode, effort: ACTION_ICONS.effort };
 

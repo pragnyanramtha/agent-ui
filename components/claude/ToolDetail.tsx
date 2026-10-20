@@ -9,7 +9,6 @@ import { CodeCard, copyText } from "./CodeCard";
 import { DiffBlock } from "./DiffBlock";
 import { Markdown } from "./Markdown";
 import { PathLabel } from "./PathLabel";
-import { FileLink } from "./FileLink";
 import { TodoList } from "./TodoList";
 
 /* What an expanded tool row shows. Loaded on its own (see ToolRun), since rows start collapsed. */
@@ -125,14 +124,12 @@ function BreakablePath({ path }: { path: string }) {
 }
 
 /** One path per line, relative to the search root: the directory truncates first so the file name stays visible. */
-function PathLine({ path, root }: { path: string; root?: string }) {
+function PathLine({ path }: { path: string }) {
   const { dir, base } = splitPath(path);
   return (
     <div className="flex min-w-0" title={path}>
       {dir && <span className="min-w-0 truncate text-ink-3">{dir}</span>}
-      <FileLink file={{ path }} base={root} className="max-w-full shrink-0 truncate">
-        <span className="text-ink">{base}</span>
-      </FileLink>
+      <span className="max-w-full shrink-0 truncate text-ink">{base}</span>
     </div>
   );
 }
@@ -162,7 +159,7 @@ function SearchOutput({ result, root }: { result?: ToolResult; root: string }) {
     <div tabIndex={0} translate="no" className={`max-h-72 ${SCROLL} ${BOX} px-2.5 py-2 ${MONO} text-ink-2`}>
       {lines.map((line, i) => {
         if (note(line)) return <div key={i} className="font-sans text-ink-3">{line}</div>;
-        if (paths) return line.trim() ? <PathLine key={i} path={line} root={root} /> : null;
+        if (paths) return line.trim() ? <PathLine key={i} path={line} /> : null;
         /* ripgrep-style headings: the file once, then its matching lines under it */
         const match = grepLine(line);
         if (!match) {
@@ -176,13 +173,9 @@ function SearchOutput({ result, root }: { result?: ToolResult; root: string }) {
         const prev = i > 0 ? grepLine(lines[i - 1])?.file : undefined;
         return (
           <div key={i} className={prev === match.file ? "" : "mt-1.5 first:mt-0"}>
-            {prev !== match.file && <PathLine path={match.file} root={root} />}
+            {prev !== match.file && <PathLine path={match.file} />}
             <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
-              <span className="min-w-[3ch] text-right text-ink-3 tabular-nums select-none">
-                <FileLink file={{ path: match.file, line: Number(match.n) }} base={root}>
-                  {match.n}
-                </FileLink>
-              </span>
+              <span className="min-w-[3ch] text-right text-ink-3 tabular-nums select-none">{match.n}</span>
               <span className={`whitespace-pre-wrap [overflow-wrap:anywhere] ${match.context ? "text-ink-3" : ""}`}>{match.text}</span>
             </div>
           </div>
@@ -369,7 +362,6 @@ export function Detail({ item, result, active }: { item: RunItem; result?: ToolR
     case "NotebookRead":
       return (
         <Stack>
-          {(s("file_path") || s("notebook_path")) && <PathLabel path={s("file_path") || s("notebook_path")} line={typeof input.offset === "number" && input.offset > 0 ? input.offset : undefined} className="text-xs" />}
           {typeof input.offset === "number" || typeof input.limit === "number" ? (
             <span className="text-xs text-ink-3">
               From line {typeof input.offset === "number" ? input.offset : 1}

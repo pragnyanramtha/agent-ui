@@ -16,6 +16,7 @@ import { confirmAsk, promptAsk } from "./Ask";
 import { MODES, modelLabel } from "@/lib/composer-options";
 import { isAsleep } from "./SessionList";
 import { canGoBack } from "@/lib/client/tab-history";
+
 const KEYS = ["gitPanel", "changesPanel", "prevSession", "nextSession", "nextNeedsYou", "pin", "archive", "back", "forward", "modelPicker", "modePicker", "effortPicker"] as const satisfies readonly CommandId[];
 
 const PICKERS: Partial<Record<CommandId, string>> = { modelPicker: "model", modePicker: "mode", effortPicker: "effort" };
@@ -167,7 +168,7 @@ export function useSessionCommands({ sessions, activeId, finished, onOpen }: { s
   }, []);
 }
 
-type Panel = "changes" | "git" | "usage" | "files";
+type Panel = "changes" | "git" | "usage";
 
 /** The open session's rows and pickers in the command palette; each one does what the screen's own button does. */
 export function useSessionPalette(o: {
