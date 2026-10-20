@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, Page, StatsReport, Terminal, Xmark } from "iconoir-react";
+import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, List, Menu, MoreHoriz, Page, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
 import { OPEN_CHANGES_EVENT, OPEN_TERMINAL_EVENT } from "@/lib/client/events";
@@ -32,6 +32,7 @@ import { sessionCost } from "@/lib/client/usage";
 import { PendingBubble } from "./PendingBubble";
 import { Pulse } from "./Pulse";
 import { Thread } from "./Thread";
+import { PromptTimeline } from "./PromptTimeline";
 import { PanelSlot } from "./PanelSlot";
 import { FindBar } from "./FindBar";
 import { RunMenu } from "./RunMenu";
@@ -111,6 +112,8 @@ export function SessionScreen({
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [peek, setPeek] = useState(false);
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const closeJump = useCallback(() => setJumpOpen(false), []);
   const [panel, setPanel] = useState<Panel | null>(null);
   const openFilesPanel = useCallback(() => {
     setPanel("files");
@@ -700,6 +703,20 @@ export function SessionScreen({
                   <StatsReport width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
                   Usage and cost
                 </button>
+                {lastUserText && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      closeMenu();
+                      setJumpOpen(true);
+                    }}
+                    className="menu-item"
+                  >
+                    <List width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                    Jump to prompt…
+                  </button>
+                )}
                 {view.cwd && (
                   <button
                     type="button"
@@ -843,6 +860,7 @@ export function SessionScreen({
           />
         )}
         bottomPad={composerH}
+        overlay={(nav) => <PromptTimeline nav={nav} bottomPad={composerH} waiting={Boolean(run?.pending.length)} failed={Boolean(failed && !busy)} sheet={jumpOpen} onSheetClose={closeJump} />}
         changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
         messageActions={branching.actions}
         footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} onNote={setNoteFor} noting={noteAsk?.requestId ?? null} /> : null}

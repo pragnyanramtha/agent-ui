@@ -70,6 +70,7 @@ describe("settings registry", () => {
       "showThinking",
       "turnChanges",
       "turnUndo",
+      "promptTimeline",
       "autoScroll",
       "streamText",
       "codeLineNumbers",

@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { EditPencil, Folder, List, MailIn, Plus, Settings, Terminal, Xmark } from "iconoir-react";
+import { EditPencil, Folder, List, MailIn, Plus, Settings, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
 import { AGENT_TONE, AgentBadge, isBusy, useModKey } from "./SessionList";
 import { comboFor, useBindings } from "@/lib/client/shortcuts";
-import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
+import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, USAGE_TAB, VIEW_TABS, type Tab } from "./useTabs";
 import { scrollBehavior } from "@/lib/client/motion";
 
-const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences" };
+const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences", [USAGE_TAB]: "Tokens and cost" };
 
 /* ─────────────────────────────────────────────────────────
  * TABS
@@ -60,6 +60,7 @@ function Indicator({ t, size = 2.5 }: { t: TabInfo; size?: number }) {
   if (t.id === NEW_TAB) return <EditPencil width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === AGENTS_TAB) return <Terminal width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === INBOX_TAB) return <MailIn width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
+  if (t.id === USAGE_TAB) return <StatsReport width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === SETTINGS_TAB) return <Settings width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (VIEW_TABS[t.id]) return <Folder width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.live) return <Pulse busy={t.busy} size={size} cellClass={AGENT_TONE[t.agent]} />;

@@ -21,6 +21,7 @@ import { actionRank, filterActions, parsePaletteQuery, settingRows } from "@/lib
 import { searchSettingsFor } from "@/lib/client/settings-link";
 
 import { OPEN_PALETTE_EVENT, OPEN_SHORTCUTS_EVENT, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "@/lib/client/events";
+import type { ViewTab } from "./useTabs";
 
 export { OPEN_PALETTE_EVENT, OPEN_SHORTCUTS_EVENT, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT };
 
@@ -106,7 +107,7 @@ export function CommandPalette({
   onOpen: (id: string) => void;
   onNew: () => void;
   /** opens the Agents or Files screen */
-  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
+  onView?: (tab: ViewTab) => void;
   /** called after the theme flips, so other theme controls can resync */
   onTheme?: (dark: boolean) => void;
 }) {
@@ -382,6 +383,17 @@ export function CommandPalette({
               run: () => {
                 navigated.current = true;
                 onView("@files");
+              },
+            },
+            {
+              id: "a:usage",
+              group: "Actions" as const,
+              label: "Usage",
+              keywords: "usage tokens cost spend billing money price models chart",
+              icon: <StatsReport width={15} height={15} strokeWidth={1.8} />,
+              run: () => {
+                navigated.current = true;
+                onView("@usage");
               },
             },
             {

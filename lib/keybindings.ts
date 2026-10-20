@@ -38,6 +38,8 @@ export const COMMANDS = [
   ...[1, 2, 3, 4, 5, 6, 7, 8].map(tab),
   { id: "lastTab", label: "Go to last tab", group: "Sessions", keys: ["Alt+9"], keywords: ["switch"] },
   { id: "find", label: "Find in session", group: "Sessions", keys: ["Mod+F"], keywords: ["search"] },
+  { id: "prevPrompt", label: "Previous prompt", group: "Sessions", keys: ["Alt+ArrowUp"], keywords: ["timeline", "jump", "scroll", "message"] },
+  { id: "nextPrompt", label: "Next prompt", group: "Sessions", keys: ["Alt+ArrowDown"], keywords: ["timeline", "jump", "scroll", "message"] },
   { id: "sidePanel", label: "Toggle side panel", group: "Panels", keys: ["Mod+Alt+B"], keywords: ["changes", "usage", "git"] },
   { id: "terminal", label: "Toggle terminal", group: "Terminal", keys: ["Mod+J", "Ctrl+`"], keywords: ["shell", "show", "hide"] },
   { id: "newTerminal", label: "New terminal tab", group: "Terminal", keys: ["Ctrl+Shift+`"], keywords: ["shell"] },

@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Alarm, Archive, Calendar, ChatBubbleEmpty, Check, Clock, CloudXmark, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
+import { Alarm, Archive, Calendar, ChatBubbleEmpty, Check, Clock, CloudXmark, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, StatsReport, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
 import { shortPath } from "@/lib/client/api";
 import { signOut } from "@/lib/client/push";
@@ -31,6 +31,7 @@ import { AgentIcon } from "./AgentIcon";
 import { ProjectIcon, useProjectIcons } from "./ProjectIcon";
 import { SessionHoverCard } from "./SessionHoverCard";
 import { useRowSwipe } from "@/lib/client/gestures";
+import type { ViewTab } from "./useTabs";
 
 /* ─────────────────────────────────────────────────────────
  * SIDEBAR
@@ -827,7 +828,7 @@ export const SessionList = memo(function SessionList({
   collapseLabel?: string;
   error: string | null;
   /** opens the Agents or Files tab */
-  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
+  onView?: (tab: ViewTab) => void;
   activeView?: string | null;
   /** approvals, failures and finished turns waiting in the inbox */
   inbox?: number;
@@ -1539,6 +1540,11 @@ export const SessionList = memo(function SessionList({
         <span className="flex items-center gap-1">
           <NotifyButton />
           {onView && (
+            <IconButton label="Usage" tip="Usage and cost" tipPos="bottom-end" onClick={() => onView("@usage")} pressed={activeView === "@usage"}>
+              <StatsReport width={17} height={17} strokeWidth={1.8} aria-hidden />
+            </IconButton>
+          )}
+          {onView && (
             <IconButton label="Settings" tipPos="bottom-end" onClick={() => onView("@settings")} pressed={activeView === "@settings"}>
               <Settings width={17} height={17} strokeWidth={1.8} aria-hidden />
             </IconButton>
@@ -1575,7 +1581,7 @@ export function SessionRail({
   onPick: (id: string) => void;
   onNew: () => void;
   onExpand: () => void;
-  onView?: (tab: "@agents" | "@files" | "@inbox" | "@settings") => void;
+  onView?: (tab: ViewTab) => void;
   inbox?: number;
 }) {
   const mod = useModKey();
@@ -1612,6 +1618,9 @@ export function SessionRail({
             </IconButton>
             <IconButton label="Files" tip="Files" tipPos="right" onClick={() => onView("@files")}>
               <Folder width={18} height={18} strokeWidth={1.8} aria-hidden />
+            </IconButton>
+            <IconButton label="Usage" tip="Usage and cost" tipPos="right" onClick={() => onView("@usage")}>
+              <StatsReport width={18} height={18} strokeWidth={1.8} aria-hidden />
             </IconButton>
           </>
         )}
