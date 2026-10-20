@@ -97,6 +97,55 @@ describe("session meta in state.json", () => {
   });
 });
 
+describe("snooze", () => {
+  const parse = profiles.parseSessionMetaPatch;
+  const later = () => Date.now() + 3_600_000;
+
+  it("accepts a time ahead and null, and nothing else", () => {
+    const t = later();
+    expect(parse({ snoozedUntil: t })).toEqual({ snoozedUntil: t });
+    expect(parse({ snoozedUntil: t + 0.4 })).toEqual({ snoozedUntil: t });
+    expect(parse({ snoozedUntil: null })).toEqual({ snoozedUntil: null });
+    expect(parse({ snoozedUntil: Date.now() - 1000 })).toBe("Pick a time in the future.");
+    expect(parse({ snoozedUntil: Date.now() + 400 * 86_400_000 })).toBeTypeOf("string");
+    expect(parse({ snoozedUntil: "tomorrow" })).toBeTypeOf("string");
+    expect(parse({ snoozedUntil: Number.NaN })).toBeTypeOf("string");
+  });
+
+  it("stores the wake time, wakes on null, and forgets it once it has passed", () => {
+    const t = later();
+    expect(profiles.setSessionMeta(UUID, { snoozedUntil: t })).toEqual({ snoozedUntil: t });
+    expect(readState().sessionMeta).toEqual({ [UUID]: { snoozedUntil: t } });
+    expect(profiles.setSessionMeta(UUID, { snoozedUntil: null })).toEqual({});
+    fs.writeFileSync(statePath, JSON.stringify({ sessionMeta: { a: { snoozedUntil: Date.now() - 5 , pinned: true }, b: { snoozedUntil: "x" } } }));
+    expect(profiles.allSessionMeta()).toEqual({ a: { pinned: true } });
+  });
+
+  it("archiving wakes the session, pinning keeps the snooze", () => {
+    const t = later();
+    profiles.setSessionMeta("codex:abc", { snoozedUntil: t });
+    expect(profiles.setSessionMeta("codex:abc", { pinned: true })).toEqual({ pinned: true, snoozedUntil: t });
+    expect(profiles.setSessionMeta("codex:abc", { archived: true })).toEqual({ archived: true });
+  });
+
+  it("goes through PATCH and shows on the row until it runs out", async () => {
+    const t = later();
+    expect((await patch("gemini:s1", { snoozedUntil: t })).data).toMatchObject({ ok: true, snoozedUntil: t });
+    expect(readState().sessionMeta).toEqual({ "gemini:s1": { snoozedUntil: t } });
+    expect((await patch("gemini:s1", { snoozedUntil: 5 })).status).toBe(400);
+    expect((await patch("gemini:s1", { snoozedUntil: null })).data).toMatchObject({ snoozedUntil: null });
+    const row: SessionSummary = { id: UUID, agent: "claude", title: "t", cwd: "/w", project: "w", mtime: 0, size: 0, terminal: null, web: null };
+    expect(withMeta(row, { snoozedUntil: t })).toEqual({ ...row, snoozedUntil: t });
+  });
+});
+
+describe("trimming old edits", () => {
+  it("drops the oldest edits but never a deletion", () => {
+    const map: Record<string, import("@/lib/server/profiles").SessionMeta> = { a: { deleted: true }, b: { pinned: true }, c: { archived: true }, d: { title: "x" } };
+    expect(Object.keys(profiles.trimMeta(map, 2))).toEqual(["a", "c", "d"]);
+  });
+});
+
 describe("withMeta", () => {
   const row: SessionSummary = { id: UUID, agent: "claude", title: "From the transcript", cwd: "/w", project: "w", mtime: 0, size: 0, terminal: null, web: null };
 
@@ -109,8 +158,8 @@ describe("withMeta", () => {
 
 describe("PATCH /api/sessions/[id]", () => {
   it("saves under the session key, plain Claude ids and agent ids alike", async () => {
-    expect(await patch(UUID, { pinned: true })).toEqual({ status: 200, data: { ok: true, pinned: true, archived: false, title: null } });
-    expect(await patch("codex:019a-thread", { title: "  Ship it " })).toEqual({ status: 200, data: { ok: true, pinned: false, archived: false, title: "Ship it" } });
+    expect(await patch(UUID, { pinned: true })).toEqual({ status: 200, data: { ok: true, pinned: true, archived: false, title: null, snoozedUntil: null } });
+    expect(await patch("codex:019a-thread", { title: "  Ship it " })).toEqual({ status: 200, data: { ok: true, pinned: false, archived: false, title: "Ship it", snoozedUntil: null } });
     /* "claude:<id>" is the same session as the bare id */
     expect((await patch(`claude:${UUID}`, { archived: true })).data).toMatchObject({ archived: true, pinned: false });
     expect(readState().sessionMeta).toEqual({ [UUID]: { archived: true }, "codex:019a-thread": { title: "Ship it" } });

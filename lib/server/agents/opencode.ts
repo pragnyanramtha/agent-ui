@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Entry } from "@/lib/types";
 import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run } from "./cli-run";
+import { childEnv } from "../child-env";
 import { activeProfile, profileBin } from "../profiles";
 import { changedSince, getSession, historyPage, listSessions, sessionEnd, sessionsSince } from "./opencode-store";
 import type { AgentAdapter, AgentSession, CliRunState, SendOptions, StartOptions } from "./types";
@@ -61,11 +62,12 @@ async function binary(): Promise<string | null> {
   return found;
 }
 
-const toSession = (s: { id: string; title: string; directory: string; time_updated: number; model: string | null }): AgentSession => ({
+const toSession = (s: { id: string; title: string; directory: string; time_created?: number; time_updated: number; model: string | null }): AgentSession => ({
   id: s.id,
   title: s.title.replace(/^New session - \d{4}-\d\d-\d\dT[\d:.]+Z$/, "") || "",
   cwd: s.directory,
   mtime: s.time_updated,
+  created: s.time_created || undefined,
   size: 0,
   model: s.model,
 });
@@ -111,7 +113,7 @@ async function startServe(bin: string, cwd: string): Promise<Serve | null> {
     const profile = activeProfile();
     const child = spawn(bin, [...(profile?.args ?? []), "serve", "--port", String(port), "--hostname", "127.0.0.1", "--print-logs", "--log-level", "ERROR"], {
       cwd,
-      env: { ...process.env, ...profile?.env, PWD: cwd, OPENCODE_SERVER_PASSWORD: password },
+      env: childEnv(profile?.env, { PWD: cwd, OPENCODE_SERVER_PASSWORD: password }),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";

@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { query, type CanUseTool, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type CanUseTool, type EffortLevel, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta } from "@/lib/types";
 
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
-import type { ResolvedProfile } from "./profiles";
+import { childEnv } from "./child-env";
+import { LIMIT_ERROR, type ResolvedProfile } from "./profiles";
+import { parseEffort } from "@/lib/agent-traits";
 
 /** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
  * The SDK writes every extraArgs key as "--key", so short flags go in executableArgs, which it puts before its own
@@ -43,6 +45,12 @@ export type RunEvent =
   /* output the transcript doesn't carry (slash command output, notices), replayed to late viewers */
   | { type: "entries"; entries: Entry[] };
 
+/** an approval or question nobody is watching keeps a claude process waiting; after this long it's declined and the run closed */
+const ASK_MAX_MS = 24 * 60 * 60_000;
+
+/** the modes the web UI can show; others the CLI may report (e.g. "dontAsk") leave the current one */
+const MODES: string[] = ["default", "acceptEdits", "bypassPermissions", "plan"] satisfies PermissionMode[];
+
 type Decision = { allow: boolean; always?: boolean; answers?: Record<string, string>; message?: string };
 
 /** Older CLIs don't send a prompt sentence with permission asks; write one in the same voice. */
@@ -52,6 +60,15 @@ function askTitle(toolName: string, input: Record<string, unknown>, displayName?
   if (toolName === "Bash") return "Let Claude run this command?";
   if (toolName === "WebFetch") return "Let Claude fetch this page?";
   return `Let Claude use ${displayName ?? toolName}?`;
+}
+
+/** What a failed turn says. Limit hits must read as one (LIMIT_ERROR), or fallback profiles never take over. */
+export function turnError(m: Extract<SDKMessage, { type: "result" }>): string {
+  const said = (m.subtype === "success" ? m.result : (m.errors ?? []).join("; ")).trim().slice(0, 300);
+  if (m.terminal_reason === "blocking_limit" || m.terminal_reason === "rapid_refill_breaker") {
+    return LIMIT_ERROR.test(said) ? said : `Usage limit reached${said ? `: ${said}` : "."}`;
+  }
+  return said || (m.subtype === "success" ? "The turn failed." : `Turn ended: ${m.subtype.replace(/_/g, " ")}`);
 }
 
 class Inbox implements AsyncIterable<SDKUserMessage> {
@@ -89,7 +106,7 @@ export class Run {
   readonly profile: ResolvedProfile | null;
   /** the last message sent, so a failed turn can be retried elsewhere */
   lastText = "";
-  private decisions = new Map<string, { resolve: (d: Decision) => void; ask: PendingAsk; input: Record<string, unknown>; suggestions?: unknown[] }>();
+  private decisions = new Map<string, { at: number; resolve: (d: Decision) => void; ask: PendingAsk; input: Record<string, unknown>; suggestions?: unknown[] }>();
   private blockKinds = new Map<number, "text" | "thinking">();
   private msgId = "";
   private reaper: NodeJS.Timeout | null = null;
@@ -100,11 +117,15 @@ export class Run {
 
   readonly cwd: string;
 
-  constructor(opts: { resume?: string; fork?: boolean; cwd: string; model?: string; permissionMode: PermissionMode; profile?: ResolvedProfile | null }) {
+  /** the reasoning effort this process runs at; null leaves it to Claude Code */
+  effort: EffortLevel | null;
+
+  constructor(opts: { resume?: string; fork?: boolean; cwd: string; model?: string; effort?: string | null; permissionMode: PermissionMode; profile?: ResolvedProfile | null }) {
     this.cwd = opts.cwd;
     this.profile = opts.profile ?? null;
     const p = this.profile;
     const model = opts.model ?? p?.defaultModel;
+    this.effort = (parseEffort("claude", opts.effort === undefined ? p?.defaultEffort : opts.effort) ?? null) as EffortLevel | null;
     this.state = {
       status: "starting",
       model: model ?? null,
@@ -123,6 +144,7 @@ export class Run {
         resume: opts.resume,
         forkSession: opts.fork,
         model,
+        ...(this.effort ? { effort: this.effort } : {}),
         permissionMode: opts.permissionMode,
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
@@ -130,7 +152,7 @@ export class Run {
         settingSources: ["user", "project", "local"],
         systemPrompt: { type: "preset", preset: "claude_code" },
         pathToClaudeCodeExecutable: (p?.bin ? p.binPath : null) ?? CLAUDE_BIN,
-        ...(p && Object.keys(p.env).length ? { env: { ...process.env, ...p.env } } : {}),
+        env: childEnv(p?.env),
         ...(p?.args.length ? profileArgs(p.args, (p.bin ? p.binPath : null) ?? CLAUDE_BIN) : {}),
         canUseTool: this.canUseTool,
         stderr: (data) => process.stderr.write(`[claude ${this.state.sessionId.slice(0, 8)}] ${data}`),
@@ -151,6 +173,7 @@ export class Run {
   send(text: string) {
     if (this.ended) return;
     this.lastText = text;
+    clearFailure(this.state.sessionId);
     this.inbox.push({
       type: "user",
       message: { role: "user", content: text },
@@ -194,6 +217,14 @@ export class Run {
     this.update({ permissionMode: mode });
   }
 
+  /** null goes back to the model's default effort */
+  async setEffort(effort: string | null) {
+    const e = (parseEffort("claude", effort) ?? null) as EffortLevel | null;
+    if (e === this.effort) return;
+    await this.q.applyFlagSettings({ effortLevel: e });
+    this.effort = e;
+  }
+
   async setModel(model: string | undefined) {
     await this.q.setModel(model);
     this.update({ model: model ?? null });
@@ -216,6 +247,8 @@ export class Run {
       /* already gone */
     }
     this.update(patch);
+    /* the run is gone but the session's list row, the inbox and push still have to say the last turn failed */
+    if (this.state.error && this.state.sessionId) recordFailure(this.state.sessionId, { ...this.state, status: "error", pending: [], suggestion: null });
     this.markReady(this.initialized ? this.state.sessionId : "");
   }
 
@@ -244,7 +277,12 @@ export class Run {
     this.reaper = null;
     if (this.ended || this.listeners.size > 0) return;
     this.reaper = setTimeout(() => {
-      if (this.state.status !== "running" && this.state.pending.length === 0 && this.listeners.size === 0) this.close();
+      if (this.listeners.size > 0) return;
+      const oldestAsk = Math.min(...[...this.decisions.values()].map((d) => d.at));
+      if (Date.now() - oldestAsk >= ASK_MAX_MS) {
+        this.decisions.forEach(({ resolve }) => resolve({ allow: false, message: "Nobody answered this in time." }));
+        this.end({ status: "closed", error: "Stopped after a day waiting for your answer." });
+      } else if (this.state.status !== "running" && this.state.pending.length === 0) this.close();
       else this.scheduleReap();
     }, IDLE_REAP_MS);
   }
@@ -271,6 +309,7 @@ export class Run {
         resolve(result);
       };
       this.decisions.set(requestId, {
+        at: Date.now(),
         ask,
         input,
         suggestions: options.suggestions,
@@ -305,7 +344,7 @@ export class Run {
       const hidden = new Set(m.terminal_slash_commands ?? []);
       this.update({
         model: m.model,
-        permissionMode: (["default", "acceptEdits", "bypassPermissions", "plan"].includes(m.permissionMode) ? m.permissionMode : this.state.permissionMode) as PermissionMode,
+        permissionMode: (MODES.includes(m.permissionMode) ? m.permissionMode : this.state.permissionMode) as PermissionMode,
         slashCommands: m.slash_commands.filter((c) => !hidden.has(c)),
       });
       this.markReady(m.session_id);
@@ -326,6 +365,11 @@ export class Run {
     }
     if (m.type === "prompt_suggestion") {
       this.update({ suggestion: m.suggestion });
+      return;
+    }
+    /* the mode can change inside the CLI (plan mode accepted, Shift+Tab, a hook); keep the composer in step */
+    if (m.type === "system" && m.subtype === "status") {
+      if (m.permissionMode && m.permissionMode !== this.state.permissionMode && MODES.includes(m.permissionMode)) this.update({ permissionMode: m.permissionMode as PermissionMode });
       return;
     }
     if (m.type === "system" && m.subtype === "session_state_changed") {
@@ -353,7 +397,7 @@ export class Run {
         /* sends queued mid-turn run next without new input: still busy until session_state_changed says idle */
         status: m.queued_turn_count ? "running" : "idle",
         costUsd: m.total_cost_usd ?? this.state.costUsd,
-        error: !m.is_error || stopped ? null : m.subtype === "success" ? m.result.slice(0, 300) || "The turn failed." : `Turn ended: ${m.subtype.replace(/_/g, " ")}`,
+        error: !m.is_error || stopped ? null : turnError(m),
       });
     }
   }
@@ -391,11 +435,30 @@ export const getRun = (id: string) => {
 
 export const activeRuns = () => [...registry().values()].filter((r) => r.live);
 
+/* The final state of runs that ended on a failure, kept until the session's next message or terminal launch. */
+const FAILURES_MAX = 200;
+const failures = () => ((g as { __agentuRunFailures?: Map<string, RunState> }).__agentuRunFailures ??= new Map());
+
+function recordFailure(id: string, state: RunState) {
+  failures().delete(id);
+  failures().set(id, state);
+  for (const old of failures().keys()) {
+    if (failures().size <= FAILURES_MAX) break;
+    failures().delete(old);
+  }
+}
+
+export const clearFailure = (id: string) => void failures().delete(id);
+
+/** How the last run of a session ended, when it ended on a failure and nothing was sent since (status "error"). */
+export const lastFailure = (id: string): RunState | null => failures().get(id) ?? null;
+
 export function startRun(opts: ConstructorParameters<typeof Run>[0]) {
   const run = new Run(opts);
   /* forks are aliased under the source id until init re-keys them, so viewers of the source get the redirect */
   if (opts.resume) {
     getRun(opts.resume)?.close();
+    clearFailure(opts.resume);
     register(opts.resume, run);
   }
   return run;

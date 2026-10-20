@@ -4,13 +4,17 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { AgentId, Entry, PermissionMode, RunState, ServerEvent, StreamDelta, TerminalInfo, ToolResult } from "@/lib/types";
 import { api, ApiError } from "./api";
 import { carryOver, load, save } from "./storage";
+import { frameBatch } from "./frame-batch";
 
 type Stream = { msgId: string; index: number; kind: StreamDelta["kind"]; text: string };
 /** A message the user sent that isn't in the transcript yet. Kept in sessionStorage so it survives remounts. */
 export type Pending = {
   localId: string;
   text: string;
+  /** when the first attempt went out; retries keep it, so a transcript entry from that attempt still matches */
   at: number;
+  /** when the server confirmed it */
+  sentAt?: number;
   state: "sending" | "sent" | "failed";
   via?: "terminal" | "web" | "queued";
   error?: string;
@@ -24,7 +28,7 @@ export const serverId = (p: Pending) => p.sentAs ?? p.localId;
 
 /* the terminal path flattens newlines, and Claude Code trims; compare on collapsed whitespace */
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().replace(/^!\s+/, "!");
-/** a user entry can only be the bubble's message if it landed after the bubble was made (clock skew allowed) */
+/** restoring a saved bubble: an older entry with the same text is an earlier message, not this one (clock skew allowed) */
 const landedAfter = (e: Entry, p: Pending) => !e.ts || Date.parse(e.ts) >= p.at - 60_000;
 const pendingKey = (id: string) => `pending:${id}`;
 
@@ -108,6 +112,8 @@ export type SessionView = {
 
 export type Action =
   | { type: "event"; event: ServerEvent; initial?: boolean }
+  /** stream events that arrived within one frame, applied in order */
+  | { type: "events"; events: ServerEvent[] }
   | { type: "older"; entries: Entry[]; cursor: number | null }
   | { type: "loadingOlder" }
   | { type: "olderFailed" }
@@ -115,7 +121,18 @@ export type Action =
   | { type: "pending"; pending: Pending }
   | { type: "updatePending"; localId: string; patch: Partial<Pending> }
   | { type: "restorePending"; pending: Pending[] }
-  | { type: "dropPending"; localId: string };
+  | { type: "dropPending"; localId: string }
+  | { type: "expireQueued"; localIds: string[] };
+
+/** how long a queued message the server no longer holds may take to show up once the agent is idle */
+export const QUEUE_GRACE_MS = 10_000;
+const LOST_QUEUED = "Queued message not sent.";
+
+/** Queued messages the server no longer holds (a restart lost them, or they failed to start) while nothing runs. */
+export function lostQueued(v: SessionView): Pending[] {
+  if (v.status !== "open" || v.run?.status === "running" || v.run?.status === "starting") return [];
+  return v.pending.filter((p) => p.state === "sent" && p.via === "queued" && !v.queue.includes(serverId(p)));
+}
 
 export const initial = (): SessionView => ({
   status: "connecting",
@@ -138,7 +155,7 @@ export const initial = (): SessionView => ({
 
 /* Folds a batch into the view: tool results attach by id, everything else is
  * de-duplicated by entry id (reconnects and overlapping reads both resend). */
-function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"): SessionView {
+function merge(state: SessionView, batch: Entry[], where: "append" | "prepend", live = true): SessionView {
   const ids = new Set(state.ids);
   let results = state.results;
   let streams = state.streams;
@@ -175,7 +192,8 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"):
       }
     }
     if (e.kind === "user" && pending.length && where === "append") {
-      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && landedAfter(e, p));
+      /* an entry arriving live is new, whatever its timestamp says; a full history load holds old ones too */
+      const i = pending.findIndex((p) => norm(p.text) === norm(e.text) && (live || landedAfter(e, p)));
       if (i !== -1) pending = pending.filter((_, j) => j !== i);
     }
   }
@@ -191,6 +209,12 @@ function merge(state: SessionView, batch: Entry[], where: "append" | "prepend"):
   };
 }
 
+/** a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
+function failDelivered(pending: Pending[], run: RunState | null): Pending[] {
+  if (run?.status !== "error" || !pending.some((p) => p.state === "sent" && p.via === "web")) return pending;
+  return pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: run.error ?? "Not delivered. The turn ended first." } : p));
+}
+
 export function reducer(state: SessionView, action: Action): SessionView {
   switch (action.type) {
     case "event": {
@@ -198,11 +222,14 @@ export function reducer(state: SessionView, action: Action): SessionView {
       if (e.type === "history") {
         /* the first load (by GET) replaces everything; later history events (stream reconnects) only add */
         const first = action.initial === true;
-        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append");
+        const merged = merge(first ? { ...state, entries: [], ids: new Set(), results: {}, dropped: new Set() } : state, e.entries, "append", !first);
         return {
           ...merged,
-          /* the server replays a running turn's live text after every history event */
-          streams: merged.streams.some((s) => isLive(s.msgId)) ? merged.streams.filter((s) => !isLive(s.msgId)) : merged.streams,
+          /* deltas sent while disconnected are gone, so text on screen can't be continued; other agents' servers
+           * replay a running turn's live text after every history event, and a finished block lands as an entry */
+          streams: merged.streams.length ? [] : merged.streams,
+          /* the run may have ended (or crashed) while the stream was down */
+          pending: failDelivered(merged.pending, e.run),
           status: "open",
           cursor: first ? e.cursor : state.cursor,
           terminal: e.terminal,
@@ -224,12 +251,7 @@ export function reducer(state: SessionView, action: Action): SessionView {
       }
       if (e.type === "run") {
         const ended = !e.run || e.run.status === "idle" || e.run.status === "closed" || e.run.status === "error";
-        /* a run that failed won't read what it was handed: those bubbles get Retry (same client id, so no double send) */
-        const failed = e.run?.status === "error";
-        const pending = failed
-          ? state.pending.map((p) => (p.state === "sent" && p.via === "web" ? { ...p, state: "failed" as const, resend: true, error: e.run?.error ?? "Not delivered. The turn ended first." } : p))
-          : state.pending;
-        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending };
+        return { ...state, run: e.run, streams: ended ? [] : state.streams, pending: failDelivered(state.pending, e.run) };
       }
       if (e.type === "delta") {
         const d = e.delta;
@@ -273,7 +295,31 @@ export function reducer(state: SessionView, action: Action): SessionView {
     }
     case "dropPending":
       return { ...state, pending: state.pending.filter((p) => p.localId !== action.localId) };
+    case "expireQueued": {
+      /* checked again: the message may have landed or the agent started since the timer was set */
+      const lost = new Set(lostQueued(state).map((p) => p.localId).filter((id) => action.localIds.includes(id)));
+      if (!lost.size) return state;
+      return { ...state, pending: state.pending.map((p) => (lost.has(p.localId) ? { ...p, state: "failed" as const, resend: true, error: LOST_QUEUED } : p)) };
+    }
+    case "events":
+      return action.events.reduce((s, event) => reducer(s, { type: "event", event }), state);
   }
+}
+
+/** the server can't continue the stream from where it was (the transcript was rewritten, say): load it afresh */
+export const RESET = Symbol("reset");
+const RESET_TYPES = new Set(["reset", "gap"]);
+
+/** one SSE frame's data; malformed frames come back null, so they can't drop the connection */
+export function parseEvent(data: string): ServerEvent | typeof RESET | null {
+  let event: unknown;
+  try {
+    event = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (!event || typeof event !== "object" || typeof (event as { type?: unknown }).type !== "string") return null;
+  return RESET_TYPES.has((event as { type: string }).type) ? RESET : (event as ServerEvent);
 }
 
 export function useSession(id: string | null, onRedirect: (id: string) => void) {
@@ -287,6 +333,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     if (!id) return;
     dispatch({ type: "status", status: "connecting" });
     const abort = new AbortController();
+    const stream = frameBatch<ServerEvent>((events) => dispatch({ type: "events", events }));
     /* a phone back from sleep, or a network that changed, usually holds a stream that is already dead; drop it now
      * instead of waiting out the stall timer */
     let kick: (() => void) | undefined;
@@ -302,25 +349,30 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
      * read with fetch (not EventSource): some tunnels buffer GET event streams until they close. */
     (async () => {
       let from: string | number = 0;
-      /* only a 404 means the session is gone; anything else is the network, so keep trying */
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
-          if (abort.signal.aborted) return;
-          dispatch({ type: "event", event: first, initial: true });
-          from = first.end;
-          break;
-        } catch (err) {
-          if (abort.signal.aborted) return;
-          if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
-            dispatch({ type: "status", status: "missing" });
-            return;
+      /* false when there is nothing to stream: the session is gone, or the view closed */
+      const loadHistory = async () => {
+        /* only a 404 means the session is gone; anything else is the network, so keep trying */
+        for (let attempt = 0; ; attempt++) {
+          try {
+            const first = await api<Extract<ServerEvent, { type: "history" }> & { end: string | number; agent?: AgentId }>(`/api/sessions/${id}`);
+            if (abort.signal.aborted) return false;
+            dispatch({ type: "event", event: first, initial: true });
+            from = first.end;
+            return true;
+          } catch (err) {
+            if (abort.signal.aborted) return false;
+            if (err instanceof ApiError && (err.status === 404 || err.status === 400)) {
+              dispatch({ type: "status", status: "missing" });
+              return false;
+            }
+            if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
+            await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
           }
-          if (attempt === 1) dispatch({ type: "status", status: "reconnecting" });
-          await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
         }
-      }
+      };
+      if (!(await loadHistory())) return;
       for (let attempt = 0; !abort.signal.aborted; attempt++) {
+        let reset = false;
         try {
           const res = await fetch(`/api/sessions/${id}/events`, {
             method: "POST",
@@ -357,7 +409,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
             if (done) break;
             buf += value;
             let cut;
-            while ((cut = buf.indexOf("\n\n")) !== -1) {
+            while (!reset && (cut = buf.indexOf("\n\n")) !== -1) {
               const frame = buf.slice(0, cut);
               buf = buf.slice(cut + 2);
               let data = "";
@@ -367,16 +419,29 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
               }
               if (!data) continue;
               attempt = 0;
-              const event = JSON.parse(data) as ServerEvent;
-              if (event.type === "redirect") {
+              const event = parseEvent(data);
+              if (!event) continue;
+              if (event === RESET) reset = true;
+              else if (event.type === "redirect") {
                 carryOver(id, event.sessionId, pendingNow.current);
                 redirectRef.current(event.sessionId);
               }
-              else if (event.type !== "ping") dispatch({ type: "event", event });
+              else if (event.type !== "ping") stream.push(event);
+            }
+            if (reset) {
+              void reader.cancel().catch(() => undefined);
+              break;
             }
           }
         } catch {
           if (abort.signal.aborted) return;
+        }
+        /* what's waiting goes first: a reload's history must land after it, never under it */
+        stream.flush();
+        if (reset) {
+          if (!(await loadHistory())) return;
+          attempt = -1;
+          continue;
         }
         dispatch({ type: "status", status: "reconnecting" });
         await wake(Math.min(8000, 500 * 2 ** attempt), abort.signal);
@@ -384,6 +449,7 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     })();
     return () => {
       abort.abort();
+      stream.cancel();
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", onOnline);
     };
@@ -423,6 +489,13 @@ export function useSession(id: string | null, onRedirect: (id: string) => void) 
     if (!id || !restored.current) return;
     save(pendingKey(id), view.pending.length ? JSON.stringify(view.pending) : null);
   }, [id, view.pending]);
+
+  const lost = lostQueued(view).map((p) => p.localId).join(" ");
+  useEffect(() => {
+    if (!lost) return;
+    const t = setTimeout(() => dispatch({ type: "expireQueued", localIds: lost.split(" ") }), QUEUE_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [lost]);
 
   const addPending = useCallback((text: string) => {
     const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

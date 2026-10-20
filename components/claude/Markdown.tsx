@@ -1,14 +1,18 @@
 "use client";
 
-import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX, type ReactNode } from "react";
 import { Check, Copy } from "iconoir-react";
 import type { Components, ExtraProps, MathPlugin, PluginConfig, StreamdownProps } from "streamdown";
 import { CodeCard, copyText } from "./CodeCard";
+import { useOverflow } from "@/lib/client/a11y";
+import { refFromCode, refFromHref } from "@/lib/client/file-refs";
+import { FileLink, useFileRoot } from "./FileLink";
 
 /* ── Streamdown loads as its own chunk ──────────────────────────────────
- * It brings ~100 kB (marked, remend, unified, sanitize, and a rehype-raw we don't use
- * but can't tree-shake). Fetching starts as soon as the app bundle runs, in parallel
- * with the first session fetch, so it is normally ready before any message renders. */
+ * It brings marked, remend, unified and sanitize (the browser build swaps the unused
+ * rehype-raw for a stub, see next.config.ts). Fetching starts once the page is idle, or
+ * when a session opens (preloadMarkdown), in parallel with its history fetch, so it is
+ * normally ready before any message renders. */
 /* An image in agent output is a request to whatever host the text names, and the URL can carry anything the
  * agent read; it loads only when asked. */
 function RemoteImage({ src, alt }: { src: string; alt: string }) {
@@ -19,7 +23,7 @@ function RemoteImage({ src, alt }: { src: string; alt: string }) {
   } catch {}
   if (shown) return <img src={src} alt={alt} loading="lazy" decoding="async" referrerPolicy="no-referrer" className="md-img" />;
   return (
-    <button type="button" onClick={() => setShown(true)} title={src} className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-line px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-hover">
+    <button type="button" onClick={() => setShown(true)} title={src} className="my-1 inline-flex max-w-full items-center gap-1.5 rounded-[8px] border border-line px-2.5 py-1.5 text-left text-sm text-ink-2 hover:bg-hover">
       <span className="truncate">{alt ? `Image: ${alt}` : "Image"}</span>
       {host && <span className="shrink-0 text-ink-3">from {host}. Load</span>}
     </button>
@@ -30,7 +34,12 @@ type SD = typeof import("streamdown");
 let sd: SD | null = null;
 let sdLoad: Promise<SD> | null = null;
 const loadStreamdown = () => (sdLoad ??= import("streamdown").then((m) => (sd = m)));
-if (typeof window !== "undefined") void loadStreamdown().catch(() => (sdLoad = null));
+/** Starts fetching the markdown renderer (once); call when a screen that shows messages opens. */
+export const preloadMarkdown = () => void loadStreamdown().catch(() => (sdLoad = null));
+if (typeof window !== "undefined") {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(preloadMarkdown, { timeout: 4000 });
+  else setTimeout(preloadMarkdown, 1500);
+}
 
 /* ── hast helpers (local types; hast isn't a direct dependency) ───────── */
 
@@ -82,8 +91,19 @@ function rehypeNumericColumns() {
 let rehype: StreamdownProps["rehypePlugins"];
 const rehypeFor = (m: SD) => (rehype ??= [m.defaultRehypePlugins.sanitize, rehypeNumericColumns as never]);
 
-/* Links Claude writes to repo files (`[runner.ts](lib/server/runner.ts)`) have nowhere to go in the browser */
 const EXTERNAL = /^(https?:|mailto:|tel:)/i;
+
+/* Links Claude writes to repo files (`[runner.ts](lib/server/runner.ts)`) open in the session's Files panel; outside a
+ * session they have nowhere to go */
+function RepoLink({ href, children }: { href?: string; children: ReactNode }) {
+  const ref = useFileRoot() ? refFromHref(href) : null;
+  if (ref) return <FileLink file={ref}>{children}</FileLink>;
+  return (
+    <span className="md-deadlink" title={href || undefined}>
+      {children}
+    </span>
+  );
+}
 
 /* ── math: KaTeX loads only when a message contains `$$` or a ```math fence ── */
 
@@ -126,7 +146,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
     <button
       type="button"
       title={title}
-      aria-label={done ? "Copied" : title}
+      aria-label={done ? "Copied" : `Copy table as ${label}`}
       onClick={() =>
         onCopy().then((ok) => {
           if (!ok) return;
@@ -135,7 +155,7 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
           timer.current = setTimeout(() => setDone(false), 1500);
         })
       }
-      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] font-medium transition-colors duration-100 hover:bg-hover ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
+      className={`flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-xs font-medium transition-colors duration-100 hover:bg-hover pointer-coarse:h-10 pointer-coarse:min-w-11 pointer-coarse:justify-center pointer-coarse:px-3 pointer-coarse:text-sm ${done ? "text-green" : "text-ink-3 hover:text-ink"}`}
     >
       {done ? <Check width={12} height={12} strokeWidth={2.2} /> : <Copy width={12} height={12} strokeWidth={1.8} />}
       {label}
@@ -145,6 +165,8 @@ function CopyTableButton({ label, title, onCopy }: { label: string; title: strin
 
 function Table({ children }: ComponentProps<"table"> & ExtraProps) {
   const ref = useRef<HTMLTableElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const scrolls = useOverflow(scroller, "both");
   const copy = (format: "md" | "csv") => () => {
     /* tables only render inside Streamdown, so the module is loaded by now */
     if (!ref.current || !sd) return Promise.resolve(false);
@@ -153,11 +175,17 @@ function Table({ children }: ComponentProps<"table"> & ExtraProps) {
   };
   return (
     <div className="md-table group/table relative">
-      {/* the region is focusable, so a tap on touch screens reveals the copy controls */}
-      <div tabIndex={0} role="region" aria-label="Table" className="md-table-scroll focus-visible:[outline-offset:-2px]!">
+      <div
+        ref={scroller}
+        tabIndex={scrolls ? 0 : undefined}
+        role={scrolls ? "group" : undefined}
+        aria-label={scrolls ? "Scrollable table" : undefined}
+        className="md-table-scroll focus-visible:[outline-offset:-2px]!"
+      >
         <table ref={ref}>{children}</table>
       </div>
-      <div className="absolute top-1 right-1 z-10 flex gap-px rounded-[8px] bg-surface p-0.5 opacity-0 shadow-btn transition-opacity duration-150 group-focus-within/table:opacity-100 group-hover/table:opacity-100">
+      {/* on touch there's no hover, so the controls stay visible in a strip under the table */}
+      <div className="absolute top-1 right-1 z-10 flex gap-px rounded-[8px] bg-surface p-0.5 opacity-0 shadow-btn transition-opacity duration-150 group-focus-within/table:opacity-100 group-hover/table:opacity-100 pointer-coarse:static pointer-coarse:justify-end pointer-coarse:rounded-none pointer-coarse:border-t pointer-coarse:border-line pointer-coarse:p-0 pointer-coarse:opacity-100 pointer-coarse:shadow-none">
         <CopyTableButton label="MD" title="Copy table as Markdown" onCopy={copy("md")} />
         <CopyTableButton label="CSV" title="Copy table as CSV" onCopy={copy("csv")} />
       </div>
@@ -200,10 +228,19 @@ const components: Components = {
   table: Table,
   /* Streamdown's own `pre` stays: it renders no wrapper, it only tags the fenced
    * `code` child with `data-block`, which routes it to `code` instead of `inlineCode` */
-  inlineCode: ({ children }) => <code className="md-code">{children}</code>,
+  inlineCode: ({ children }) => {
+    const ref = typeof children === "string" ? refFromCode(children) : null;
+    return ref ? (
+      <FileLink file={ref}>
+        <code className="md-code">{children}</code>
+      </FileLink>
+    ) : (
+      <code className="md-code">{children}</code>
+    );
+  },
   code: ({ className, children }) => {
     const lang = /language-([\w+#.-]+)/.exec(className ?? "")?.[1];
-    return <CodeCard code={String(children ?? "")} label={lang} />;
+    return <CodeCard code={String(children ?? "")} label={lang} collapsible />;
   },
   a: ({ node: _node, href, children, className, ...rest }) =>
     href?.startsWith("#") ? (
@@ -216,9 +253,7 @@ const components: Components = {
         {children}
       </a>
     ) : (
-      <span className="md-deadlink" title={href || undefined}>
-        {children}
-      </span>
+      <RepoLink href={href}>{children}</RepoLink>
     ),
   img: ({ src, alt }) => (typeof src === "string" && src ? <RemoteImage src={src} alt={alt ?? ""} /> : null),
 };

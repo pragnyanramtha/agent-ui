@@ -7,10 +7,14 @@ import { api, ApiError, timeAgo } from "@/lib/client/api";
 import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/client/useProfiles";
 import { newClientId } from "@/lib/client/send";
 import { openServerTerminal } from "@/lib/client/terminals";
+import { saveEffort } from "@/lib/client/storage";
+import { useProjectDefaults } from "@/lib/client/useProjectDefaults";
+import { ProjectDefaultsNote } from "./ProjectDefaultsNote";
 import { Composer, MODELS, type AgentOption } from "./Composer";
-import { FolderPicker } from "./FolderPicker";
+import { FolderPicker } from "./lazy";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
+import { reducedMotion } from "@/lib/client/motion";
 
 /* The new-session screen: one question, one composer, and a few quiet rows
  * for picking up where you left off. Staggered blur-up reveal on entry. */
@@ -42,6 +46,8 @@ export function NewSession({
   const [cwd, setCwd] = useState("");
   const [mode, setMode] = useState<PermissionMode>("default");
   const [model, setModel] = useState("");
+  /* "" for the default (the profile's, else the agent's own) */
+  const [effort, setEffort] = useState("");
   const [agent, setAgent] = useState<AgentId>("claude");
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [picker, setPicker] = useState(false);
@@ -77,27 +83,34 @@ export function NewSession({
     setProfile(saved && list.some((p) => p.id === saved && p.installed) ? saved : agent);
   }, [agent, profiles]);
   const pickProfile = (id: string) => {
+    /* the folder's project may have put another agent's profile on screen */
+    const a = profiles?.find((p) => p.id === id)?.agent ?? agent;
+    if (a !== agent) pickAgent(a);
     setProfile(id);
     setModel("");
-    localStorage.setItem(`cui:newProfile:${agent}`, id);
+    localStorage.setItem(`cui:newProfile:${a}`, id);
   };
-  const profileInfo = profiles?.find((p) => p.id === profile);
-  const agentModels = useAgentModels(agent, profile);
+  /* the folder's project defaults (Settings > Projects) under what's picked here */
+  const d = useProjectDefaults({ cwd: cwd.trim(), current: { agent, profile, model, mode, effort }, profiles });
+  const profileInfo = profiles?.find((p) => p.id === d.profile);
+  const sentEffort = d.sentEffort;
+  const agentModels = useAgentModels(d.agent, d.profile);
 
   const pickAgent = (a: AgentId) => {
     setAgent(a);
     setModel("");
+    setEffort("");
     /* other agents can't show approval prompts from their print modes yet: run them unattended */
     setMode(a === "claude" ? "default" : "bypassPermissions");
     localStorage.setItem("cui:newAgent", a);
   };
-  const name = AGENT_LABEL[agent];
+  const name = AGENT_LABEL[d.agent];
 
   useEffect(() => {
     setNow(Date.now());
     if (!touched.current) setCwd((c) => c || localStorage.getItem("cui:lastCwd") || "");
     /* reduced motion: show everything at once, no blur-up */
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (reducedMotion()) {
       setStage(3);
       return;
     }
@@ -125,12 +138,7 @@ export function NewSession({
   const all = sessions ?? [];
   const rows = [...all.filter(isLive), ...all.filter((s) => !isLive(s))].slice(0, 3);
 
-  const [worktree, setWorktree] = useState(false);
-  useEffect(() => {
-    try {
-      setWorktree(localStorage.getItem("cui:worktree") === "1");
-    } catch {}
-  }, []);
+  const { worktree, setWorktree } = d;
 
   const start = async (text: string) => {
     setError(null);
@@ -141,8 +149,9 @@ export function NewSession({
       return false;
     }
     try {
-      const { id } = await api<{ id: string }>("/api/sessions", { agent, profile, cwd: cwd.trim(), text, model: model || undefined, permissionMode: mode, worktree, clientId: newClientId() });
+      const { id } = await api<{ id: string }>("/api/sessions", { agent: d.agent, profile: d.profile, cwd: cwd.trim(), text, model: d.model || undefined, effort: sentEffort, permissionMode: d.mode, worktree, clientId: newClientId() });
       localStorage.setItem("cui:lastCwd", cwd.trim());
+      saveEffort(id, d.effort);
       onOpen(id);
       return true;
     } catch (err) {
@@ -164,7 +173,7 @@ export function NewSession({
     }
     setLaunching(true);
     try {
-      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile, cwd: cwd.trim(), model: model || undefined });
+      const t = await api<{ id: string; backing: string; label: string }>("/api/terminals", { profile: d.profile, cwd: cwd.trim(), model: d.model || undefined, effort: sentEffort });
       localStorage.setItem("cui:lastCwd", cwd.trim());
       openServerTerminal(t, `${t.label} in ${cwd.trim().split("/").pop()}`);
     } catch (err) {
@@ -181,13 +190,13 @@ export function NewSession({
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="flex size-10 items-center justify-center rounded-[10px] text-ink-2 hover:bg-hover hover:text-ink">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <span className="min-w-0 flex-1 truncate px-1 text-[14.5px] font-semibold tracking-[-0.01em] text-ink">New session</span>
+          <span className="min-w-0 flex-1 truncate px-1 text-base font-semibold tracking-[-0.01em] text-ink">New session</span>
           {extra}
         </div>
       </header>
 
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex min-h-full w-full max-w-[740px] flex-col px-3 pb-3 sm:justify-center sm:px-6 sm:pt-8 sm:pb-[14vh]">
+        <div className="mx-auto flex min-h-full w-full max-w-(--thread-w) flex-col px-3 pb-3 sm:justify-center sm:px-8 sm:pt-8 sm:pb-[14vh]">
           {/* phones: the question sits in the middle, the composer at the bottom (where the reply composer lives) */}
           <div className="order-1 flex flex-1 flex-col justify-center py-8 sm:flex-none sm:py-0">
             <h1 className="home-reveal text-center text-[24px] leading-8 font-normal tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9" style={reveal(stage >= 1)}>
@@ -202,56 +211,60 @@ export function NewSession({
               onSend={start}
               running={false}
               slashCommands={[]}
-              mode={mode}
-              onModeChange={setMode}
-              model={model || null}
-              onModelChange={setModel}
-              models={profileModels(profileInfo, agent === "claude" ? MODELS : agentModels)}
-              cwd={agent === "claude" ? cwd.trim() || undefined : undefined}
+              mode={d.mode}
+              onModeChange={(m) => (d.pick("mode"), setMode(m))}
+              model={d.model || null}
+              onModelChange={(m) => (d.pick("model"), setModel(m))}
+              models={profileModels(profileInfo, d.agent === "claude" ? MODELS : agentModels)}
+              cwd={d.agent === "claude" ? cwd.trim() || undefined : undefined}
               profiles={profiles ?? undefined}
-              profile={profile}
-              onProfileChange={pickProfile}
+              profile={d.profile}
+              onProfileChange={(id) => (d.pick("profile"), pickProfile(id))}
+              root={cwd.trim() || undefined}
+              effort={d.effort}
+              defaultEffort={profileInfo?.defaultEffort ?? null}
+              onEffortChange={(e) => (d.pick("effort"), setEffort(e))}
               agents={agents}
-              agent={agent}
-              onAgentChange={pickAgent}
+              agent={d.agent}
+              onAgentChange={(a) => (d.pick("profile"), pickAgent(a))}
               folder={cwd}
               onPickFolder={() => setPicker(true)}
               folderInvalid={folderInvalid}
               busyLabel={`Starting ${name}…`}
               autoFocus
+              context={
+                <>
+                <button
+                  type="button"
+                  aria-pressed={worktree}
+                  onClick={() => setWorktree(!worktree)}
+                  title="New branch in a separate folder"
+                  className={`tap relative inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1 transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
+                >
+                  <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
+                    {worktree && <Check width={10} height={10} strokeWidth={3} />}
+                  </span>
+                  New worktree
+                </button>
+                {d.project && d.fromProject.length > 0 && <ProjectDefaultsNote project={d.project} fields={d.fromProject} />}
+                </>
+              }
+              contextEnd={
+                <button
+                  type="button"
+                  onClick={startInTerminal}
+                  disabled={launching}
+                  className="tap relative inline-flex h-6 shrink-0 items-center rounded-md px-1 text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
+                >
+                  {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
+                </button>
+              }
             />
             {error && (
-              <p role="alert" className="px-4 pt-2.5 text-[13px] text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
+              <p role="alert" className="px-4 pt-2.5 text-sm text-red-ink" style={{ animation: "fade-up 240ms cubic-bezier(0.23,1,0.32,1) both" }}>
                 {error}
               </p>
             )}
-            <div className="flex items-center justify-between gap-3 px-3 pt-2">
-              <button
-                type="button"
-                aria-pressed={worktree}
-                onClick={() => {
-                  setWorktree((v) => !v);
-                  try {
-                    localStorage.setItem("cui:worktree", worktree ? "0" : "1");
-                  } catch {}
-                }}
-                title="New branch in a separate folder"
-                className={`tap relative inline-flex items-center gap-1.5 rounded-chip px-1 text-[12.5px] transition-colors duration-150 ${worktree ? "text-ink" : "text-ink-3 hover:text-ink"}`}
-              >
-                <span aria-hidden className={`flex size-3.5 items-center justify-center rounded-[4px] border ${worktree ? "border-ink bg-ink text-surface" : "border-line-strong"}`}>
-                  {worktree && <Check width={10} height={10} strokeWidth={3} />}
-                </span>
-                New worktree
-              </button>
-              <button
-                type="button"
-                onClick={startInTerminal}
-                disabled={launching}
-                className="tap relative rounded-chip px-1 text-[12.5px] text-ink-3 transition-colors duration-150 hover:text-ink disabled:opacity-60"
-              >
-                {launching ? `Opening ${profileInfo?.label ?? name}…` : "Open in terminal"}
-              </button>
-            </div>
           </div>
 
           {rows.length > 0 && (
@@ -272,12 +285,12 @@ export function NewSession({
                           {live ? <Pulse busy={isBusy(s)} cellClass={waiting ? "bg-orange" : "bg-ink"} /> : <Clock width={15} height={15} strokeWidth={1.8} />}
                         </span>
                         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                          <span className="min-w-0 truncate text-[14px] text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
-                          <span className="hidden min-w-0 max-w-[40%] shrink-0 truncate text-[13px] text-ink-3 min-[420px]:inline" translate="no">
+                          <span className="min-w-0 truncate text-base text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
+                          <span className="hidden min-w-0 max-w-[40%] shrink-0 truncate text-sm text-ink-3 min-[420px]:inline" translate="no">
                             {[s.project, s.agent !== "claude" ? AGENT_LABEL[s.agent] : null].filter(Boolean).join(" · ")}
                           </span>
                         </span>
-                        <span className="shrink-0 text-[12px] text-ink-3">
+                        <span className="shrink-0 text-xs text-ink-3">
                           {waiting ? <span className="text-orange-ink">Needs you</span> : live ? "Open" : now ? timeAgo(s.mtime, now) : null}
                         </span>
                       </button>

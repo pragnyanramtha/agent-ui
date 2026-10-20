@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, EyeClosed, Folder, NavArrowRight, Search, Xmark } from "iconoir-react";
-import { shortPath } from "@/lib/client/api";
+import { Eye, EyeClosed, Folder, NavArrowRight, Plus, Search, Xmark } from "iconoir-react";
+import { api, ApiError, shortPath } from "@/lib/client/api";
 
 /* A combobox for choosing a working folder on the server: recent projects on
  * top, then a browser of the server's filesystem (folders only) starting at
@@ -36,7 +36,11 @@ export function FolderPicker({
   const [error, setError] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
   const [active, setActive] = useState(0);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const crumbsRef = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -78,6 +82,9 @@ export function FolderPicker({
     setQuery("");
     setError(null);
     setActive(0);
+    setNaming(false);
+    setName("");
+    setCreating(false);
     void (async () => {
       if (!value || !(await browse(value, { quiet: true }))) await browse();
     })();
@@ -151,7 +158,50 @@ export function FolderPicker({
     if (data?.parent) void browse(data.parent);
   };
 
+  const startNaming = () => {
+    const typed = query.trim();
+    setName(!pathMode && typed && !typed.includes("/") && typed !== "." && typed !== ".." ? typed : "");
+    setNaming(true);
+    setError(null);
+    requestAnimationFrame(() => {
+      nameRef.current?.focus();
+      nameRef.current?.select();
+    });
+  };
+
+  const createFolder = async () => {
+    const folder = name.trim();
+    if (!data || !folder || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api<{ path: string }>("/api/files", { action: "mkdir", path: data.path, name: folder });
+      setNaming(false);
+      setName("");
+      setQuery("");
+      await browse(created.path);
+      inputRef.current?.focus();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create the folder.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (naming && e.target === nameRef.current && e.key !== "Tab") {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void createFolder();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setNaming(false);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      }
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
       case "ArrowUp":
@@ -233,14 +283,14 @@ export function FolderPicker({
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => enter(it)}
         title={it.path}
-        className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 text-[14px] transition-colors duration-75 sm:min-h-9 sm:text-[13.5px] ${on ? "bg-hover text-ink" : "text-ink-2"}`}
+        className={`flex min-h-11 cursor-pointer items-center gap-2.5 rounded-[8px] px-2.5 text-base transition-colors duration-75 sm:min-h-9 sm:text-sm ${on ? "bg-hover text-ink" : "text-ink-2"}`}
       >
         <Folder width={16} height={16} strokeWidth={1.8} className={`shrink-0 ${on ? "text-ink-2" : "text-ink-3"}`} aria-hidden />
         <span className="min-w-0 truncate" translate="no">
           {it.name}
         </span>
         {it.kind === "recent" ? (
-          <span className="ml-auto min-w-0 shrink truncate pl-3 text-[12px] text-ink-3" translate="no">
+          <span className="ml-auto min-w-0 shrink truncate pl-3 text-xs text-ink-3" translate="no">
             {shortPath(it.path)}
           </span>
         ) : (
@@ -284,7 +334,7 @@ export function FolderPicker({
             autoCapitalize="off"
             spellCheck={false}
             translate="no"
-            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[14.5px] sm:pointer-coarse:text-[16px]"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-base sm:pointer-coarse:text-[16px]"
           />
           <button
             type="button"
@@ -297,7 +347,7 @@ export function FolderPicker({
         </div>
 
         <div className="flex h-10 shrink-0 items-center gap-1 border-y border-line pr-1.5 pl-2.5">
-          <nav ref={crumbsRef} aria-label="Folder path" className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap text-[13px]" translate="no">
+          <nav ref={crumbsRef} aria-label="Folder path" className="no-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto whitespace-nowrap text-sm" translate="no">
             {crumbs.map((c, i) => {
               const last = i === crumbs.length - 1;
               return (
@@ -344,7 +394,7 @@ export function FolderPicker({
         <div id={`${uid}-list`} role="listbox" aria-label="Folders" aria-busy={loading} className="thin-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
           {recentCount > 0 && (
             <div role="group" aria-labelledby={`${uid}-recent`} className="pb-1">
-              <div id={`${uid}-recent`} role="presentation" className="px-2.5 pt-1.5 pb-1 text-[12px] font-medium text-ink-3">
+              <div id={`${uid}-recent`} role="presentation" className="px-2.5 pt-1.5 pb-1 text-xs font-medium text-ink-3">
                 Recent
               </div>
               {items.slice(0, recentCount).map((it, i) => row(it, i))}
@@ -352,36 +402,75 @@ export function FolderPicker({
           )}
           <div role="group" aria-label={data ? `Folders in ${shortPath(data.path)}` : "Folders"}>
             {recentCount > 0 && (
-              <div role="presentation" className="px-2.5 pt-2 pb-1 text-[12px] font-medium text-ink-3">
+              <div role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
                 {data ? base(data.path === home ? "~" : data.path) : "Folders"}
               </div>
             )}
             {items.slice(recentCount).map((it, i) => row(it, recentCount + i))}
           </div>
           {error ? (
-            <p role="alert" className="px-2.5 py-3 text-[13px] text-red-ink">
+            <p role="alert" className="px-2.5 py-3 text-sm text-red-ink">
               {error}
             </p>
           ) : !loading && data && dirCount === 0 ? (
-            <p className="px-2.5 py-3 text-[13px] text-ink-3">{leaf ? "No folders match." : "No subfolders here."}</p>
+            <p className="px-2.5 py-3 text-sm text-ink-3">{leaf ? "No folders match." : "No subfolders here."}</p>
           ) : !data ? (
-            <p className="px-2.5 py-3 text-[13px] text-ink-3">Loading folders…</p>
+            <p className="px-2.5 py-3 text-sm text-ink-3">Loading folders…</p>
           ) : null}
-          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-[12px] text-ink-3">First 500 shown. Type to filter.</p>}
+          {data?.truncated && !leaf && <p className="px-2.5 py-2 text-xs text-ink-3">First 500 shown. Type to filter.</p>}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-4">
-          <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-3" title={chosen} translate="no">
-            {chosen ? shortPath(chosen) : "\u00a0"}
-          </span>
+        <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-3">
+          {naming ? (
+            <input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-label="Folder name"
+              placeholder="Folder name"
+              disabled={creating}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="h-10 min-w-0 flex-1 rounded-[9px] bg-field px-3 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:h-8 sm:text-sm sm:pointer-coarse:text-[16px]"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate pl-1 text-sm text-ink-3" title={chosen} translate="no">
+              {chosen ? shortPath(chosen) : "\u00a0"}
+            </span>
+          )}
+          {naming ? (
+            <button
+              type="button"
+              onClick={() => {
+                setNaming(false);
+                inputRef.current?.focus();
+              }}
+              disabled={creating}
+              className="tap relative h-10 shrink-0 rounded-full px-3 text-sm font-medium text-ink-2 hover:bg-hover disabled:opacity-40 sm:h-8"
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startNaming}
+              disabled={!data || loading}
+              className="tap relative flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink-2 hover:bg-hover disabled:opacity-40 sm:h-8"
+            >
+              <Plus width={14} height={14} strokeWidth={2} aria-hidden />
+              New folder
+            </button>
+          )}
           <button
             type="button"
-            disabled={!chosen}
-            onClick={() => chosen && pick(chosen)}
-            title="Use this folder (Ctrl+Enter)"
-            className="tap relative h-10 shrink-0 rounded-full bg-ink px-4 text-[13.5px] font-medium text-surface transition-[opacity,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-40 sm:h-8 sm:text-[13px]"
+            disabled={naming ? !name.trim() || creating : !chosen}
+            onClick={() => (naming ? void createFolder() : chosen && pick(chosen))}
+            title={naming ? "Create folder" : "Use this folder (Ctrl+Enter)"}
+            className="tap relative h-10 shrink-0 rounded-full bg-ink px-4 text-sm font-medium text-surface transition-[opacity,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-40 sm:h-8"
           >
-            Use this folder
+            {naming ? (creating ? "Creating…" : "Create") : "Use this folder"}
           </button>
         </div>
       </div>

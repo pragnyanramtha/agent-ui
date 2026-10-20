@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { Entry, PermissionMode, ServerEvent } from "@/lib/types";
+import { parseEffort } from "@/lib/agent-traits";
 import { adapterFor, parseSessionKey, sessionKey } from "./agents";
 import { onTurn } from "./agents/cli-run";
 import { handoff, loadSource } from "./handoff";
 import { sessionContext } from "./http";
 import { getProfile, LIMIT_ERROR, setSessionProfile, withProfile, type ResolvedProfile } from "./profiles";
 import { getRun, startRun, type RunEvent } from "./runner";
+import { formatWait, parseResetAt } from "./limit-reset";
+import { syncedSetting } from "./settings";
 
 /* ── events for a session that don't come from its transcript or run ── */
 
@@ -59,19 +62,28 @@ function nextProfile(p: ResolvedProfile, tried: string[]) {
   return null;
 }
 
-export type GuardedTurn = { key: string; text: string; mode: PermissionMode; model?: string; profile: ResolvedProfile; tried?: string[] };
+/** `effort`: undefined is the profile's default, null the model's. `waits`: how many times it already waited out a limit */
+export type GuardedTurn = { key: string; text: string; mode: PermissionMode; model?: string; effort?: string | null; profile: ResolvedProfile; tried?: string[]; waits?: number };
 
 const short = (s: string) => (s.length > 140 ? `${s.slice(0, 140)}…` : s);
 
+/** a little past the reset time, so the limit has really lifted */
+export const RESEND_SLACK_MS = 30_000;
+/** a turn that keeps hitting the limit after waiting stops waiting */
+const MAX_WAITS = 3;
+
 /* one watcher per session: a message sent while a turn runs replaces the earlier watcher, so a limit fails over once
- * (earlier messages are in the transcript the fallback continues from) */
+ * (earlier messages are in the transcript the fallback continues from). A wait for a reset is a watcher too, so a
+ * message sent meanwhile cancels it. */
 const guards: Map<string, () => void> = ((globalThis as { __agentuGuards?: Map<string, () => void> }).__agentuGuards ??= new Map());
 
-/** Watches the turn just sent; if it fails on a limit and the profile has fallbacks, it carries on under the next one. */
+/** Watches the turn just sent; if it fails on a limit, Settings > Agents > When a turn hits a usage limit says what
+ * happens: carry on under the next fallback profile, wait for the reset and send it again, or stop there. */
 export function guardTurn(t: GuardedTurn) {
   guards.get(t.key)?.();
   guards.delete(t.key);
-  if (!t.profile.fallback?.length) return;
+  const action = syncedSetting("limitAction");
+  if (action === "stop" || (action === "fallback" && !t.profile.fallback?.length)) return;
   const k = parseSessionKey(t.key);
   if (!k) return;
   const started = Date.now();
@@ -90,7 +102,7 @@ export function guardTurn(t: GuardedTurn) {
       run.observe((e: RunEvent) => {
         if (e.type !== "run" || e.run.status === "running" || e.run.status === "starting") return;
         stop();
-        if (e.run.error && LIMIT_ERROR.test(e.run.error)) void failover(t, e.run.error);
+        if (e.run.error && LIMIT_ERROR.test(e.run.error)) void onLimit(t, e.run.error).catch((err) => postNotice(t.key, `Fallback failed: ${err instanceof Error ? err.message : err}`, "warn"));
       }),
     );
     return;
@@ -110,10 +122,66 @@ export function guardTurn(t: GuardedTurn) {
         const hit = page?.entries.filter((e) => e.kind === "notice" && e.tone === "warn" && Date.parse(e.ts) >= started - 5000 && LIMIT_ERROR.test(e.text)).pop();
         if (hit?.kind === "notice") error = hit.text;
       }
-      if (error) await failover(t, error);
+      if (error) await onLimit(t, error);
     })().catch((err) => postNotice(t.key, `Fallback failed: ${err instanceof Error ? err.message : err}`, "warn"));
     }),
   );
+}
+
+async function onLimit(t: GuardedTurn, error: string) {
+  const waitedOut = (t.waits ?? 0) >= MAX_WAITS;
+  if (syncedSetting("limitAction") === "wait" && !waitedOut) {
+    const at = parseResetAt(error);
+    if (at !== null) return waitForReset(t, error, at);
+  }
+  if (t.profile.fallback?.length) return failover(t, error);
+  const why = waitedOut ? `It's still limited after waiting ${MAX_WAITS} times` : "It didn't say when the limit resets";
+  postNotice(t.key, `${t.profile.label} hit a usage limit (${short(error)}). ${why}, and this profile has no fallback.`, "warn");
+}
+
+function waitForReset(t: GuardedTurn, error: string, at: number) {
+  const ms = Math.max(0, at - Date.now()) + RESEND_SLACK_MS;
+  postNotice(t.key, `${t.profile.label} hit a usage limit (${short(error)}). Sending your message again when it resets, in ${formatWait(ms)}.`, "warn");
+  const cancel = () => clearTimeout(timer);
+  const timer = setTimeout(() => {
+    if (guards.get(t.key) === cancel) guards.delete(t.key);
+    void (async () => {
+      if (await busyNow(t.key)) return;
+      if (!(await resend(t, t.profile))) return;
+      guardTurn({ ...t, waits: (t.waits ?? 0) + 1 });
+    })().catch((err) => postNotice(t.key, `Couldn't send again: ${err instanceof Error ? err.message : err}`, "warn"));
+  }, ms);
+  timer.unref?.();
+  guards.set(t.key, cancel);
+}
+
+/** a turn is already running there (the user carried on some other way) */
+async function busyNow(key: string) {
+  const k = parseSessionKey(key);
+  if (!k) return false;
+  if (k.agent === "claude") {
+    const s = getRun(k.native)?.state.status;
+    return s === "running" || s === "starting";
+  }
+  return (await adapterFor(k.agent))?.runState(k.native)?.status === "running";
+}
+
+/** Sends the turn again in the same session under `profile` (one that reads the same session store). */
+async function resend(t: GuardedTurn, profile: ResolvedProfile): Promise<boolean> {
+  const k = parseSessionKey(t.key)!;
+  if (k.agent === "claude") {
+    const ctx = await sessionContext(k.native);
+    if (!ctx) return false;
+    getRun(k.native)?.close();
+    const run = startRun({ resume: k.native, cwd: ctx.cwd, effort: t.effort, permissionMode: t.mode, profile });
+    run.send(t.text);
+  } else {
+    const a = await adapterFor(k.agent);
+    const asked = parseEffort(k.agent, t.effort);
+    const effort = (asked === undefined ? profile.defaultEffort : asked) ?? undefined;
+    await withProfile(profile, () => a!.send(k.native, t.text, { mode: t.mode, effort }));
+  }
+  return true;
 }
 
 async function failover(t: GuardedTurn, error: string) {
@@ -125,16 +193,7 @@ async function failover(t: GuardedTurn, error: string) {
   const go = { ...t, profile: next, tried, model: undefined };
 
   if (sameStore(t.profile, next)) {
-    if (k.agent === "claude") {
-      const ctx = await sessionContext(k.native);
-      if (!ctx) return;
-      getRun(k.native)?.close();
-      const run = startRun({ resume: k.native, cwd: ctx.cwd, permissionMode: t.mode, profile: next });
-      run.send(t.text);
-    } else {
-      const a = await adapterFor(k.agent);
-      await withProfile(next, () => a!.send(k.native, t.text, { mode: t.mode }));
-    }
+    if (!(await resend(t, next))) return;
     setSessionProfile(sessionKey(k.agent, k.native), next.id);
     guardTurn(go);
     return;

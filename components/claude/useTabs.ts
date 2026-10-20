@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { pushTab, replaceTab } from "@/lib/client/tab-history";
+
 
 /** The tab id for the new-session screen. There is at most one. */
 export const NEW_TAB = "new";
@@ -9,7 +11,10 @@ export const FILES_TAB = "@files";
 export const AGENTS_TAB = "@agents";
 export const INBOX_TAB = "@inbox";
 export const SETTINGS_TAB = "@settings";
-export const VIEW_TABS: Record<string, string> = { [FILES_TAB]: "Files", [AGENTS_TAB]: "Agents", [INBOX_TAB]: "Inbox", [SETTINGS_TAB]: "Settings" };
+export const USAGE_TAB = "@usage";
+export const VIEW_TABS: Record<string, string> = { [FILES_TAB]: "Files", [AGENTS_TAB]: "Agents", [INBOX_TAB]: "Inbox", [SETTINGS_TAB]: "Settings", [USAGE_TAB]: "Usage" };
+/** what a view button or palette entry can open */
+export type ViewTab = "@agents" | "@files" | "@inbox" | "@settings" | "@usage";
 
 /** An open tab: a session id (or NEW_TAB) plus the last title we saw, so reloads paint names before the list loads. */
 export type Tab = { id: string; title?: string };
@@ -85,8 +90,8 @@ export function useTabs() {
     const want = active === NEW_TAB ? null : active;
     if (how === "none" || readUrl() === want) return;
     const url = want ? `/?s=${want}` : "/";
-    if (how === "replace") window.history.replaceState(null, "", url);
-    else window.history.pushState(null, "", url);
+    if (how === "replace") replaceTab(url);
+    else pushTab(url);
   }, [active]);
 
   useEffect(() => {

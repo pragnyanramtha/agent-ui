@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo } from "@/lib/types";
+import { APP_SECRETS } from "./child-env";
+import { effortOptions, parseEffort } from "@/lib/agent-traits";
 
 /* Agent profiles: which CLI to run for an agent kind, with what arguments and environment.
  * Every installed agent has a built-in profile under its own id ("claude", "codex", ...).
@@ -28,6 +30,8 @@ export type Profile = {
   /** model ids offered in the composer; the first is the default when `defaultModel` isn't set */
   models?: string[];
   defaultModel?: string;
+  /** reasoning effort when a session hasn't picked one (see lib/agent-traits.ts for each agent's levels) */
+  defaultEffort?: string;
   /** profiles to continue with when a turn fails on a usage limit, quota, or capacity error */
   fallback?: string[];
   /** extra arguments for interactive launches only (e.g. "--dangerously-skip-permissions") */
@@ -113,6 +117,11 @@ export function parseProfile(raw: unknown): Profile | string {
   }
   const bin = typeof r.bin === "string" && r.bin.trim() ? r.bin.trim() : undefined;
   if (bin && bin.includes("/") && !path.isAbsolute(bin)) return `${id}: bin must be a name on PATH or an absolute path.`;
+  const effort = r.defaultEffort === undefined ? null : parseEffort(agent, r.defaultEffort);
+  if (effort === undefined) {
+    const levels = effortOptions(agent).map((o) => o.key);
+    return levels.length ? `${id}: defaultEffort must be one of ${levels.join(", ")}.` : `${id}: ${AGENT_LABEL[agent]} has no effort levels.`;
+  }
   const out: Profile = {
     id,
     label: typeof r.label === "string" && r.label.trim() ? r.label.trim().slice(0, 60) : id,
@@ -122,6 +131,7 @@ export function parseProfile(raw: unknown): Profile | string {
     env: Object.keys(env).length ? env : undefined,
     models: strings(r.models)?.map((m) => m.trim()).filter(Boolean),
     defaultModel: typeof r.defaultModel === "string" && r.defaultModel.trim() ? r.defaultModel.trim() : undefined,
+    defaultEffort: effort ?? undefined,
     fallback: strings(r.fallback)?.filter((f) => ID.test(f) && f !== id),
     launchArgs: strings(r.launchArgs),
     hidden: r.hidden === true ? true : undefined,
@@ -137,7 +147,8 @@ function userProfiles(): Profile[] {
 
 const builtin = (agent: AgentId): Profile => ({ id: agent, label: AGENT_LABEL[agent], agent, bin: process.env[BIN_ENV[agent]] || undefined });
 
-const expand = (v: string) => v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k: string) => process.env[k] ?? "");
+/* the app's own secrets never reach an agent, also not through a profile that names them */
+const expand = (v: string) => v.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, k: string) => ((APP_SECRETS as readonly string[]).includes(k) ? "" : (process.env[k] ?? "")));
 
 function resolve(p: Profile, isBuiltin: boolean): ResolvedProfile {
   const bin = p.bin ?? process.env[BIN_ENV[p.agent]] ?? DEFAULT_BIN[p.agent];
@@ -192,6 +203,7 @@ export function profileInfo(p: ResolvedProfile): ProfileInfo {
     env: Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, SECRET.test(k) && !/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(v) ? MASK : v])),
     models: p.models ?? [],
     defaultModel: p.defaultModel ?? null,
+    defaultEffort: p.defaultEffort ?? null,
     fallback: p.fallback ?? [],
     launchArgs: p.launchArgs ?? [],
     hidden: Boolean(p.hidden),
@@ -227,9 +239,10 @@ export function saveProfiles(list: unknown[]): { ok: true } | { error: string } 
 
 /* ── which profile a session runs on ─────────────────────── */
 
-/** What the user set on a session in the list: pinned, archived, a title of their own. */
-export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string };
-export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null };
+/** What the user set on a session in the list: pinned, archived, a title of their own, snoozed until (epoch ms),
+ * or deleted (never listed again). */
+export type SessionMeta = { pinned?: boolean; archived?: boolean; title?: string; snoozedUntil?: number; deleted?: boolean };
+export type SessionMetaPatch = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
 type State = { sessionProfiles?: Record<string, string>; sessionMeta?: Record<string, SessionMeta> };
 const readState = (): State => {
@@ -242,6 +255,9 @@ const readState = (): State => {
 };
 
 export const sessionProfile = (key: string) => readState().sessionProfiles?.[key] ?? null;
+
+/** Every session's profile, by session key (sessions without one run on their agent's own). */
+export const allSessionProfiles = (): Record<string, string> => ({ ...(readState().sessionProfiles ?? {}) });
 
 export function setSessionProfile(key: string, profile: string) {
   const s = readState();
@@ -260,18 +276,22 @@ export function setSessionProfile(key: string, profile: string) {
 /* ── pinned, archived and renamed sessions ───────────────── */
 
 export const TITLE_MAX = 200;
+export const SNOOZE_MAX_MS = 366 * 86_400_000;
 
 const cleanMeta = (raw: unknown): SessionMeta => {
   if (!raw || typeof raw !== "object") return {};
   const r = raw as Record<string, unknown>;
+  if (r.deleted === true) return { deleted: true };
   const out: SessionMeta = {};
   if (r.pinned === true) out.pinned = true;
   if (r.archived === true) out.archived = true;
   if (typeof r.title === "string" && r.title.trim()) out.title = r.title.trim().slice(0, TITLE_MAX);
+  /* a snooze that has run out is gone: the session is back */
+  if (typeof r.snoozedUntil === "number" && Number.isFinite(r.snoozedUntil) && r.snoozedUntil > Date.now()) out.snoozedUntil = Math.round(r.snoozedUntil);
   return out;
 };
 
-/** Every session the user pinned, archived or renamed, by session key. */
+/** Every session the user pinned, archived, renamed or snoozed, by session key. */
 export function allSessionMeta(): Record<string, SessionMeta> {
   const raw = readState().sessionMeta;
   if (!raw || typeof raw !== "object") return {};
@@ -285,13 +305,13 @@ export function allSessionMeta(): Record<string, SessionMeta> {
 
 export const getSessionMeta = (key: string): SessionMeta => allSessionMeta()[key] ?? {};
 
-/** A strict reading of a PATCH body: only pinned, archived and title, with the right types. */
+/** A strict reading of a PATCH body: only pinned, archived, title and snoozedUntil, with the right types. */
 export function parseSessionMetaPatch(body: unknown): SessionMetaPatch | string {
   if (!body || typeof body !== "object" || Array.isArray(body)) return "Send a JSON object.";
   const r = body as Record<string, unknown>;
   const keys = Object.keys(r);
   if (!keys.length) return "Nothing to change.";
-  const unknown = keys.find((k) => k !== "pinned" && k !== "archived" && k !== "title");
+  const unknown = keys.find((k) => k !== "pinned" && k !== "archived" && k !== "title" && k !== "snoozedUntil");
   if (unknown) return `Unknown field "${unknown.slice(0, 40)}".`;
   const out: SessionMetaPatch = {};
   for (const k of ["pinned", "archived"] as const) {
@@ -308,10 +328,18 @@ export function parseSessionMetaPatch(body: unknown): SessionMetaPatch | string 
       out.title = t || null;
     }
   }
+  if ("snoozedUntil" in r) {
+    const v = r.snoozedUntil;
+    if (v === null) out.snoozedUntil = null;
+    else if (typeof v !== "number" || !Number.isFinite(v)) return "snoozedUntil must be a time in milliseconds or null.";
+    else if (v <= Date.now()) return "Pick a time in the future.";
+    else if (v > Date.now() + SNOOZE_MAX_MS) return "Snooze for less than a year.";
+    else out.snoozedUntil = Math.round(v);
+  }
   return out;
 }
 
-/** Applies a patch and returns what the session ends up with. Archiving unpins; pinning unarchives. */
+/** Applies a patch and returns what the session ends up with. Archiving unpins and wakes; pinning unarchives. */
 export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMeta {
   const s = readState();
   const map = allSessionMeta();
@@ -330,13 +358,32 @@ export function setSessionMeta(key: string, patch: SessionMetaPatch): SessionMet
     if (patch.title) next.title = patch.title.slice(0, TITLE_MAX);
     else delete next.title;
   }
+  if (patch.archived === true && patch.snoozedUntil === undefined) patch = { ...patch, snoozedUntil: null };
+  if (patch.snoozedUntil !== undefined) {
+    if (patch.snoozedUntil) next.snoozedUntil = patch.snoozedUntil;
+    else delete next.snoozedUntil;
+  }
   /* re-added last so the newest edits survive the trim below */
   delete map[key];
   if (Object.keys(next).length) map[key] = next;
-  const keys = Object.keys(map);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 5000))) delete map[k];
-  writeJson(STATE_PATH, { ...s, sessionMeta: map });
+  writeJson(STATE_PATH, { ...s, sessionMeta: trimMeta(map) });
   return next;
+}
+
+/** Hides a session from the list for good; whatever else was set on it goes. */
+export function markSessionDeleted(key: string) {
+  const s = readState();
+  const map = allSessionMeta();
+  delete map[key];
+  map[key] = { deleted: true };
+  writeJson(STATE_PATH, { ...s, sessionMeta: trimMeta(map) });
+}
+
+/** The newest 5000 edits, oldest dropped first; deletions are never dropped, or the session would come back. */
+export function trimMeta(map: Record<string, SessionMeta>, max = 5000) {
+  const keys = Object.keys(map).filter((k) => !map[k].deleted);
+  for (const k of keys.slice(0, Math.max(0, keys.length - max))) delete map[k];
+  return map;
 }
 
 /* ── the profile a request runs under ────────────────────── */

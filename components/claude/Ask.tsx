@@ -68,12 +68,12 @@ export function AskHost() {
         </>
       }
     >
-      {req.body && <p className="text-[13.5px] leading-relaxed text-ink-2">{req.body}</p>}
+      {req.body && <p className="text-sm leading-relaxed text-ink-2">{req.body}</p>}
       {prompt && (
         <input
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && value.trim() && ok()}
+          onKeyDown={(e) => !e.nativeEvent.isComposing && e.keyCode !== 229 && e.key === "Enter" && value.trim() && ok()}
           onFocus={(e) => {
             const dot = e.target.value.lastIndexOf(".");
             e.target.setSelectionRange(0, dot > 0 ? dot : e.target.value.length);

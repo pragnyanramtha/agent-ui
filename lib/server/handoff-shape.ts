@@ -42,6 +42,42 @@ export function turns(src: Source, toolBudget = 1500): Turn[] {
   return out.filter((t) => t.user.trim() || t.assistant.length);
 }
 
+/** Most history carried into a native transcript or injected thread: thousands of big tool outputs would overflow the
+ * new session's context before its first turn. */
+export const HISTORY_MAX_CHARS = 400_000;
+
+const turnSize = (t: Turn) => t.user.length + t.assistant.reduce((n, a) => n + a.length, 0);
+
+/** The newest turns that fit in `maxChars`, oldest first, and how many earlier ones were left out. A newest turn too
+ * big on its own keeps its latest steps. */
+export function recentTurns(src: Source, toolBudget = 4000, maxChars = HISTORY_MAX_CHARS): { turns: Turn[]; skipped: number } {
+  const all = turns(src, toolBudget);
+  const kept: Turn[] = [];
+  let size = 0;
+  for (let i = all.length - 1; i >= 0; i--) {
+    const t = all[i];
+    if (size + turnSize(t) <= maxChars) {
+      kept.unshift(t);
+      size += turnSize(t);
+      continue;
+    }
+    if (kept.length) break;
+    const user = clip(t.user, maxChars / 4);
+    const steps: string[] = [];
+    let room = maxChars - user.length;
+    for (let j = t.assistant.length - 1; j >= 0 && t.assistant[j].length <= room; j--) {
+      steps.unshift(t.assistant[j]);
+      room -= t.assistant[j].length;
+    }
+    const dropped = t.assistant.length - steps.length;
+    kept.unshift({ ...t, user, assistant: dropped ? [`(${dropped} earlier steps left out)`, ...steps] : steps });
+    size = maxChars;
+  }
+  return { turns: kept, skipped: all.length - kept.length };
+}
+
+export const leftOut = (skipped: number) => `(${skipped} earlier ${skipped === 1 ? "turn" : "turns"} left out)`;
+
 /** A readable transcript, newest turns kept when it doesn't fit. */
 export function transcriptText(src: Source, maxChars = 80_000): string {
   const blocks = turns(src).map((t) => `### User\n${t.user.trim() || "(no message)"}\n\n### ${AGENT_LABEL[src.agent]}\n${t.assistant.join("\n\n") || "(no reply)"}`);
@@ -71,9 +107,11 @@ export function handoffPrompt(src: Source, text: string) {
 
 /* ── into Codex: Responses API items for thread/inject ──── */
 
-export function responsesItems(src: Source): unknown[] {
+export function responsesItems(src: Source, maxChars = HISTORY_MAX_CHARS): unknown[] {
   const items: unknown[] = [];
-  for (const t of turns(src, 4000)) {
+  const recent = recentTurns(src, 4000, maxChars);
+  if (recent.skipped) items.push({ type: "message", role: "user", content: [{ type: "input_text", text: leftOut(recent.skipped) }] });
+  for (const t of recent.turns) {
     if (t.user.trim()) items.push({ type: "message", role: "user", content: [{ type: "input_text", text: t.user }] });
     if (t.assistant.length) items.push({ type: "message", role: "assistant", content: [{ type: "output_text", text: t.assistant.join("\n\n") }] });
   }

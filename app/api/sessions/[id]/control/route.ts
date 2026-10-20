@@ -6,7 +6,7 @@ import { agentControl } from "@/lib/server/agents/routes";
 
 export const dynamic = "force-dynamic";
 
-/** Interrupt the current turn, switch permission mode or model, or shut the web run down. */
+/** Interrupt the current turn, switch permission mode, model or effort, or shut the web run down. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: raw } = await params;
   const body = await readJson(req);
@@ -25,6 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (!mode) return NextResponse.json({ error: "Unknown approval mode." }, { status: 400 });
       await run.setPermissionMode(mode);
     } else if (body.action === "model") await run.setModel(str(body.value) || undefined);
+    else if (body.action === "effort") await run.setEffort(str(body.value) || null);
     else return NextResponse.json({ error: "Unknown action." }, { status: 400 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });

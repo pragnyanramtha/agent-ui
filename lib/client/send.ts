@@ -42,3 +42,11 @@ export async function postReliably<T>(url: string, body: Record<string, unknown>
     }
   }
 }
+
+export type Answer = { requestId: string; allow: boolean; always?: boolean; answers?: Record<string, string>; /** why it was denied, told to the agent */ message?: string };
+
+/** Answers an approval or question. One client id for all its retries, so an answer whose reply was lost can't land twice. */
+export const answerAsk = (session: string, body: Answer) => postReliably<{ ok: true }>(`/api/sessions/${encodeURIComponent(session)}/respond`, body, newClientId(), { forMs: 30_000 });
+
+/** what to tell the user when a post failed */
+export const failureText = (err: unknown) => (err instanceof ApiError && !transient(err) ? err.message : "Couldn't reach the server.");

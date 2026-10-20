@@ -10,7 +10,7 @@ import { parseLines, safeParse, userTitle, type ParseCtx } from "./codex-parse";
  * tails forward from the last complete line. */
 
 export const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-const roots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
+export const rolloutRoots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
 
 const ROLLOUT = /^rollout-.+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 export const idOfRollout = (file: string) => ROLLOUT.exec(path.basename(file))?.[1] ?? null;
@@ -39,7 +39,7 @@ export async function allRollouts(): Promise<string[]> {
       else if (it.isFile() && ROLLOUT.test(it.name)) out.push(p);
     }
   };
-  for (const root of roots()) await walk(root, 0);
+  for (const root of rolloutRoots()) await walk(root, 0);
   const files = cache().files;
   for (const f of out) files.set(idOfRollout(f)!, f);
   return out;
@@ -95,6 +95,8 @@ export type FileMeta = {
   subagent: boolean;
   /** last model seen (turn_context / thread settings) */
   model: string | null;
+  /** when the session started (session_meta's timestamp), ms */
+  created?: number;
   mtime: number;
   size: number;
   /** head facts never change once found; only the tail is re-read on growth */
@@ -117,8 +119,11 @@ async function scanHead(file: string, size: number, meta: FileMeta) {
     const { lines } = await readRecords(file, 0, Math.min(size, step));
     for (const { line } of lines) {
       if (line.includes('"type":"session_meta"')) {
-        const p = safeParse(line)?.payload ?? {};
+        const rec = safeParse(line);
+        const p = rec?.payload ?? {};
         if (typeof p.cwd === "string") meta.cwd = p.cwd;
+        const at = Date.parse(String(p.timestamp ?? rec?.timestamp ?? ""));
+        if (at > 0) meta.created = at;
         const src = p.source;
         meta.subagent = p.thread_source === "subagent" || Boolean(src && typeof src === "object" && "subagent" in src);
       } else if (!meta.firstPrompt && line.includes('"role":"user"')) {

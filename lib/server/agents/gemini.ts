@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Entry, PermissionMode } from "@/lib/types";
 import { failTurn, liveStream, startTurn, stopTurn, turnState, type Run } from "./cli-run";
 import { activeProfile, allProfiles, profileBin, resolveBin } from "../profiles";
-import { chatFiles, chatSummary, geminiEntries, geminiRoot, readChat, type ChatFile } from "./gemini-store";
+import { chatFiles, chatFilesOf, chatSummary, geminiEntries, geminiRoot, readChat, type ChatFile } from "./gemini-store";
 import { pageOf, pollEntries } from "./poll-watch";
 import type { AgentAdapter, AgentSession, CliRunState, HistoryPage } from "./types";
 
@@ -45,7 +45,7 @@ const findChat = (id: string): ChatFile | null => chatFiles(roots()).get(id) ?? 
 
 function toSession(c: ChatFile): AgentSession {
   const s = chatSummary(c);
-  return { id: c.id, title: s.title || "Gemini chat", cwd: c.cwd || startedCwds.get(c.id) || "", mtime: c.mtime, size: c.size, model: s.model };
+  return { id: c.id, title: s.title || "Gemini session", cwd: c.cwd || startedCwds.get(c.id) || "", mtime: c.mtime, size: c.size, model: s.model };
 }
 
 async function list(): Promise<AgentSession[]> {
@@ -296,6 +296,7 @@ const adapter: AgentAdapter = {
   send,
   runState,
   stop: async (id) => stopTurn(KEY(id)),
+  transcriptFiles: async (id) => ({ files: chatFilesOf(roots(), id), roots: roots().map((r) => path.join(r, "tmp")) }),
 };
 
 export default adapter;

@@ -1,14 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { parseMode, readJson, sessionContext, str } from "@/lib/server/http";
+import { folderGone, parseMode, readJson, sessionContext, str } from "@/lib/server/http";
+import { FOLDER_GONE, folderGoneMessage } from "@/lib/empty-states";
 import { InputRefused, inputTarget, typeIntoTerminal } from "@/lib/server/input";
 import { getRun, startRun } from "@/lib/server/runner";
 import { liveTerminals } from "@/lib/server/sessions";
+import { awaitLaunch, isLaunching } from "@/lib/server/launching";
 import { parseSessionKey } from "@/lib/server/agents";
 import { agentMessage } from "@/lib/server/agents/routes";
 import { once } from "@/lib/server/dedupe";
 import { guardTurn, sameStore } from "@/lib/server/fallback";
 import { pickProfile, setSessionProfile } from "@/lib/server/profiles";
 import { beforeTurn } from "@/lib/server/checkpoints";
+import { parseEffort } from "@/lib/agent-traits";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +43,8 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     return NextResponse.json({ error: `Can't switch this session to ${profile.label}. Use Continue in another agent.`, code: "other_store" }, { status: 409 });
   }
   const model = str(body.model) || undefined;
+  /* undefined keeps what the run has (or the profile's default for a new one); null goes back to Claude's default */
+  const effort = parseEffort("claude", body.effort);
 
   let existing = getRun(id);
   /* another account or proxy: the next turn runs in a new process on the same transcript */
@@ -48,12 +53,16 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
     existing = null;
   }
   if (existing) {
+    if (effort !== undefined) await existing.setEffort(effort).catch(() => undefined);
     existing.send(text);
-    guardTurn({ key: id, text, mode: existing.state.permissionMode, model, profile: existing.profile ?? profile });
+    guardTurn({ key: id, text, mode: existing.state.permissionMode, model, effort, profile: existing.profile ?? profile });
     return NextResponse.json({ id: existing.state.sessionId, via: "web" });
   }
 
-  const [ctx, terminal] = await Promise.all([sessionContext(id), liveTerminals(0).then((t) => t.get(id))]);
+  const findTerminal = () => liveTerminals(0).then((t) => t.get(id) ?? null);
+  const [ctx, found] = await Promise.all([sessionContext(id), findTerminal()]);
+  /* the session is being opened in a terminal: send there once it's up, never into a second claude */
+  const terminal = found ?? (isLaunching(id) ? await awaitLaunch(id, findTerminal) : null);
   if (!ctx && !terminal) return NextResponse.json({ error: "Session not found." }, { status: 404 });
 
   if (terminal) {
@@ -79,16 +88,18 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
   /* another request may have started a run while we were awaiting */
   const raced = getRun(id);
   if (raced) {
+    if (effort !== undefined) await raced.setEffort(effort).catch(() => undefined);
     raced.send(text);
     setSessionProfile(id, (raced.profile ?? profile).id);
-    guardTurn({ key: id, text, mode: raced.state.permissionMode, model, profile: raced.profile ?? profile });
+    guardTurn({ key: id, text, mode: raced.state.permissionMode, model, effort, profile: raced.profile ?? profile });
     return NextResponse.json({ id: raced.state.sessionId, via: "web" });
   }
 
+  if (await folderGone(ctx.cwd)) return NextResponse.json({ error: folderGoneMessage(ctx.cwd), code: FOLDER_GONE }, { status: 409 });
   const mode = parseMode(body.permissionMode) ?? parseMode(ctx.meta.permissionMode) ?? "default";
-  const run = startRun({ resume: id, cwd: ctx.cwd, model, permissionMode: mode, profile });
+  const run = startRun({ resume: id, cwd: ctx.cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   setSessionProfile(id, profile.id);
-  guardTurn({ key: id, text, mode, model, profile });
+  guardTurn({ key: id, text, mode, model, effort, profile });
   return NextResponse.json({ id, via: "web" });
 }

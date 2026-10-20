@@ -15,7 +15,7 @@ function Ring({ active, spin, children }: { active?: boolean; spin?: boolean; ch
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--line-strong)" strokeWidth={2} />
         {active && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--ink-2)" strokeWidth={2} strokeLinecap="round" strokeDasharray={`${c * 0.28} ${c * 0.72}`} />}
       </svg>
-      <span className="relative text-[10px] font-semibold text-ink tabular-nums">{children}</span>
+      <span className="relative text-2xs font-semibold text-ink tabular-nums">{children}</span>
     </span>
   );
 }
@@ -40,11 +40,11 @@ export function TodoList({ todos, live = false }: { todos: Todo[]; live?: boolea
                 {i + 1}
               </Ring>
             )}
-            <span className={`min-w-0 flex-1 text-[13px] [overflow-wrap:anywhere] ${status === "completed" ? "text-ink-3 line-through decoration-line-strong" : "font-medium text-ink"}`}>
+            <span className={`min-w-0 flex-1 text-sm [overflow-wrap:anywhere] ${status === "completed" ? "text-ink-3 line-through decoration-line-strong" : "font-medium text-ink"}`}>
               {status === "in_progress" ? t.activeForm || t.content : t.content}
             </span>
             {status === "in_progress" && (
-              <span className="inline-flex h-5.5 shrink-0 items-center rounded-full bg-accent-tint px-2 text-[11.5px] font-medium text-accent-ink">Now</span>
+              <span className="inline-flex h-5.5 shrink-0 items-center rounded-full bg-accent-tint px-2 text-xs font-medium text-accent-ink">Now</span>
             )}
           </div>
         );

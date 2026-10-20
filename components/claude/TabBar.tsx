@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { EditPencil, Folder, List, MailIn, Plus, Settings, Terminal, Xmark } from "iconoir-react";
+import { EditPencil, Folder, List, MailIn, Plus, Settings, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type SessionSummary } from "@/lib/types";
 import { timeAgo } from "@/lib/client/api";
 import { Pulse } from "./Pulse";
-import { AGENT_TONE, AgentBadge, isBusy } from "./SessionList";
-import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, VIEW_TABS, type Tab } from "./useTabs";
+import { AGENT_TONE, AgentBadge, isBusy, useModKey } from "./SessionList";
+import { comboFor, useBindings } from "@/lib/client/shortcuts";
+import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, USAGE_TAB, VIEW_TABS, type Tab } from "./useTabs";
+import { scrollBehavior } from "@/lib/client/motion";
 
-const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences" };
+const VIEW_META: Record<string, string> = { [AGENTS_TAB]: "Agents and terminals", [INBOX_TAB]: "Needs you", [FILES_TAB]: "Files", [SETTINGS_TAB]: "Preferences", [USAGE_TAB]: "Tokens and cost" };
 
 /* ─────────────────────────────────────────────────────────
  * TABS
@@ -58,6 +60,7 @@ function Indicator({ t, size = 2.5 }: { t: TabInfo; size?: number }) {
   if (t.id === NEW_TAB) return <EditPencil width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === AGENTS_TAB) return <Terminal width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === INBOX_TAB) return <MailIn width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
+  if (t.id === USAGE_TAB) return <StatsReport width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.id === SETTINGS_TAB) return <Settings width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (VIEW_TABS[t.id]) return <Folder width={12} height={12} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />;
   if (t.live) return <Pulse busy={t.busy} size={size} cellClass={AGENT_TONE[t.agent]} />;
@@ -86,6 +89,9 @@ export function TabBar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState({ left: false, right: false });
   const [dragging, setDragging] = useState<string | null>(null);
+  const mod = useModKey();
+  const bindings = useBindings();
+  const closeKey = comboFor("closeTab", mod === "⌘", { bindings });
 
   /* fade edges only where there's more to scroll */
   useLayoutEffect(() => {
@@ -110,7 +116,7 @@ export function TabBar({
   /* keep the active tab in view */
   useEffect(() => {
     const el = scrollRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    el?.parentElement?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: scrollBehavior() });
   }, [active, tabs.length]);
 
   /* arrows move focus (manual activation: Enter/Space opens, so the composer doesn't steal focus mid-browse) */
@@ -175,7 +181,8 @@ export function TabBar({
                   onClose(t.id);
                 }}
                 data-on={on || undefined}
-                className={`tab-item group/tab relative flex h-8 w-[184px] shrink-0 items-center rounded-control pr-1 text-[13px] transition-[background-color,color,opacity,box-shadow] duration-150 ${dragging === t.id ? "opacity-50" : ""}`}
+                role="presentation"
+                className={`tab-item group/tab relative flex h-8 w-[184px] shrink-0 items-center rounded-control pr-1 text-sm transition-[background-color,color,opacity,box-shadow] duration-150 ${dragging === t.id ? "opacity-50" : ""}`}
                 style={{ animation: "tab-in 220ms cubic-bezier(0.23,1,0.32,1) both" }}
               >
                 <button
@@ -186,6 +193,7 @@ export function TabBar({
                   aria-controls="session-panel"
                   aria-label={`${t.title}${t.agent !== "claude" ? `, ${AGENT_LABEL[t.agent]}` : ""}${stateLabel(t)}`}
                   tabIndex={on ? 0 : -1}
+                  aria-keyshortcuts="Delete"
                   title={t.agent !== "claude" ? `${t.title}\n${AGENT_LABEL[t.agent]}` : t.title}
                   onClick={() => onSelect(t.id)}
                   className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-control pl-2.5 text-left focus-visible:outline-offset-[-2px]"
@@ -195,11 +203,13 @@ export function TabBar({
                   </span>
                   <span className="min-w-0 truncate">{t.title}</span>
                 </button>
+                {/* pointer-only: inside a tablist only tabs may be exposed; keyboards close with Delete or Alt+W */}
                 <button
                   type="button"
-                  aria-label={`Close ${t.title}`}
-                  title="Close (Alt+W)"
+                  aria-hidden
+                  title={closeKey ? `Close (${closeKey})` : "Close"}
                   tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onClose(t.id)}
                   className={`ml-0.5 flex size-5 shrink-0 items-center justify-center rounded-chip text-ink-3 transition-[background-color,color,opacity] duration-100 hover:bg-hover-2 hover:text-ink pointer-coarse:opacity-100 ${
                     on ? "" : "opacity-0 group-hover/tab:opacity-100 group-focus-within/tab:opacity-100"
@@ -239,7 +249,7 @@ export function TabsButton({ count, attention, onClick }: { count: number; atten
       data-tabs-opener
       className="relative flex size-10 shrink-0 items-center justify-center rounded-[10px] text-ink-2 hover:bg-hover hover:text-ink lg:hidden"
     >
-      <span className="flex h-[19px] min-w-[19px] items-center justify-center rounded-[6px] border-[1.6px] border-current px-[3px] text-[10.5px] font-semibold tabular-nums leading-none">
+      <span className="flex h-[19px] min-w-[19px] items-center justify-center rounded-[6px] border-[1.6px] border-current px-[3px] text-2xs font-semibold tabular-nums leading-none">
         {count > 99 ? "∞" : count}
       </span>
       {attention && <span className="absolute top-2 right-2 size-2 rounded-full bg-orange ring-2 ring-page" aria-hidden />}
@@ -307,12 +317,12 @@ export function TabSheet({
       >
         <div className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong" aria-hidden />
         <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
-          <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-ink">Open tabs</h2>
-          <span className="text-[12.5px] tabular-nums text-ink-3">{tabs.length}</span>
+          <h2 className="text-base font-semibold tracking-[-0.01em] text-ink">Open tabs</h2>
+          <span className="text-sm tabular-nums text-ink-3">{tabs.length}</span>
           <button
             type="button"
             onClick={onNew}
-            className="tap relative ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-ink shadow-btn transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.97]"
+            className="tap relative ml-auto flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink shadow-btn transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.97]"
           >
             <Plus width={15} height={15} strokeWidth={2} aria-hidden />
             New
@@ -337,11 +347,11 @@ export function TabSheet({
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <span className={`min-w-0 truncate text-[15px] font-medium ${on ? "text-ink" : "text-ink-2"}`}>{t.title}</span>
+                      <span className={`min-w-0 truncate text-md font-medium ${on ? "text-ink" : "text-ink-2"}`}>{t.title}</span>
                       {t.agent !== "claude" && <AgentBadge agent={t.agent} />}
                     </span>
                     {(t.meta || t.needsYou) && (
-                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12.5px] text-ink-3">
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm text-ink-3">
                         {t.needsYou && <span className="shrink-0 font-medium text-orange-ink">Needs you</span>}
                         {t.needsYou && t.meta && <span aria-hidden>·</span>}
                         {t.meta && <span className="truncate">{t.meta}</span>}
@@ -365,7 +375,7 @@ export function TabSheet({
           <button
             type="button"
             onClick={onAllSessions}
-            className="flex h-11 w-full items-center gap-3 rounded-card px-3 text-left text-[14px] font-medium text-ink-2 hover:bg-hover hover:text-ink"
+            className="flex h-11 w-full items-center gap-3 rounded-card px-3 text-left text-base font-medium text-ink-2 hover:bg-hover hover:text-ink"
           >
             <List width={17} height={17} strokeWidth={1.8} aria-hidden />
             All sessions

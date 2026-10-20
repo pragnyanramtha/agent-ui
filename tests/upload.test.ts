@@ -49,6 +49,34 @@ describe("resumable upload", () => {
     expect(fs.readFileSync(path.join(dir, "d.txt"), "utf8")).toBe("new");
   });
 
+  it("refuses a chunk declared too large before reading any of it", async () => {
+    let pulled = 0;
+    const body = new ReadableStream<Uint8Array>({ pull: (c) => void (pulled++, c.enqueue(new Uint8Array(1024))) });
+    const req = new NextRequest(`http://x/api/files/upload?dir=${encodeURIComponent(dir)}&name=big.bin&offset=0&total=${20 << 20}&key=k2`, {
+      method: "POST",
+      body,
+      headers: { "content-length": String(10 << 20) },
+      duplex: "half",
+    } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+    expect((await POST(req)).status).toBe(413);
+    expect(pulled).toBeLessThanOrEqual(1);
+    expect(fs.readdirSync(dir).some((f) => f.includes("big.bin"))).toBe(false);
+  });
+
+  it("stops reading a chunk with no length once it passes the limit", async () => {
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull: (c) => {
+        sent += 1 << 20;
+        if (sent > 64 << 20) return c.close();
+        c.enqueue(new Uint8Array(1 << 20));
+      },
+    });
+    const req = new NextRequest(`http://x/api/files/upload?dir=${encodeURIComponent(dir)}&name=big2.bin&offset=0&total=${80 << 20}&key=k3`, { method: "POST", body, duplex: "half" } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+    expect((await POST(req)).status).toBe(413);
+    expect(sent).toBeLessThan(16 << 20);
+  });
+
   it("refuses bad offsets, oversize chunks and path tricks in the name", async () => {
     expect((await chunk("e.txt", 5, 3, Buffer.from("x"))).status).toBe(400);
     expect((await chunk("e.txt", 0, 2, Buffer.from("xyz"))).status).toBe(400);

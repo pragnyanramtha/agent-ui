@@ -4,6 +4,10 @@ import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import { startRun } from "@/lib/server/runner";
 import { sessionRows } from "@/lib/server/rows";
+import { newestFirst } from "@/lib/server/order";
+import { jsonWithEtag } from "@/lib/server/etag";
+import type { ListingSeen } from "@/lib/server/sessions";
+import { matchSession, queryWords } from "@/lib/session-match";
 import { parseMode, readJson, str } from "@/lib/server/http";
 import type { AgentId } from "@/lib/types";
 import { agentStart } from "@/lib/server/agents/routes";
@@ -12,13 +16,41 @@ import { guardTurn } from "@/lib/server/fallback";
 import { pickProfile, setSessionProfile } from "@/lib/server/profiles";
 import { beforeTurn } from "@/lib/server/checkpoints";
 import { GitError, moveCheckpoints, newWorktree } from "@/lib/server/git";
+import { parseEffort } from "@/lib/agent-traits";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const rows = await sessionRows();
-  const projects = [...new Set(rows.map((s) => s.cwd).filter(Boolean))].slice(0, 30);
-  return NextResponse.json({ sessions: rows, projects });
+const PAGE = 120;
+const MAX_LIMIT = 5000;
+/* how far back a search looks: the list's pages are only the newest */
+const SEARCH_SCAN = 2000;
+const SEARCH_CAP = 50;
+
+/** `?limit=` newest rows (pinned ones past it too) and whether there are more; `?q=` the best matches instead. */
+export async function GET(req: NextRequest) {
+  const params = req.nextUrl.searchParams;
+  const q = params.get("q");
+  if (q !== null) return jsonWithEtag(req, { sessions: await findSessions(q) });
+  const asked = Number.parseInt(params.get("limit") ?? "", 10);
+  const limit = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), MAX_LIMIT) : PAGE;
+  const seen: ListingSeen = { total: 0 };
+  const rows = await sessionRows(limit, seen);
+  /* past the last transcript looked at, older Claude sessions could still come before another agent's row */
+  const edge = seen.total > limit ? seen.oldest : undefined;
+  const sessions = rows.filter((s, i) => s.pinned || (i < limit && (!edge || newestFirst(s, edge) <= 0)));
+  const projects = [...new Set(sessions.map((s) => s.cwd).filter(Boolean))].slice(0, 30);
+  return jsonWithEtag(req, { sessions, projects, more: seen.total > limit || rows.length > limit });
+}
+
+async function findSessions(q: string) {
+  const words = queryWords(q.slice(0, 200));
+  if (!words.length) return [];
+  return (await sessionRows(SEARCH_SCAN))
+    .map((s) => ({ s, rank: matchSession(s, words) }))
+    .filter((x) => x.rank > 0)
+    .sort((a, b) => b.rank - a.rank || newestFirst(a.s, b.s))
+    .slice(0, SEARCH_CAP)
+    .map((x) => x.s);
 }
 
 export async function POST(req: NextRequest) {
@@ -68,7 +100,8 @@ async function start(body: Record<string, unknown>) {
   const profile = pickProfile("claude", body.profile, null);
   const model = str(body.model) || undefined;
   const mode = parseMode(body.permissionMode) ?? "default";
-  const run = startRun({ cwd, model, permissionMode: mode, profile });
+  const effort = parseEffort("claude", body.effort);
+  const run = startRun({ cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   const id = await Promise.race([run.sessionId(), new Promise<string>((r) => setTimeout(() => r(""), 90_000))]);
   if (!id) {
@@ -76,6 +109,6 @@ async function start(body: Record<string, unknown>) {
     return NextResponse.json({ error: run.state.error ?? "Claude didn't start in time." }, { status: 502 });
   }
   setSessionProfile(id, profile.id);
-  guardTurn({ key: id, text, mode, model, profile });
+  guardTurn({ key: id, text, mode, model, effort, profile });
   return NextResponse.json({ id });
 }

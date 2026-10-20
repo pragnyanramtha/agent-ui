@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { tailFile } from "@/lib/server/tail";
+import { tailFile, type Gap } from "@/lib/server/tail";
+import { initial, reducer } from "@/lib/client/useSession";
 import type { Entry } from "@/lib/types";
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentu-tail-"));
@@ -64,5 +65,40 @@ describe("transcript tail", () => {
     expect(late.length).toBeLessThanOrEqual(85);
     offLive();
     offLate();
+  });
+
+  it("a viewer far behind is told which bytes it missed, before the entries after them", async () => {
+    const f = path.join(dir, "e.jsonl");
+    const filler = line("x".repeat(100_000));
+    fs.writeFileSync(f, line("very first") + filler.repeat(100));
+    const size = fs.statSync(f).size;
+    const offLive = tailFile(f, size, () => undefined);
+    const order: string[] = [];
+    const gaps: Gap[] = [];
+    const offLate = tailFile(
+      f,
+      0,
+      (e, end) => order.push(`entries:${e.length}:${end}`),
+      (g) => (gaps.push(g), order.push("gap")),
+    );
+    await vi.waitFor(() => expect(order.length).toBe(2), { timeout: 4000 });
+    expect(order[0]).toBe("gap");
+    expect(gaps[0].from).toBe(0);
+    expect(gaps[0].to).toBeGreaterThan(size - 8 * 1024 * 1024);
+    /* the gap ends on a line boundary: what follows is the first entry the viewer got */
+    expect(fs.readFileSync(f).subarray(gaps[0].to - 1, gaps[0].to).toString()).toBe("\n");
+    /* a viewer close enough isn't told anything */
+    const near: Gap[] = [];
+    const offNear = tailFile(f, size - filler.length, () => undefined, (g) => near.push(g));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(near).toEqual([]);
+    offLive();
+    offLate();
+    offNear();
+  });
+
+  it("today's client ignores the gap event", () => {
+    const s = initial();
+    expect(reducer(s, { type: "event", event: { type: "gap", from: 0, to: 10 } })).toBe(s);
   });
 });

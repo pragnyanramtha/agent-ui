@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentId } from "@/lib/types";
 import { codexHome } from "./codex-files";
+import { childEnv } from "../child-env";
 import { pickProfile, type ResolvedProfile } from "../profiles";
 
 /* The models each agent CLI offers, asked from the CLI itself (they change with accounts and releases). */
@@ -15,7 +16,7 @@ const cache = new Map<string, { at: number; list: Promise<ModelChoice[]> }>();
 function run(p: ResolvedProfile, args: string[]): Promise<string> {
   if (!p.binPath) return Promise.resolve("");
   return new Promise((resolve) =>
-    execFile(p.binPath!, args, { env: { ...process.env, ...p.env, NO_COLOR: "1" }, timeout: 30_000, maxBuffer: 4 << 20 }, (_err, stdout) => resolve(String(stdout ?? ""))),
+    execFile(p.binPath!, args, { env: childEnv(p.env, { NO_COLOR: "1" }), timeout: 30_000, maxBuffer: 4 << 20 }, (_err, stdout) => resolve(String(stdout ?? ""))),
   );
 }
 

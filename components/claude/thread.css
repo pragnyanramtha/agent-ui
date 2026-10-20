@@ -1,0 +1,10 @@
+/* Thread prose reads a step softer than the chrome around it; headings, bold text and inline code keep full ink. */
+.thread-prose .prose-claude {
+  color: color-mix(in oklch, var(--ink) 86%, var(--page));
+}
+.thread-prose .prose-claude :is(h1, h2, h3, h4, strong, b, th, code.md-code) {
+  color: var(--ink);
+}
+.thread-prose .prose-claude a code.md-code {
+  color: inherit;
+}

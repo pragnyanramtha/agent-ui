@@ -1,57 +1,52 @@
 "use client";
 
-import { useSetting } from "@/lib/client/settings";
-import { comboFor, modalOpen } from "@/lib/client/shortcuts";
+import { useDefaultEffort, useSetting } from "@/lib/client/settings";
+import { comboFor, isCommand, isMac, modalOpen } from "@/lib/client/shortcuts";
 import { onFirstLine, onLastLine } from "@/lib/client/caret";
+import { composing, enterAction, enterSends, sendHint, type KeyLike } from "@/lib/client/composer-keys";
+import { lineCount, pasteAction, pasteFile } from "@/lib/client/composer-paste";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Attachment, Check, Folder, NavArrowDown, Plus, ShieldAlert, ShieldCheck } from "iconoir-react";
+import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, NavArrowDown, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Trash, Xmark } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
-import { promptAsk } from "./Ask";
+import { confirmAsk, promptAsk } from "./Ask";
+import { AgentIcon } from "./AgentIcon";
+import { chipModel } from "@/lib/model-chip";
+import { useMediaQuery } from "@/lib/client/media";
 import type { SessionCost } from "@/lib/client/usage";
-import { shortPath } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
 import { load, save } from "@/lib/client/storage";
 import { AGENT_LABEL, type AgentId, type PermissionMode, type ProfileInfo } from "@/lib/types";
 import { withAttachments } from "@/lib/attachments";
 import { AttachmentChips, useAttachments } from "./Attachments";
+import { effortLabel, effortOptions } from "@/lib/agent-traits";
+import { insertMention, mentionAt } from "@/lib/client/mentions";
+import { useFileSearch } from "@/lib/client/useFileSearch";
+import { arrangeModels } from "@/lib/model-prefs";
+import { ModelMarks } from "./ModelMarks";
+import { dropStash, loadStash, pushStash, stashTitle, type Stash } from "@/lib/client/stash";
+import { useSharedDraft } from "@/lib/client/share";
+import { MODELS, MODES, modelLabel } from "@/lib/composer-options";
 
-/* The composer pill: one calm surface with a "+" menu on the left, the text
- * in the middle, and one quiet agent/model/approvals picker plus send on the
- * right. Single row while the text fits on one line (and the pill is wide),
- * stacked once it grows. */
+/* The composer: a two-row card. The text on top; under it a footer with the "+" menu, the agent and model,
+ * effort and approvals chips on the left, and context use plus Send (or Stop) on the right. A quiet strip
+ * under the card holds the folder, branch and the send shortcut. */
 
-export const MODES: { key: PermissionMode; name: string; short: string; desc: string }[] = [
-  { key: "default", name: "Ask before acting", short: "Ask first", desc: "Approve edits and commands here" },
-  { key: "acceptEdits", name: "Accept edits", short: "Accept edits", desc: "File edits go through, commands still ask" },
-  { key: "plan", name: "Plan only", short: "Plan", desc: "Read and propose, no changes" },
-  { key: "bypassPermissions", name: "Bypass approvals", short: "Bypass", desc: "Everything runs without asking" },
-];
+export { MODELS, MODES, modelLabel };
 
-/* the labels in the segmented approvals control */
-const MODE_SEG: Record<PermissionMode, string> = { default: "Ask", acceptEdits: "Edits", plan: "Plan", bypassPermissions: "Bypass" };
-
-export const MODELS = [
-  { key: "", name: "Default" },
-  { key: "opus", name: "Opus" },
-  { key: "sonnet", name: "Sonnet" },
-  /* the "haiku" alias still resolves to Haiku 4.5 on current Claude Code */
-  { key: "claude-haiku-5-5", name: "Haiku 5.5" },
-];
-
-export function modelLabel(model: string | null) {
-  if (!model) return "Default";
-  const m = /claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/.exec(model);
-  if (m) return `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] && m[3].length < 3 ? `.${m[3]}` : ""}`;
-  return MODELS.find((x) => x.key === model)?.name ?? model;
-}
+const MODE_ICON: Record<PermissionMode, typeof ShieldCheck> = { default: ShieldQuestion, acceptEdits: ShieldCheck, plan: PlanIcon, bypassPermissions: ShieldAlert };
 
 export type AgentOption = { id: AgentId; label: string; installed: boolean };
 
-type Menu = "slash" | "pick" | "plus" | null;
+type Menu = "slash" | "mention" | "pick" | "plus" | "stash" | "effort" | "mode" | null;
 
 const KIND_LABEL: Record<SlashItem["kind"], string> = { app: "This app", builtin: "Claude Code", command: "Your commands", skill: "Skills" };
 
-const MENU_W = { pick: 272, plus: 232 };
+const MENU_W = { pick: 272, plus: 248, effort: 280, mode: 288 };
+
+/* the textarea's line height and vertical padding, for the height cap */
+const LINE_PX = 24;
+const PAD_PX = 18;
 
 function MenuShell({
   children,
@@ -98,16 +93,23 @@ function moveFocus(e: React.KeyboardEvent<HTMLElement>) {
 
 function MenuLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p role="presentation" className="px-2.5 pt-2 pb-1 text-[11.5px] font-medium text-ink-3">
+    <p role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
       {children}
     </p>
   );
 }
 
-const menuRow =
-  "flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13.5px] text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent h-10 sm:h-8 sm:text-[13px]";
+const menuRowBase =
+  "flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-sm text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent";
+const menuRow = `${menuRowBase} h-10 sm:h-8`;
 
 const ghost = "tap relative flex shrink-0 items-center justify-center rounded-full text-ink-2 transition-[background-color,color] duration-150 hover:bg-hover hover:text-ink";
+
+/* footer chips: 32px with a mouse, 44px on touch */
+const chip =
+  "tap relative flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm transition-[background-color,color] duration-150 pointer-coarse:h-11 pointer-coarse:px-2.5";
+const chipOff = "text-ink-2 hover:bg-hover hover:text-ink";
+const chipOn = "bg-hover text-ink";
 
 export function Composer({
   draftKey,
@@ -140,6 +142,13 @@ export function Composer({
   profile,
   onProfileChange,
   history,
+  effort = "",
+  onEffortChange,
+  defaultEffort = null,
+  root,
+  context,
+  contextEnd,
+  note = null,
 }: {
   draftKey: string;
   placeholder: string;
@@ -183,9 +192,40 @@ export function Composer({
   onProfileChange?: (id: string) => void;
   /** messages already sent in this session, oldest first; Arrow Up in an empty box brings them back */
   history?: string[];
+  /** reasoning effort picked for this session, "" for the default (the profile's, else the agent's own);
+   * the chip shows when the agent has levels and this is handled */
+  effort?: string;
+  onEffortChange?: (effort: string) => void;
+  /** the profile's default level, named on the Default row */
+  defaultEffort?: string | null;
+  /** the session's folder: @ lists its files */
+  root?: string;
+  /** the strip under the card, after the folder chip (branch, worktree toggle) */
+  context?: React.ReactNode;
+  /** the strip's right end, before the send shortcut hint */
+  contextEnd?: React.ReactNode;
+  /** the box takes a note instead of a message (a reason for denying, an edited prompt); the draft waits until it's done.
+   * `text` starts the box with it, `tone` "accent" for what isn't a denial */
+  note?: { label: string; placeholder: string; onSend: (text: string) => Promise<boolean>; onCancel: () => void; text?: string; tone?: "accent"; cancelLabel?: string } | null;
 }) {
   const [draft, setDraft] = useState("");
-  const [sendWithEnter] = useSetting("sendWithEnter");
+  const [caret, setCaret] = useState(0);
+  /* where the caret goes once a picked path is in the box */
+  const caretAfter = useRef<number | null>(null);
+  const [sendShortcut] = useSetting("sendShortcut");
+  const [busySend] = useSetting("busySend");
+  const [spellCheck] = useSetting("spellCheck");
+  const [phoneAutocorrect] = useSetting("phoneAutocorrect");
+  const [maxLines] = useSetting("composerMaxLines");
+  const [rememberDrafts] = useSetting("rememberDrafts");
+  const [longPaste] = useSetting("longPaste");
+  const [longPasteLines] = useSetting("longPasteLines");
+  const settingsEffort = useDefaultEffort(agent);
+  const touch = !useMediaQuery("(pointer: fine)");
+  const [mac, setMac] = useState(false);
+  useEffect(() => setMac(isMac()), []);
+  /* a paste over the limit went into this draft (Long pastes: Ask before sending) */
+  const pastedLong = useRef(false);
   /* index into `history` while stepping through it with the arrows; null when not recalling */
   const recall = useRef<number | null>(null);
   const [menu, setMenu] = useState<Menu>(null);
@@ -195,12 +235,14 @@ export function Composer({
   const [menuMax, setMenuMax] = useState(416);
   const [active, setActive] = useState(0);
   const [sending, setSending] = useState(false);
-  const [wide, setWide] = useState(true);
-  const [multi, setMulti] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  /* the card and its menus, without the strip under it: menus open from its edges */
+  const boxRef = useRef<HTMLDivElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const effortRef = useRef<HTMLButtonElement>(null);
+  const modeRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const [catalog, setCatalog] = useState<SlashItem[]>([]);
@@ -208,6 +250,8 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileNote, setFileNote] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [stashes, setStashes] = useState<Stash[]>([]);
+  useEffect(() => setStashes(loadStash(root)), [root]);
   const addFiles = (list: FileList | File[]) => setFileNote(files.add(list));
   useEffect(() => {
     if (!fileNote) return;
@@ -227,40 +271,52 @@ export function Composer({
     };
   }, [cwd]);
 
-  /* drafts survive reloads and switching sessions */
+  /* drafts survive reloads and switching sessions (Settings > Composer > Remember drafts) */
+  const keepDrafts = useRef(rememberDrafts);
+  keepDrafts.current = rememberDrafts;
   useEffect(() => {
-    setDraft(load(`draft:${draftKey}`) ?? "");
+    setDraft(keepDrafts.current ? (load(`draft:${draftKey}`) ?? "") : "");
+    pastedLong.current = false;
   }, [draftKey]);
   useEffect(() => {
-    save(`draft:${draftKey}`, draft || null);
-  }, [draft, draftKey]);
+    if (!note) save(`draft:${draftKey}`, rememberDrafts ? draft || null : null);
+    if (!draft) pastedLong.current = false;
+  }, [draft, draftKey, rememberDrafts, note]);
+  /* a note gets an empty box; the message draft comes back when it's sent or cancelled */
+  const noting = Boolean(note);
+  const noteText = note?.text;
+  const heldDraft = useRef<string | null>(null);
+  useEffect(() => {
+    if (noting) {
+      if (heldDraft.current === null) heldDraft.current = draft;
+      setDraft(noteText ?? "");
+      if (noteText) caretAfter.current = noteText.length;
+      inputRef.current?.focus();
+    } else if (heldDraft.current !== null) {
+      setDraft(heldDraft.current);
+      heldDraft.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noting, noteText]);
 
   useEffect(() => {
     if (autoFocus && window.matchMedia("(pointer: fine)").matches) inputRef.current?.focus();
   }, [autoFocus, draftKey]);
-
-  /* one row only when there's room for it */
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setWide(el.offsetWidth >= 520));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const stacked = !wide || multi;
+  /* shared from another app (lib/client/share.ts): a new session starts with it */
+  useSharedDraft(draftKey === "new", (s) => {
+    if (s.text) setDraft((d) => (d.trim() ? `${d.replace(/\s+$/, "")}\n\n${s.text}` : s.text));
+    files.restore(s.files);
+  });
 
   useLayoutEffect(() => {
     const el = inputRef.current;
     if (!el) return;
+    const cap = maxLines * LINE_PX + PAD_PX;
     el.style.height = "0px";
     const h = el.scrollHeight;
-    el.style.height = `${Math.min(Math.max(h, 36), 200)}px`;
-    el.style.overflowY = h > 200 ? "auto" : "hidden";
-    /* grow into the stacked layout once the text wraps; go back only when the box is cleared */
-    if (!draft) setMulti(false);
-    else if (!stacked && (h > 44 || draft.includes("\n"))) setMulti(true);
-  }, [draft, stacked]);
+    el.style.height = `${Math.min(Math.max(h, 44), cap)}px`;
+    el.style.overflowY = h > cap ? "auto" : "hidden";
+  }, [draft, maxLines]);
 
   const slashQuery = /^\/([\w:-]*)$/.exec(draft)?.[1];
   const allCommands = useMemo(() => {
@@ -268,19 +324,30 @@ export function Composer({
     const disk = agent === "claude" ? catalog : [];
     const known = new Set(disk.map((c) => c.name));
     const live = slashCommands.filter((n) => !known.has(n)).map((name): SlashItem => ({ name, description: "", kind: "command" }));
-    return [...(onAppCommand ? APP_COMMANDS : []), ...disk, ...live];
+    const app = APP_COMMANDS.filter((c) => c.name !== "effort" || effortOptions(agent).length > 0);
+    return [...(onAppCommand ? app : []), ...disk, ...live];
   }, [catalog, slashCommands, onAppCommand, agent]);
   /* "Commands" in the + menu opens the list without touching the text; picking one prefixes it */
   const forcedSlash = menu === "slash";
   const commands = slashQuery !== undefined ? rankCommands(allCommands, slashQuery) : forcedSlash ? rankCommands(allCommands, "") : [];
-  const openMenu: Menu = menu ?? (slashQuery !== undefined && !slashHidden ? "slash" : null);
+  const mention = root && slashQuery === undefined ? mentionAt(draft, caret) : null;
+  const found = useFileSearch(root, mention?.query);
+  const openMenu: Menu = menu ?? (slashHidden ? null : slashQuery !== undefined ? "slash" : mention ? "mention" : null);
 
-  useEffect(() => setActive(0), [slashQuery, forcedSlash]);
+  useEffect(() => setActive(0), [slashQuery, forcedSlash, mention?.query]);
+
+  useLayoutEffect(() => {
+    const at = caretAfter.current;
+    if (at === null) return;
+    caretAfter.current = null;
+    inputRef.current?.setSelectionRange(at, at);
+    setCaret(at);
+  }, [draft]);
 
   /* menus open toward the side of the screen with more room */
   useLayoutEffect(() => {
     if (!openMenu) return;
-    const r = rootRef.current?.getBoundingClientRect();
+    const r = boxRef.current?.getBoundingClientRect();
     if (!r) return;
     const up = r.top > window.innerHeight - r.bottom;
     setPlacement(up ? "up" : "down");
@@ -290,13 +357,17 @@ export function Composer({
 
   /* close on Escape, outside taps, or focus leaving the composer; return focus to the trigger */
   const [modelQ, setModelQ] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
+  const [favoriteModels] = useSetting("favoriteModels");
+  const [hiddenModels] = useSetting("hiddenModels");
   useEffect(() => {
     if (openMenu !== "pick") setModelQ("");
   }, [openMenu]);
 
   const closeMenu = useCallback(
     (refocus: boolean) => {
-      const trigger = menu === "pick" ? pickRef.current : menu === "plus" ? plusRef.current : inputRef.current;
+      const trigger =
+        menu === "pick" ? pickRef.current : menu === "plus" || menu === "stash" ? plusRef.current : menu === "effort" ? effortRef.current : menu === "mode" ? modeRef.current : inputRef.current;
       setMenu(null);
       setSlashHidden(true);
       if (refocus) trigger?.focus();
@@ -329,23 +400,20 @@ export function Composer({
 
   /* the picker takes focus on the checked item (the + menu on its first) so arrows work right away */
   useEffect(() => {
-    if (menu !== "pick" && menu !== "plus") return;
+    if (menu !== "pick" && menu !== "plus" && menu !== "stash" && menu !== "effort" && menu !== "mode") return;
     const root = menuRef.current;
-    const el = (menu === "pick" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
+    const el = (menu !== "plus" ? root?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]') : null) ?? root?.querySelector<HTMLElement>(ITEM_SELECTOR);
     el?.focus({ preventScroll: true });
   }, [menu]);
 
-  const toggleMenu = (which: "pick" | "plus") => {
-    if (menu === which) return closeMenu(false);
-    const root = rootRef.current?.getBoundingClientRect();
-    const trigger = (which === "pick" ? pickRef.current : plusRef.current)?.getBoundingClientRect();
-    if (root && trigger) {
-      const w = Math.min(MENU_W[which], root.width);
-      setMenuPos(
-        which === "pick"
-          ? { right: Math.max(0, Math.min(root.right - trigger.right - 4, root.width - w)) }
-          : { left: Math.max(0, Math.min(trigger.left - root.left - 4, root.width - w)) },
-      );
+  const toggleMenu = (which: "pick" | "plus" | "effort" | "mode") => {
+    if (menu === which || (which === "plus" && menu === "stash")) return closeMenu(false);
+    if (which === "plus") setStashes(loadStash(root));
+    const box = boxRef.current?.getBoundingClientRect();
+    const trigger = { pick: pickRef, effort: effortRef, mode: modeRef, plus: plusRef }[which].current?.getBoundingClientRect();
+    if (box && trigger) {
+      const w = Math.min(MENU_W[which], box.width);
+      setMenuPos({ left: Math.max(0, Math.min(trigger.left - box.left - 4, box.width - w)) });
     }
     setMenu(which);
   };
@@ -353,20 +421,30 @@ export function Composer({
   const hasFiles = files.items.length > 0;
   const canSend = (draft.trim().length > 0 || hasFiles) && !sending && !files.uploading && !files.failed;
   const stopFirst = Boolean(running && onStop && !draft.trim() && !hasFiles && !sending);
+  /* Settings > Composer: a send while the agent works stops the turn first */
+  const interrupts = Boolean(running && busySend === "interrupt");
   const send = async () => {
     if (!canSend) return;
     const typed = draft.trim();
     const text = withAttachments(typed, files.paths);
     const app = /^\/(\w+)(?:\s+([\s\S]*))?$/.exec(text);
-    if (app && !hasFiles && onAppCommand && APP_COMMANDS.some((c) => c.name === app[1]) && onAppCommand(app[1], (app[2] ?? "").trim())) {
+    if (app && !note && !hasFiles && onAppCommand && APP_COMMANDS.some((c) => c.name === app[1]) && onAppCommand(app[1], (app[2] ?? "").trim())) {
       setDraft("");
       return;
     }
+    const lines = lineCount(typed);
+    if (longPaste === "confirm" && pastedLong.current && lines > longPasteLines) {
+      const go = await confirmAsk({ title: `Send ${lines} lines?`, body: "This message has a long paste in it.", confirm: "Send" });
+      if (!go) return inputRef.current?.focus();
+    }
     setSending(true);
     setDraft("");
-    const ok = await onSend(text).catch(() => false);
+    const ok = await (note ? note.onSend : onSend)(text).catch(() => false);
     if (!ok) setDraft(typed);
-    else files.clear();
+    else {
+      files.clear();
+      pastedLong.current = false;
+    }
     setSending(false);
   };
 
@@ -377,38 +455,99 @@ export function Composer({
     inputRef.current?.focus();
   };
 
+  const keptFiles = () => files.items.filter((a) => a.state === "done" && a.path).map((a) => ({ name: a.name, size: a.size, path: a.path! }));
+  const canStash = Boolean(draft.trim() || keptFiles().length);
+  /** puts the draft (and its uploaded files) aside and clears the box; false when nothing was stashed */
+  const stashDraft = (quiet = false) => {
+    if (files.uploading) return setFileNote("Wait for the upload to finish."), false;
+    const kept = keptFiles();
+    if (!draft.trim() && !kept.length) return !quiet && setFileNote("Nothing to stash."), false;
+    const list = pushStash(root, draft, kept);
+    if (!list) return setFileNote("Couldn't stash. Browser storage is full or turned off."), false;
+    setStashes(list);
+    setDraft("");
+    files.clear();
+    recall.current = null;
+    if (!quiet) setFileNote("Prompt stashed. Restore it from the + menu.");
+    return true;
+  };
+  /* a draft in the box is stashed first, so restoring never loses text */
+  const restoreStash = (s: Stash) => {
+    if ((draft.trim() || files.items.length) && !stashDraft(true)) return;
+    const swapped = Boolean(draft.trim() || files.items.length);
+    setStashes(dropStash(root, s.id));
+    setDraft(s.text);
+    files.restore(s.files);
+    setMenu(null);
+    if (swapped) setFileNote("Your draft was stashed.");
+    inputRef.current?.focus();
+  };
+  const deleteStash = (id: string) => {
+    setStashes(dropStash(root, id));
+    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLElement>(ITEM_SELECTOR)?.focus({ preventScroll: true }));
+  };
+
+  const pickMention = (rel: string) => {
+    if (!mention) return;
+    const next = insertMention(draft, mention.start, mention.end, rel);
+    caretAfter.current = next.caret;
+    setDraft(next.text);
+    inputRef.current?.focus();
+  };
+
   const currentMode = MODES.find((m) => m.key === mode) ?? MODES[0];
+  const efforts = onEffortChange ? effortOptions(agent) : [];
+  /* a session's own effort, else the profile's default, else the one in Settings > Composer */
+  const fallbackEffort = defaultEffort || settingsEffort || null;
+  const effortName = effortLabel(agent, effort || fallbackEffort);
   const slashOpen = openMenu === "slash";
+  const mentionOpen = openMenu === "mention";
   /* with `agents` (even while it loads) the agent is choosable; the Claude section is always there */
   const pickable = agents && onAgentChange;
   const agentLabel = agents?.find((a) => a.id === agent)?.label ?? AGENT_LABEL[agent];
-  /* new sessions name the agent ("Claude · Opus", "Codex"); replies only the model */
   const modelName = (m: string | null) => (m && models.find((x) => x.key === m)?.name) || modelLabel(m);
-  const pickLabel = pickable ? (model ? `${agentLabel} · ${modelName(model)}` : agentLabel) : modelName(model);
   const modelOn = (key: string, list: { key: string }[]) => key === (model && list.some((x) => x.key === model) ? model : "");
   const busy = sending && busyLabel;
   const profileChoices = onProfileChange ? (profiles ?? []).filter((p) => p.agent === agent && !p.hidden) : [];
   const profileOn = profileChoices.find((p) => p.id === profile);
-  const pickText = profileOn && profileChoices.length > 1 && profileOn.id !== agent ? `${profileOn.label}${model ? ` · ${modelName(model)}` : ""}` : pickLabel;
+  /* "Default" is never the label: name the model the server will pick (the profile's), else the one the session last
+   * reported using, else the agent */
+  const activeProfile = (profiles ?? []).find((p) => p.id === (profile ?? agent));
+  const defaultModel = activeProfile?.defaultModel || activeProfile?.models[0] || null;
+  const shownModel = chipModel(model, activeProfile, usage?.model).model;
+  const profilePrefix = profileOn && profileChoices.length > 1 && profileOn.id !== agent ? profileOn.label : null;
+  const pickText = profilePrefix ? (shownModel ? `${profilePrefix} · ${modelName(shownModel)}` : profilePrefix) : shownModel ? modelName(shownModel) : agentLabel;
+  const ModeIcon = MODE_ICON[mode];
+  const hint = sendHint(sendShortcut, touch, mac);
 
-  const modelRow = (m: { key: string; name: string }, list: { key: string }[], on: boolean, onPick: () => void) => (
-    <button
-      key={m.key || "default"}
-      type="button"
-      role="menuitemradio"
-      aria-checked={on}
-      onClick={onPick}
-      className={menuRow}
-    >
-      <span className="min-w-0 truncate">{m.name}</span>
-      {m.key === "" && model && !list.some((x) => x.key === model) && <span className="truncate text-[12px] text-ink-3">{modelName(model)}</span>}
-      {on && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
-    </button>
-  );
+  const modelRow = (m: { key: string; name: string }, list: { key: string }[], on: boolean, onPick: () => void) => {
+    /* the Default row says what it resolves to */
+    const hint = m.key !== "" ? null : model && !list.some((x) => x.key === model) ? modelName(model) : m.name === "Default" ? (defaultModel ? modelName(defaultModel) : null) : null;
+    const row = (
+      <button key={m.key || "default"} type="button" role="menuitemradio" aria-checked={on} onClick={onPick} className={menuRow}>
+        <span className="min-w-0 truncate">{m.name}</span>
+        {hint && <span className="truncate text-xs text-ink-3">{hint}</span>}
+        {on && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
+      </button>
+    );
+    return m.key === "" ? row : (
+      <div key={m.key} className="group/model flex min-w-0 items-center">
+        {row}
+        <ModelMarks id={m.key} name={m.name} />
+      </div>
+    );
+  };
 
   /* long CLI lists (Cursor has hundreds) get a filter; Default and the current model stay visible */
   const q = modelQ.trim().toLowerCase();
-  const shownModels = q ? models.filter((m) => m.key === "" || m.key === model || `${m.key} ${m.name}`.toLowerCase().includes(q)) : models;
+  const modelPrefs = { favorites: favoriteModels, hidden: hiddenModels };
+  const arranged = arrangeModels(models, modelPrefs, { current: model, query: q, showHidden });
+  const shownModels = arranged.rows;
+  const showHiddenRow = arranged.hiddenCount > 0 && !q && (
+    <button type="button" role="menuitem" onClick={() => setShowHidden((v) => !v)} className={`${menuRow} text-ink-3`}>
+      {showHidden ? "Leave out hidden models" : `Show ${arranged.hiddenCount} hidden`}
+    </button>
+  );
   const modelList = (
     <>
       {models.length > 12 && (
@@ -421,14 +560,14 @@ export function Composer({
             }}
             placeholder={`Filter ${models.length - 1} models…`}
             aria-label="Filter models"
-            className="h-9 w-full rounded-[8px] bg-inset px-2.5 text-[13px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8"
+            className="h-9 w-full rounded-[8px] bg-inset px-2.5 text-sm text-ink shadow-hairline outline-none placeholder:text-ink-3 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-8"
             autoComplete="off"
             spellCheck={false}
             autoCapitalize="off"
           />
         </div>
       )}
-      {/* long lists scroll on their own so the approvals below stay in reach */}
+      {/* long lists scroll on their own so the accounts below stay in reach */}
       <div className={models.length > 12 ? "max-h-[min(36dvh,300px)] overflow-y-auto overscroll-contain" : undefined}>
         {shownModels.map((m) =>
           modelRow(m, models, modelOn(m.key, models), () => {
@@ -436,7 +575,8 @@ export function Composer({
             closeMenu(true);
           }),
         )}
-        {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-[12.5px] text-ink-3">No models match.</p>}
+        {q && shownModels.every((m) => m.key === "" || m.key === model) && <p className="px-2.5 py-1.5 text-sm text-ink-3">No models match.</p>}
+        {showHiddenRow}
       </div>
     </>
   );
@@ -458,7 +598,8 @@ export function Composer({
     ) : null;
 
   return (
-    <div ref={rootRef} className="relative w-full" data-composer>
+    <div ref={rootRef} className="w-full" data-composer>
+      <div ref={boxRef} className="relative">
       {slashOpen && (
         <MenuShell placement={placement} maxHeight={Math.min(menuMax, 416)}>
           <div role="listbox" id={`${uid}-slash`} aria-label="Slash commands">
@@ -466,7 +607,7 @@ export function Composer({
               const header = i === 0 || commands[i - 1].kind !== c.kind ? KIND_LABEL[c.kind] : null;
               return (
                 <div key={`${c.kind}:${c.name}`}>
-                  {header && !slashQuery && <p className="px-2.5 pt-2 pb-1 text-[11.5px] font-medium text-ink-3">{header}</p>}
+                  {header && !slashQuery && <p className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">{header}</p>}
                   <button
                     id={`${uid}-cmd-${i}`}
                     type="button"
@@ -480,20 +621,60 @@ export function Composer({
                     className={`flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 py-2 text-left transition-colors duration-75 sm:py-1.5 ${i === active ? "bg-hover" : ""}`}
                   >
                     <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-baseline sm:gap-2.5">
-                      <span className="shrink-0 font-mono text-[13px] text-ink sm:text-[12.5px]" translate="no">
+                      <span className="shrink-0 font-mono text-sm text-ink" translate="no">
                         /{c.name}
                         {c.hint && <span className="text-ink-3"> {c.hint}</span>}
                       </span>
-                      {c.description && <span className="min-w-0 truncate text-[12px] text-ink-3">{c.description}</span>}
+                      {c.description && <span className="min-w-0 truncate text-xs text-ink-3">{c.description}</span>}
                     </span>
-                    {slashQuery ? <span className="shrink-0 text-[10.5px] font-medium text-ink-3">{KIND_LABEL[c.kind]}</span> : null}
+                    {slashQuery ? <span className="shrink-0 text-2xs font-medium text-ink-3">{KIND_LABEL[c.kind]}</span> : null}
                   </button>
                 </div>
               );
             })}
           </div>
           {commands.length === 0 && (
-            <p className="px-2.5 py-2 text-[12.5px] text-ink-3">{allCommands.length ? `No command matches “${slashQuery}”.` : "Loading commands…"}</p>
+            <p className="px-2.5 py-2 text-sm text-ink-3">{allCommands.length ? `No command matches “${slashQuery}”.` : "Loading commands…"}</p>
+          )}
+        </MenuShell>
+      )}
+
+      {mentionOpen && (
+        <MenuShell placement={placement} maxHeight={Math.min(menuMax, 416)}>
+          <div role="listbox" id={`${uid}-files`} aria-label="Files">
+            {found.files.map((f, i) => {
+              const cut = f.lastIndexOf("/");
+              return (
+                <button
+                  key={f}
+                  id={`${uid}-file-${i}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  tabIndex={-1}
+                  ref={i === active ? (el) => el?.scrollIntoView({ block: "nearest" }) : undefined}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => pickMention(f)}
+                  className={`flex h-10 w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left transition-colors duration-75 sm:h-8 ${i === active ? "bg-hover" : ""}`}
+                >
+                  <span className="shrink-0 truncate font-mono text-sm text-ink" translate="no">
+                    {f.slice(cut + 1)}
+                  </span>
+                  {cut > 0 && (
+                    /* rtl keeps the end of a long folder path in view; bdi keeps its characters in order */
+                    <span className="min-w-0 truncate text-xs text-ink-3" translate="no" dir="rtl">
+                      <bdi>{f.slice(0, cut)}</bdi>
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {found.files.length === 0 && (
+            <p className="px-2.5 py-2 text-sm text-ink-3">
+              {found.loading ? "Searching files…" : found.error ? "Couldn't list files here." : mention?.query ? `No files match “${mention.query}”.` : "No files here."}
+            </p>
           )}
         </MenuShell>
       )}
@@ -514,7 +695,7 @@ export function Composer({
                 <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
                 <span className="shrink-0">Folder</span>
                 {folder && (
-                  <span className="ml-auto min-w-0 truncate text-[12px] text-ink-3" translate="no">
+                  <span className="ml-auto min-w-0 truncate text-xs text-ink-3" translate="no">
                     {shortPath(folder)}
                   </span>
                 )}
@@ -545,24 +726,110 @@ export function Composer({
               }}
               className={menuRow}
             >
-              <span aria-hidden className="flex size-4 shrink-0 items-center justify-center font-mono text-[14px] leading-none text-ink-2">
+              <span aria-hidden className="flex size-4 shrink-0 items-center justify-center font-mono text-base leading-none text-ink-2">
                 /
               </span>
               <span>Commands</span>
-              <span className="ml-auto text-[12px] text-ink-3">Type /</span>
+              <span className="ml-auto text-xs text-ink-3">Type /</span>
             </button>
+            <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!canStash}
+              onClick={() => {
+                setMenu(null);
+                stashDraft();
+                inputRef.current?.focus();
+              }}
+              className={`${menuRow} disabled:text-ink-3`}
+            >
+              <Archive width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span>Stash prompt</span>
+              <span className="ml-auto text-xs text-ink-3 pointer-coarse:hidden">{comboFor("stash")}</span>
+            </button>
+            {stashes.length > 0 && (
+              <button type="button" role="menuitem" aria-haspopup="menu" onClick={() => setMenu("stash")} className={menuRow}>
+                <span aria-hidden className="size-4 shrink-0" />
+                <span>Stashed prompts</span>
+                <span className="ml-auto text-xs text-ink-3 tabular-nums">{stashes.length}</span>
+              </button>
+            )}
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "stash" && (
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={300}>
+          <div ref={menuRef} role="menu" id={`${uid}-stash`} aria-label="Stashed prompts" onKeyDown={moveFocus}>
+            <MenuLabel>Stashed prompts</MenuLabel>
+            {stashes.map((st) => {
+              const title = stashTitle(st);
+              return (
+                <div key={st.id} className="flex min-w-0 items-center gap-0.5">
+                  <button type="button" role="menuitem" onClick={() => restoreStash(st)} title="Put back in the box" className={`${menuRow} flex-1`}>
+                    <span className="min-w-0 flex-1 truncate">{title}</span>
+                    {st.files.length > 0 && <Attachment width={14} height={14} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-label={`${st.files.length} attached`} />}
+                    <span className="shrink-0 text-xs text-ink-3 tabular-nums">{timeAgo(st.at)}</span>
+                  </button>
+                  <button type="button" role="menuitem" aria-label={`Delete stashed prompt: ${title}`} title="Delete" onClick={() => deleteStash(st.id)} className={`${ghost} size-10 rounded-[8px] sm:size-8`}>
+                    <Trash width={15} height={15} strokeWidth={1.8} aria-hidden />
+                  </button>
+                </div>
+              );
+            })}
+            {stashes.length === 0 && <p className="px-2.5 py-2 text-sm text-ink-3">No stashed prompts.</p>}
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "effort" && efforts.length > 0 && (
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={MENU_W.effort}>
+          <div ref={menuRef} role="menu" id={`${uid}-effort`} aria-label="Reasoning effort" onKeyDown={moveFocus}>
+            <MenuLabel>Reasoning effort</MenuLabel>
+            {[
+              {
+                key: "",
+                name: "Default",
+                desc: defaultEffort
+                  ? `Profile default: ${effortLabel(agent, defaultEffort) ?? defaultEffort}`
+                  : settingsEffort
+                    ? `Your default: ${effortLabel(agent, settingsEffort) ?? settingsEffort}`
+                    : `${agentLabel} decides`,
+              },
+              ...efforts,
+            ].map((o) => {
+              const on = o.key === effort;
+              return (
+                <button
+                  key={o.key || "default"}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    onEffortChange?.(o.key);
+                    closeMenu(true);
+                  }}
+                  className={menuRow}
+                >
+                  <span className="shrink-0">{o.name}</span>
+                  <span className="ml-auto min-w-0 truncate text-xs text-ink-3">{o.desc}</span>
+                  <Check width={15} height={15} strokeWidth={2.2} className={`shrink-0 text-ink ${on ? "" : "invisible"}`} aria-hidden />
+                </button>
+              );
+            })}
           </div>
         </MenuShell>
       )}
 
       {openMenu === "pick" && (
-        <MenuShell placement={placement} maxHeight={menuMax} right={menuPos.right} width={MENU_W.pick}>
-          <div ref={menuRef} role="menu" id={`${uid}-pick`} aria-label={pickable ? "Agent, model and approvals" : "Model and approvals"} onKeyDown={moveFocus}>
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={MENU_W.pick}>
+          <div ref={menuRef} role="menu" id={`${uid}-pick`} aria-label={pickable ? "Agent and model" : "Model"} onKeyDown={moveFocus}>
             {pickable ? (
               <>
                 <div role="group" aria-label="Claude">
                   <MenuLabel>Claude</MenuLabel>
-                  {(agent === "claude" ? models : MODELS).map((m, _i, list) =>
+                  {arrangeModels(agent === "claude" ? models : MODELS, modelPrefs, { current: agent === "claude" ? model : null, showHidden: true }).rows.map((m, _i, list) =>
                     modelRow(m, list, agent === "claude" && modelOn(m.key, list), () => {
                       if (agent !== "claude") onAgentChange("claude");
                       onModelChange(m.key);
@@ -590,7 +857,7 @@ export function Composer({
                           className={menuRow}
                         >
                           <span className={a.installed ? "" : "text-ink-3"}>{a.label}</span>
-                          {!a.installed && <span className="ml-auto text-[12px] text-ink-3">Not installed</span>}
+                          {!a.installed && <span className="ml-auto text-xs text-ink-3">Not installed</span>}
                           {agent === a.id && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
                         </button>
                       ))}
@@ -629,47 +896,50 @@ export function Composer({
                     className={menuRow}
                   >
                     <span className={`min-w-0 truncate ${p.installed ? "" : "text-ink-3"}`}>{p.label}</span>
-                    {!p.installed && <span className="ml-auto text-[12px] text-ink-3">Not installed</span>}
+                    {!p.installed && <span className="ml-auto text-xs text-ink-3">Not installed</span>}
                     {p.id === profile && <Check width={15} height={15} strokeWidth={2.2} className="ml-auto shrink-0 text-ink" aria-hidden />}
                   </button>
                 ))}
               </div>
             )}
-            <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
-            <div role="group" aria-label="Approvals" className="px-1.5 pb-1.5">
-              <p role="presentation" className="px-1 pt-1.5 pb-1.5 text-[11.5px] font-medium text-ink-3">
-                Approvals
-              </p>
-              <div className="grid grid-cols-4 gap-0.5 rounded-[8px] bg-inset p-0.5 shadow-hairline">
-                {MODES.map((m) => {
-                  const on = m.key === mode;
-                  return (
-                    <button
-                      key={m.key}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={on}
-                      aria-label={m.name}
-                      title={m.desc}
-                      onClick={() => onModeChange(m.key)}
-                      className={`h-9 rounded-[6px] text-[12.5px] font-medium outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-accent/40 sm:h-7 sm:text-[12px] ${
-                        on ? `bg-surface shadow-btn ${m.key === "bypassPermissions" ? "text-orange-ink" : "text-ink"}` : "text-ink-3 hover:text-ink-2"
-                      }`}
-                    >
-                      {MODE_SEG[m.key]}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="px-1 pt-1.5 text-[12px] leading-4 text-ink-3">{currentMode.desc}</p>
-            </div>
+          </div>
+        </MenuShell>
+      )}
+
+      {openMenu === "mode" && (
+        <MenuShell placement={placement} maxHeight={menuMax} left={menuPos.left} width={MENU_W.mode}>
+          <div ref={menuRef} role="menu" id={`${uid}-mode`} aria-label="Approvals" onKeyDown={moveFocus}>
+            <MenuLabel>Approvals</MenuLabel>
+            {MODES.map((m) => {
+              const on = m.key === mode;
+              const Icon = MODE_ICON[m.key];
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={on}
+                  onClick={() => {
+                    onModeChange(m.key);
+                    closeMenu(true);
+                  }}
+                  className={`${menuRowBase} min-h-12 py-1.5 sm:min-h-10`}
+                >
+                  <Icon width={16} height={16} strokeWidth={1.8} className={`shrink-0 ${m.key === "bypassPermissions" ? "text-orange-ink" : "text-ink-3"}`} aria-hidden />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate">{m.name}</span>
+                    <span className="truncate text-xs text-ink-3">{m.desc}</span>
+                  </span>
+                  <Check width={15} height={15} strokeWidth={2.2} className={`shrink-0 text-ink ${on ? "" : "invisible"}`} aria-hidden />
+                </button>
+              );
+            })}
           </div>
         </MenuShell>
       )}
 
       <div
-        className={`composer-pill composer-grid relative px-2.5 py-2.5 ${dragging ? "ring-2 ring-accent/50" : ""}`}
-        data-stacked={stacked || undefined}
+        className={`composer-pill @container relative flex flex-col ${dragging ? "ring-2 ring-accent/50" : ""}`}
         data-invalid={folderInvalid || undefined}
         onDragOver={(e) => {
           if (!e.dataTransfer.types.includes("Files")) return;
@@ -696,12 +966,20 @@ export function Composer({
             e.target.value = "";
           }}
         />
-        {(notice || (suggestion && !draft) || hasFiles || fileNote) && (
-          <div className="flex min-w-0 flex-col gap-1 px-1 pb-1 [grid-area:header]">
+        {(notice || note || (suggestion && !draft) || hasFiles || fileNote) && (
+          <div className="flex min-w-0 flex-col gap-1 px-3 pt-2.5">
             {notice}
+            {note && (
+              <span className={`flex max-w-full min-w-0 items-center gap-1 self-start rounded-full py-0.5 pr-0.5 pl-2.5 text-xs font-medium ${note.tone === "accent" ? "bg-accent-tint text-accent-ink" : "bg-red-tint text-red-ink"}`}>
+                <span className="min-w-0 truncate">{note.label}</span>
+                <button type="button" onClick={note.onCancel} aria-label={note.cancelLabel ?? "Cancel note"} title="Cancel (Esc)" className={`tap relative grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-150 ${note.tone === "accent" ? "hover:bg-accent/15" : "hover:bg-red/15"}`}>
+                  <Xmark width={12} height={12} strokeWidth={2.2} />
+                </button>
+              </span>
+            )}
             <AttachmentChips items={files.items} onRemove={files.remove} onRetry={(id) => void files.retry(id)} />
             {fileNote && (
-              <p role="status" className="text-[12px] text-ink-3">
+              <p role="status" className="px-1 text-xs text-ink-3">
                 {fileNote}
               </p>
             )}
@@ -712,49 +990,15 @@ export function Composer({
                   setDraft(suggestion);
                   inputRef.current?.focus();
                 }}
-                className="flex w-full min-w-0 items-center gap-2 rounded-[12px] px-1 pt-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink-2"
+                className="flex w-full min-w-0 items-center gap-2 rounded-[12px] px-1 pt-0.5 text-left text-sm text-ink-3 hover:text-ink-2"
                 title="Use this suggestion (Tab)"
               >
-                <span className="shrink-0 rounded-[5px] bg-inset px-1.5 py-px font-mono text-[10.5px] shadow-hairline">Tab</span>
+                <span className="shrink-0 rounded-[5px] bg-inset px-1.5 py-px font-mono text-2xs shadow-hairline">Tab</span>
                 <span className="min-w-0 truncate">{suggestion}</span>
               </button>
             )}
           </div>
         )}
-
-        <div className="flex min-w-0 items-center gap-0.5 [grid-area:lead]">
-          <button
-            ref={plusRef}
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={openMenu === "plus"}
-            aria-controls={openMenu === "plus" ? `${uid}-plus` : undefined}
-            aria-label="Add files, folder or command"
-            title="Add"
-            onClick={() => toggleMenu("plus")}
-            className={`${ghost} size-9 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
-          >
-            <Plus width={20} height={20} strokeWidth={1.7} />
-          </button>
-          {folder !== undefined && (
-            <button
-              type="button"
-              onClick={onPickFolder}
-              title={folder || "Choose a folder"}
-              aria-label={folder ? `Folder: ${folder}. Change folder` : "Choose a folder"}
-              aria-haspopup="dialog"
-              aria-invalid={folderInvalid || undefined}
-              className={`tap relative flex h-9 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-[background-color,color] duration-150 sm:max-w-[13rem] ${
-                folderInvalid ? "bg-red-tint text-red-ink" : folder ? "text-ink-2 hover:bg-hover hover:text-ink" : "text-ink-3 hover:bg-hover hover:text-ink-2"
-              }`}
-            >
-              <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
-              <span className="min-w-0 truncate" translate="no">
-                {folder ? folder.replace(/\/+$/, "").split("/").pop() || "/" : "Folder"}
-              </span>
-            </button>
-          )}
-        </div>
 
         <textarea
           ref={inputRef}
@@ -763,19 +1007,55 @@ export function Composer({
           readOnly={Boolean(busy)}
           onChange={(e) => {
             setDraft(e.target.value);
+            setCaret(e.target.selectionStart);
             setSlashHidden(false);
             if (menu) setMenu(null);
           }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onPaste={(e) => {
             const pasted = [...e.clipboardData.files];
-            if (!pasted.length) return;
-            /* a copied image often comes with its file name as text; keep only the file */
+            if (pasted.length) {
+              /* a copied image often comes with its file name as text; keep only the file */
+              e.preventDefault();
+              addFiles(pasted);
+              return;
+            }
+            const text = e.clipboardData.getData("text/plain");
+            const act = pasteAction(text, longPaste, longPasteLines);
+            if (act === "flag") pastedLong.current = true;
+            if (act !== "attach") return;
             e.preventDefault();
-            addFiles(pasted);
+            addFiles([pasteFile(text)]);
+            setFileNote(`Pasted ${lineCount(text)} lines as a file.`);
           }}
           onKeyDown={(e) => {
+            const key: KeyLike = { key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, isComposing: e.nativeEvent.isComposing, keyCode: e.keyCode };
             /* the keys belong to the input method while it composes (Enter picks a candidate) */
-            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (composing(key)) return;
+            /* Mod+S puts the draft aside instead of saving the page */
+            if (isCommand(e.nativeEvent, "stash")) {
+              e.preventDefault();
+              stashDraft();
+              return;
+            }
+            /* Enter waits for the list instead of sending a half-typed path */
+            if (mentionOpen && !found.files.length && found.loading && e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+              e.preventDefault();
+              return;
+            }
+            if (mentionOpen && found.files.length) {
+              const n = found.files.length;
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((a) => (a + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+                e.preventDefault();
+                pickMention(found.files[Math.min(active, n - 1)]);
+                return;
+              }
+            }
             if (slashOpen && commands.length) {
               if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
@@ -793,17 +1073,20 @@ export function Composer({
               setDraft(suggestion);
               return;
             }
-            /* Ctrl/Cmd+Enter sends; plain Enter too when the setting is on, on a desktop keyboard */
-            if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
-              if (e.ctrlKey || e.metaKey || (sendWithEnter && window.matchMedia("(pointer: fine)").matches)) {
-                e.preventDefault();
-                recall.current = null;
-                void send();
-                return;
-              }
+            /* Settings > Composer > Send with; read the pointer now, a keyboard can come and go */
+            if (enterAction(key, sendShortcut, !window.matchMedia("(pointer: fine)").matches) === "send") {
+              e.preventDefault();
+              recall.current = null;
+              void send();
+              return;
+            }
+            if (note && e.key === "Escape" && !openMenu && !e.defaultPrevented) {
+              e.preventDefault();
+              note.onCancel();
+              return;
             }
             /* Esc stops a running turn when there's nothing typed */
-            if (e.key === "Escape" && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
+            if (isCommand(e.nativeEvent, "stop") && running && onStop && !draft && !openMenu && !e.defaultPrevented && !modalOpen()) {
               e.preventDefault();
               onStop();
               return;
@@ -830,70 +1113,161 @@ export function Composer({
               }
             }
           }}
-          placeholder={busy ? busyLabel : placeholder}
+          placeholder={busy ? busyLabel : (note?.placeholder ?? placeholder)}
           aria-label="Message"
           aria-busy={Boolean(busy) || undefined}
-          aria-controls={slashOpen ? `${uid}-slash` : undefined}
-          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : undefined}
+          aria-controls={slashOpen ? `${uid}-slash` : mentionOpen ? `${uid}-files` : undefined}
+          aria-activedescendant={slashOpen && commands.length ? `${uid}-cmd-${active}` : mentionOpen && found.files.length ? `${uid}-file-${Math.min(active, found.files.length - 1)}` : undefined}
           aria-autocomplete="list"
-          enterKeyHint="enter"
-          className={`composer-input w-full min-w-0 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-ink outline-none [grid-area:primary] [overflow-wrap:anywhere] sm:text-[15px] sm:pointer-coarse:text-[16px] ${
+          enterKeyHint={enterSends(sendShortcut, touch) ? "send" : "enter"}
+          spellCheck={spellCheck}
+          autoCorrect={phoneAutocorrect ? undefined : "off"}
+          autoCapitalize={phoneAutocorrect ? undefined : "none"}
+          className={`composer-input block min-h-[44px] w-full min-w-0 resize-none bg-transparent px-4 pb-1 text-[16px] leading-6 text-ink outline-none [overflow-wrap:anywhere] sm:text-base sm:pointer-coarse:text-[16px] ${
             busy ? "placeholder:text-ink-2 composer-busy" : "placeholder:text-ink-3"
           }`}
         />
 
-        <div className="flex min-w-0 items-center justify-end gap-1 [grid-area:trail]">
+        <div className="composer-footer flex min-w-0 items-center gap-1 px-2">
+          <div className="flex min-w-0 flex-1 items-center gap-0.5">
+            <button
+              ref={plusRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "plus"}
+              aria-controls={openMenu === "plus" ? `${uid}-plus` : undefined}
+              aria-label="Add files, folder or command, or stash the prompt"
+              title="Add"
+              onClick={() => toggleMenu("plus")}
+              className={`${ghost} size-8 rounded-lg pointer-coarse:size-11 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
+            >
+              <Plus width={18} height={18} strokeWidth={1.8} />
+            </button>
+            <button
+              ref={pickRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "pick"}
+              aria-controls={openMenu === "pick" ? `${uid}-pick` : undefined}
+              aria-label={`${pickable ? `Agent: ${agentLabel}. Model` : "Model"}: ${pickText}`}
+              title={pickable ? `${agentLabel}: ${pickText}` : pickText}
+              onClick={() => toggleMenu("pick")}
+              onKeyDown={(e) => {
+                if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "pick") {
+                  e.preventDefault();
+                  toggleMenu("pick");
+                }
+              }}
+              className={`${chip} shrink ${openMenu === "pick" ? chipOn : chipOff}`}
+            >
+              <AgentIcon agent={agent} size={14} />
+              <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
+              <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
+            </button>
+            {efforts.length > 0 && (
+              <button
+                ref={effortRef}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={openMenu === "effort"}
+                aria-controls={openMenu === "effort" ? `${uid}-effort` : undefined}
+                aria-label={`Reasoning effort: ${effortName ?? "Default"}`}
+                title={`Reasoning effort: ${effortName ?? "Default"}`}
+                onClick={() => toggleMenu("effort")}
+                onKeyDown={(e) => {
+                  if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "effort") {
+                    e.preventDefault();
+                    toggleMenu("effort");
+                  }
+                }}
+                className={`${chip} ${openMenu === "effort" ? chipOn : effortName ? chipOff : "text-ink-3 hover:bg-hover hover:text-ink-2"}`}
+              >
+                <Brain width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+                {effortName && <span className="whitespace-nowrap @max-[25rem]:sr-only">{effortName}</span>}
+              </button>
+            )}
+            <button
+              ref={modeRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "mode"}
+              aria-controls={openMenu === "mode" ? `${uid}-mode` : undefined}
+              aria-label={`Approvals: ${currentMode.name}`}
+              title={`Approvals: ${currentMode.name}. ${currentMode.desc}`}
+              onClick={() => toggleMenu("mode")}
+              onKeyDown={(e) => {
+                if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "mode") {
+                  e.preventDefault();
+                  toggleMenu("mode");
+                }
+              }}
+              className={`${chip} ${
+                openMenu === "mode" ? chipOn : mode === "bypassPermissions" ? "text-orange-ink hover:bg-hover" : mode === "plan" ? "text-accent-ink hover:bg-hover" : chipOff
+              }`}
+            >
+              <ModeIcon width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+              <span className="whitespace-nowrap @max-[25rem]:sr-only">{currentMode.short}</span>
+            </button>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <ContextRing usage={usage} costUsd={costUsd} cost={cost} />
+            {/* with nothing to send, Stop takes Send's place; next to Send it keeps its distance so a near miss doesn't interrupt */}
+            {running && onStop && (
+              <button
+                type="button"
+                onClick={onStop}
+                aria-label="Stop"
+                title="Stop (Esc)"
+                className={
+                  stopFirst
+                    ? "tap relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.92] pointer-coarse:size-9"
+                    : `${ghost} mr-2 size-8 shadow-btn active:scale-[0.94] pointer-coarse:size-9`
+                }
+              >
+                <span className="size-2.5 rounded-[2px] bg-current" />
+              </button>
+            )}
+            {!stopFirst && (
+              <button
+                type="button"
+                aria-label={sending ? "Sending…" : files.uploading ? "Uploading…" : interrupts ? "Stop and send" : "Send"}
+                title={files.uploading ? "Uploading…" : files.failed ? "Fix the failed upload first" : `${interrupts ? "Stop and send" : "Send"} (${enterSends(sendShortcut, touch) ? "Enter" : comboFor("send")})`}
+                disabled={!canSend}
+                onClick={() => void send()}
+                className="composer-send tap relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,opacity,transform] duration-200 enabled:hover:bg-primary-hover enabled:active:scale-[0.92] disabled:opacity-35 pointer-coarse:size-9"
+              >
+                {sending ? <span aria-hidden className="composer-spinner size-4 rounded-full border-2 border-current border-r-transparent" /> : <ArrowUp width={16} height={16} strokeWidth={2} />}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <div className="flex min-h-6 min-w-0 items-center gap-3 px-2 pt-2 text-xs text-ink-3">
+        {folder !== undefined && (
           <button
-            ref={pickRef}
             type="button"
-            aria-haspopup="menu"
-            aria-expanded={openMenu === "pick"}
-            aria-controls={openMenu === "pick" ? `${uid}-pick` : undefined}
-            aria-label={`${pickable ? `Agent: ${agentLabel}, model` : "Model"}: ${modelName(model)}. Approvals: ${currentMode.name}`}
-            title={`Approvals: ${currentMode.name}`}
-            onClick={() => toggleMenu("pick")}
-            onKeyDown={(e) => {
-              if ((e.key === "ArrowUp" || e.key === "ArrowDown") && menu !== "pick") {
-                e.preventDefault();
-                toggleMenu("pick");
-              }
-            }}
-            className={`tap relative flex h-9 min-w-0 items-center gap-1 rounded-full pr-2 pl-2.5 text-[13px] transition-[background-color,color] duration-150 ${
-              openMenu === "pick" ? "bg-hover text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"
+            onClick={onPickFolder}
+            title={folder || "Choose a folder"}
+            aria-label={folder ? `Folder: ${folder}. Change folder` : "Choose a folder"}
+            aria-haspopup="dialog"
+            aria-invalid={folderInvalid || undefined}
+            className={`tap relative -mx-1 flex h-6 min-w-0 max-w-[14rem] items-center gap-1.5 rounded-md px-1 transition-colors duration-150 ${
+              folderInvalid ? "bg-red-tint text-red-ink" : folder ? "text-ink-2 hover:text-ink" : "text-ink-3 hover:text-ink-2"
             }`}
           >
-            {mode === "bypassPermissions" && <ShieldAlert width={14} height={14} strokeWidth={1.9} className="shrink-0 text-orange-ink" aria-hidden />}
-            {mode === "acceptEdits" && <ShieldCheck width={14} height={14} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />}
-            {mode === "plan" && <span className="shrink-0 rounded-[5px] bg-accent-tint px-1.5 py-px text-[11px] font-medium text-accent-ink">Plan</span>}
-            <span className="min-w-0 truncate whitespace-nowrap">{pickText}</span>
-            <NavArrowDown width={12} height={12} strokeWidth={2.2} className={`shrink-0 text-ink-3 transition-transform duration-200 ${openMenu === "pick" ? "rotate-180" : ""}`} aria-hidden />
+            <Folder width={14} height={14} strokeWidth={1.8} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate" translate="no">
+              {folder ? folder.replace(/\/+$/, "").split("/").pop() || "/" : "Choose a folder"}
+            </span>
           </button>
-          <ContextRing usage={usage} costUsd={costUsd} cost={cost} />
-          {/* with nothing to send, Stop takes Send's place; next to Send it keeps its distance so a near miss doesn't interrupt */}
-          {running && onStop && (
-            <button
-              type="button"
-              onClick={onStop}
-              aria-label="Stop"
-              title="Stop"
-              className={stopFirst ? "tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-surface active:scale-[0.92]" : `${ghost} mr-2 size-9 shadow-btn active:scale-[0.94]`}
-            >
-              <span className="size-2.5 rounded-[2px] bg-current" />
-            </button>
-          )}
-          {!stopFirst && (
-            <button
-              type="button"
-              aria-label={sending ? "Sending…" : files.uploading ? "Uploading…" : "Send"}
-              title={files.uploading ? "Uploading…" : files.failed ? "Fix the failed upload first" : `Send (${sendWithEnter ? "Enter" : comboFor("send")})`}
-              disabled={!canSend}
-              onClick={() => void send()}
-              className="composer-send tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-ink text-surface transition-[opacity,transform] duration-200 enabled:active:scale-[0.92] disabled:opacity-25"
-            >
-              {sending ? <span aria-hidden className="composer-spinner size-4 rounded-full border-2 border-current border-r-transparent" /> : <ArrowUp width={18} height={18} strokeWidth={2.2} />}
-            </button>
-          )}
-        </div>
+        )}
+        {context}
+        <span className="ml-auto" />
+        {contextEnd}
+        {hint && <span className="shrink-0 whitespace-nowrap max-sm:hidden">{hint}</span>}
       </div>
     </div>
   );

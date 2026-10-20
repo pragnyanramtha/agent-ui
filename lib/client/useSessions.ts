@@ -2,16 +2,30 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummary } from "@/lib/types";
-import { api, ApiError } from "./api";
+import { ApiError } from "./api";
 
-type Listing = { sessions: SessionSummary[]; projects: string[] };
+type Listing = { sessions: SessionSummary[]; projects: string[]; more?: boolean };
 
-export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null };
+/** rows per page; the list asks for another when it is scrolled to its end */
+export const SESSIONS_PAGE = 120;
+
+export type SessionChange = { pinned?: boolean; archived?: boolean; title?: string | null; snoozedUntil?: number | null };
 
 /* Edits shown before the server confirms them, shared by every mounted list. */
 const overrides = new Map<string, Partial<SessionSummary>>();
+/* deleted sessions leave every list at once */
+const gone = new Set<string>();
 const hooks = new Set<{ bump: () => void; refresh: (fresh?: boolean) => Promise<void> }>();
 const bumpAll = () => hooks.forEach((h) => h.bump());
+/** Loads every mounted session list again now (the Try again after a failed load). */
+export const reloadSessions = () => Promise.all([...hooks].map((h) => h.refresh(true))).then(() => undefined);
+
+const pollListeners = new Set<(sessions: SessionSummary[]) => void>();
+/** Called with the server's list after every successful poll, changed or not (the list on screen only re-renders on a change). */
+export function onSessionsPoll(cb: (sessions: SessionSummary[]) => void) {
+  pollListeners.add(cb);
+  return () => void pollListeners.delete(cb);
+}
 
 const chains = new Map<string, Promise<unknown>>();
 /** Runs `task` once the previous task queued under `key` has settled (either way), so they land in order. */
@@ -25,7 +39,7 @@ export function inOrder<T>(key: string, task: () => Promise<T>, queues: Map<stri
   return run;
 }
 
-/** Pin, archive or rename a session: shows at once, saves (after any earlier save of the same session, so an
+/** Pin, archive, rename or snooze a session: shows at once, saves (after any earlier save of the same session, so an
  * archive and its quick undo can't swap), then reloads the list. Throws when the save fails. */
 export async function patchSession(id: string, change: SessionChange): Promise<void> {
   const shown: Partial<SessionSummary> = { ...overrides.get(id) };
@@ -34,6 +48,8 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   if (change.archived === true && change.pinned === undefined) shown.pinned = false;
   if (change.pinned === true && change.archived === undefined) shown.archived = false;
   if (change.title) shown.title = change.title;
+  if (change.snoozedUntil !== undefined) shown.snoozedUntil = change.snoozedUntil ?? undefined;
+  if (change.archived === true && change.snoozedUntil === undefined) shown.snoozedUntil = undefined;
   overrides.set(id, shown);
   bumpAll();
   try {
@@ -60,28 +76,107 @@ export async function patchSession(id: string, change: SessionChange): Promise<v
   }
 }
 
-/** Session list, refreshed every few seconds while the tab is visible. */
-export function useSessions(intervalMs = 5000) {
+/** Deletes a session for good (and its transcript file when `transcript`): gone from the list at once, back if the
+ * server refuses. Throws with the server's reason. */
+export async function deleteSession(id: string, transcript: boolean): Promise<void> {
+  gone.add(id);
+  bumpAll();
+  try {
+    await inOrder(id, async () => {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript }),
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        throw new ApiError("Signed out", 401);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+      }
+      await Promise.all([...hooks].map((h) => h.refresh(true)));
+    });
+  } catch (err) {
+    gone.delete(id);
+    bumpAll();
+    throw err;
+  }
+}
+
+const sameValue = (a: unknown, b: unknown) => a === b || (typeof a === "object" && typeof b === "object" && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
+function sameRow(a: SessionSummary, b: SessionSummary) {
+  const ka = Object.keys(a) as (keyof SessionSummary)[];
+  return ka.length === Object.keys(b).length && ka.every((k) => sameValue(a[k], b[k]));
+}
+
+/** `next`, reusing each of `prev`'s rows that didn't change (and `prev` itself when none did), so memoized rows and
+ * screens that only read the list skip the re-render. */
+export function shareRows(prev: SessionSummary[] | undefined, next: SessionSummary[]): SessionSummary[] {
+  if (!prev?.length) return next;
+  const old = new Map(prev.map((s) => [s.id, s]));
+  let same = prev.length === next.length;
+  const rows = next.map((s, i) => {
+    const o = old.get(s.id);
+    const row = o && sameRow(o, s) ? o : s;
+    if (row !== prev[i]) same = false;
+    return row;
+  });
+  return same ? prev : rows;
+}
+
+/** The listing at `url`, or null when the server says it's unchanged since `etag` (which follows each answer). */
+export async function getListing(url: string, etag: { current: string | null }): Promise<Listing | null> {
+  const res = await fetch(url, { cache: "no-store", headers: etag.current ? { "If-None-Match": etag.current } : undefined });
+  /* read even though it's empty: an unread body leaves the request marked as cancelled */
+  if (res.status === 304) {
+    await res.text().catch(() => "");
+    return null;
+  }
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new ApiError("Signed out", 401);
+  }
+  const data = (await res.json().catch(() => ({}))) as Listing & { error?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status);
+  etag.current = res.headers.get("etag");
+  return data;
+}
+
+/** Session list, refreshed every few seconds while the tab is visible, and more slowly behind other tabs so the tab
+ * badge and alerts still notice finished turns. */
+export function useSessions(intervalMs = 5000, hiddenMs = 15_000) {
   const [data, setData] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const inflight = useRef<Promise<void> | null>(null);
   const fails = useRef(0);
   const loaded = useRef(false);
-  const last = useRef("");
+  const limit = useRef(SESSIONS_PAGE);
+  const growing = useRef(false);
+  const etag = useRef<string | null>(null);
+  const lastRows = useRef<SessionSummary[] | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const next = await api<Listing>("/api/sessions");
-      /* the poll mostly returns what's on screen; same text, same object, no re-render of the list */
-      const text = JSON.stringify(next);
-      if (text !== last.current) {
-        last.current = text;
-        setData(next);
-      }
+      const next = await getListing(`/api/sessions?limit=${limit.current}`, etag);
+      /* the poll mostly returns what's on screen (or a 304, null): unchanged rows keep their objects, an unchanged
+       * list keeps the state */
+      if (next)
+        setData((prev) => {
+          const sessions = shareRows(prev?.sessions, next.sessions);
+          const projects = prev && sameValue(prev.projects, next.projects) ? prev.projects : next.projects;
+          const more = Boolean(next.more);
+          return prev && sessions === prev.sessions && projects === prev.projects && more === prev.more ? prev : { sessions, projects, more };
+        });
       setError(null);
       fails.current = 0;
       loaded.current = true;
+      /* an unchanged list (304) still counts as a poll: a turn that went idle settles into "finished" on time */
+      if (next) lastRows.current = next.sessions;
+      if (lastRows.current) for (const cb of pollListeners) cb(lastRows.current);
     } catch (err) {
       /* a list on screen outlives short drops; the offline banner covers no network at all */
       fails.current += 1;
@@ -116,13 +211,12 @@ export function useSessions(intervalMs = 5000) {
   useEffect(() => {
     const tick = () => void refresh();
     tick();
-    let timer = setInterval(tick, intervalMs);
+    const every = () => (document.visibilityState === "visible" ? intervalMs : hiddenMs);
+    let timer = setInterval(tick, every());
     const onVisibility = () => {
       clearInterval(timer);
-      if (document.visibilityState === "visible") {
-        tick();
-        timer = setInterval(tick, intervalMs);
-      }
+      if (document.visibilityState === "visible") tick();
+      timer = setInterval(tick, every());
     };
     const onOnline = () => void refresh();
     document.addEventListener("visibilitychange", onVisibility);
@@ -132,18 +226,28 @@ export function useSessions(intervalMs = 5000) {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
-  }, [refresh, intervalMs]);
+  }, [refresh, intervalMs, hiddenMs]);
 
   const sessions = useMemo(() => {
     if (!data) return null;
-    if (!overrides.size) return data.sessions;
-    return data.sessions.map((s) => {
-      const o = overrides.get(s.id);
-      return o ? { ...s, ...o } : s;
-    });
+    if (!overrides.size && !gone.size) return data.sessions;
+    return data.sessions
+      .filter((s) => !gone.has(s.id))
+      .map((s) => {
+        const o = overrides.get(s.id);
+        return o ? { ...s, ...o } : s;
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, version]);
 
   const refreshNow = useCallback(() => refresh(), [refresh]);
-  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow };
+  const more = Boolean(data?.more);
+  /** Asks for the next page of older sessions (once at a time; nothing when the server has no more). */
+  const loadMore = useCallback(() => {
+    if (!more || growing.current) return;
+    growing.current = true;
+    limit.current += SESSIONS_PAGE;
+    void refresh(true).finally(() => (growing.current = false));
+  }, [more, refresh]);
+  return { sessions, projects: data?.projects ?? [], error, refresh: refreshNow, more, loadMore };
 }
