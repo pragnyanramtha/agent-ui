@@ -7,6 +7,7 @@ import { collectChanges } from "@/components/claude/ChangesPanel";
 import { editsIn, toBlocks, type Block } from "@/lib/client/turns";
 import { branchTitle, claudeCutter, cutIndex, parseBranchBody, rewriteRecord, truncateSource } from "@/lib/server/branch-shape";
 import type { Source } from "@/lib/server/handoff-shape";
+import { editBody, editPlan, lastPrompt, lastReply } from "@/lib/client/branching";
 
 const tool = (id: string, name: string, input: Record<string, unknown>): Entry => ({ kind: "tool", id, ts: "2026-10-19T10:00:00.000Z", msgId: "m", toolUseId: id, name, input });
 const user = (id: string, text: string, ts = "2026-10-19T10:00:00.000Z"): Entry => ({ kind: "user", id, ts, text, images: 0 });
@@ -215,5 +216,50 @@ describe("fork and edit requests", () => {
     expect(parseBranchBody("edit", { entryId: "u", text: "t", permissionMode: "yolo" })).toBe("Unknown approval mode.");
     expect(parseBranchBody("edit", { entryId: "u", text: "t", model: "a b" })).toBe("Unknown model.");
     expect(parseBranchBody("edit", { entryId: "u", text: "t", profile: "../x" })).toBe("Unknown profile.");
+  });
+});
+
+describe("edit and fork from here", () => {
+  const ts = (m: number) => `2026-10-19T10:${String(m).padStart(2, "0")}:00.000Z`;
+  const at = (s: number) => Date.parse(ts(s));
+  const convo: Entry[] = [
+    user("u1", "Make a", ts(0)),
+    tool("t1", "Write", { file_path: "/p/a.txt", content: "a\n" }),
+    text("r1", "Done."),
+    user("u2", "Explain", ts(10)),
+    text("r2", "It is a file."),
+    user("u3", "Change a and b", ts(20)),
+    tool("t3", "Edit", { file_path: "/p/a.txt", old_string: "a", new_string: "b" }),
+    tool("t4", "Write", { file_path: "/p/b.txt", content: "b\n" }),
+    text("r3", "Changed."),
+  ];
+
+  it("plans a rewind to the checkpoint taken before the prompt", () => {
+    const cps = [
+      { id: "1-aaaa", at: at(0) - 500, label: "Make a" },
+      { id: "2-bbbb", at: at(20) - 500, label: "Change a and b" },
+    ];
+    expect(editPlan(convo, cps, "u3")).toEqual({ files: 2, checkpoint: "2-bbbb" });
+    expect(editPlan(convo, cps, "u2")).toEqual({ files: 2, checkpoint: null });
+    expect(editPlan(convo, cps, "u1")).toEqual({ files: 2, checkpoint: "1-aaaa" });
+    expect(editPlan(convo, cps, "missing")).toEqual({ files: 0, checkpoint: null });
+  });
+
+  it("leaves files alone when nothing since the prompt changed any", () => {
+    expect(editPlan(convo.slice(0, 5), [{ id: "1-aaaa", at: at(10) - 500, label: "Explain" }], "u2")).toEqual({ files: 0, checkpoint: null });
+  });
+
+  it("picks the rows the palette acts on", () => {
+    expect(lastPrompt(convo)?.id).toBe("u3");
+    expect(lastPrompt([])).toBeNull();
+    expect(lastReply(convo, false)?.id).toBe("r3");
+    expect(lastReply(convo, true)?.id).toBe("r2");
+    expect(lastReply(convo.slice(0, 1), false)).toBeNull();
+    expect(lastReply([...convo, user("u4", "More", ts(30))], false)).toBeNull();
+  });
+
+  it("says how many files go back", () => {
+    expect(editBody({ files: 1, checkpoint: "x" })).toMatch(/^1 file the agent changed/);
+    expect(editBody({ files: 3, checkpoint: "x" })).toMatch(/^3 files /);
   });
 });

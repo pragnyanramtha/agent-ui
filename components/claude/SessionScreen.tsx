@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ArrowRight, ChatBubbleEmpty, ChatBubbleWarning, Download, Folder, FolderWarning, GitBranch, GitCompare, Menu, MoreHoriz, StatsReport, Terminal, Xmark } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode, type ServerTerminal } from "@/lib/types";
 import { AGENT_TONE, AgentMark } from "./SessionList";
-import { OPEN_TERMINAL_EVENT } from "@/lib/client/events";
+import { OPEN_CHANGES_EVENT, OPEN_TERMINAL_EVENT } from "@/lib/client/events";
 import { api, ApiError, shortPath } from "@/lib/client/api";
 import { setBaseTitle } from "@/lib/client/attention";
 import { appendToDraft, fillTextarea, INSERT_INTO_COMPOSER_EVENT, type InsertIntoComposer } from "@/lib/client/composer-insert";
@@ -45,6 +45,7 @@ import { useEditorLink } from "@/lib/client/useEditorLink";
 import { OpenNewWindow } from "iconoir-react";
 import { useComposerCollapse } from "@/lib/client/useComposerCollapse";
 import { ComposerPill } from "./ComposerPill";
+import { useBranching } from "./useBranching";
 
 function useMeasure<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -115,6 +116,16 @@ export function SessionScreen({
     const open = () => setPanel("usage");
     window.addEventListener(OPEN_USAGE_EVENT, open);
     return () => window.removeEventListener(OPEN_USAGE_EVENT, open);
+  }, []);
+  /* a file in a turn's changed files: the Changes panel, at that file */
+  const [changesFocus, setChangesFocus] = useState<{ path: string | null; n: number }>({ path: null, n: 0 });
+  useEffect(() => {
+    const open = (e: Event) => {
+      setChangesFocus((f) => ({ path: (e as CustomEvent<{ path?: string }>).detail?.path ?? null, n: f.n + 1 }));
+      setPanel("changes");
+    };
+    window.addEventListener(OPEN_CHANGES_EVENT, open);
+    return () => window.removeEventListener(OPEN_CHANGES_EVENT, open);
   }, []);
   /* which panels have something to show; read at key time */
   const available = useRef({ changes: false, git: false });
@@ -187,6 +198,19 @@ export function SessionScreen({
   const folder = useFolderGone(view.status === "missing" ? "" : view.cwd);
   const showTerminal = view.status !== "missing" && Boolean(terminal || !busy);
   const git = useGitInfo(id, `${busy ? "busy" : "idle"}:${turns}:${gitRev}`);
+  const branching = useBranching({
+    id,
+    agent,
+    entries: view.entries,
+    git,
+    busy: Boolean(busy),
+    ready: view.status !== "missing" && view.status !== "connecting" && Boolean(view.cwd),
+    mode,
+    model,
+    profile: profileId,
+    effort,
+    onNavigate,
+  });
   const usage = useMemo(() => {
     for (let i = view.entries.length - 1; i >= 0; i--) {
       const e = view.entries[i];
@@ -783,6 +807,7 @@ export function SessionScreen({
         )}
         bottomPad={composerH}
         changes={{ session: id, git, onView: () => setPanel("changes"), onUndone: () => setGitRev((n) => n + 1) }}
+        messageActions={branching.actions}
         footer={run?.pending.length ? <AskCards pending={run.pending} respond={respond} onNote={setNoteFor} noting={noteAsk?.requestId ?? null} /> : null}
         empty={
           view.status === "missing" ? (
@@ -876,7 +901,7 @@ export function SessionScreen({
               placeholder={terminal && !run && !/^(zellij|tmux)/.test(terminal.multiplexer ?? "") ? "Reply in the terminal" : `Reply to ${agentName}…`}
               history={sentTexts}
               onSend={send}
-              note={noteAsk ? { label: noteLabel(noteAsk), placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : null}
+              note={noteAsk ? { label: noteLabel(noteAsk), placeholder: "Tell the agent why…", onSend: sendNote, onCancel: () => setNoteFor(null) } : branching.note}
               running={Boolean(busy && (run || terminal) && !noteAsk)}
               onStop={() => (live ? void control("interrupt") : void pressKey("Escape"))}
               slashCommands={run?.slashCommands ?? []}
@@ -947,7 +972,7 @@ export function SessionScreen({
       <PanelSlot resetKey={panel} onClose={() => setPanel(null)}>
         {usageOpen && <UsagePanel view={view} onClose={() => setPanel(null)} />}
         {gitOpen && <GitPanel session={id} busy={Boolean(busy)} onClose={() => setPanel(null)} />}
-        {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setPanel(null)} />}
+        {changesOpen && <ChangesPanel changes={changes} cwd={view.cwd} partial={view.cursor !== null} onClose={() => setPanel(null)} focus={changesFocus.path} focusKey={changesFocus.n} />}
       </PanelSlot>
     )}
     {handoffOpen && <HandoffDialog id={id} agent={agent} current={profileId} mode={mode} onClose={() => setHandoffOpen(false)} onOpen={onNavigate} />}
