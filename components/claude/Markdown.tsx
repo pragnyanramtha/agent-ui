@@ -1,10 +1,12 @@
 "use client";
 
-import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type ComponentProps, type ElementType, type JSX, type ReactNode } from "react";
 import { Check, Copy } from "iconoir-react";
 import type { Components, ExtraProps, MathPlugin, PluginConfig, StreamdownProps } from "streamdown";
 import { CodeCard, copyText } from "./CodeCard";
 import { useOverflow } from "@/lib/client/a11y";
+import { refFromCode, refFromHref } from "@/lib/client/file-refs";
+import { FileLink, useFileRoot } from "./FileLink";
 
 /* ── Streamdown loads as its own chunk ──────────────────────────────────
  * It brings marked, remend, unified and sanitize (the browser build swaps the unused
@@ -89,8 +91,19 @@ function rehypeNumericColumns() {
 let rehype: StreamdownProps["rehypePlugins"];
 const rehypeFor = (m: SD) => (rehype ??= [m.defaultRehypePlugins.sanitize, rehypeNumericColumns as never]);
 
-/* Links Claude writes to repo files (`[runner.ts](lib/server/runner.ts)`) have nowhere to go in the browser */
 const EXTERNAL = /^(https?:|mailto:|tel:)/i;
+
+/* Links Claude writes to repo files (`[runner.ts](lib/server/runner.ts)`) open in the session's Files panel; outside a
+ * session they have nowhere to go */
+function RepoLink({ href, children }: { href?: string; children: ReactNode }) {
+  const ref = useFileRoot() ? refFromHref(href) : null;
+  if (ref) return <FileLink file={ref}>{children}</FileLink>;
+  return (
+    <span className="md-deadlink" title={href || undefined}>
+      {children}
+    </span>
+  );
+}
 
 /* ── math: KaTeX loads only when a message contains `$$` or a ```math fence ── */
 
@@ -215,7 +228,16 @@ const components: Components = {
   table: Table,
   /* Streamdown's own `pre` stays: it renders no wrapper, it only tags the fenced
    * `code` child with `data-block`, which routes it to `code` instead of `inlineCode` */
-  inlineCode: ({ children }) => <code className="md-code">{children}</code>,
+  inlineCode: ({ children }) => {
+    const ref = typeof children === "string" ? refFromCode(children) : null;
+    return ref ? (
+      <FileLink file={ref}>
+        <code className="md-code">{children}</code>
+      </FileLink>
+    ) : (
+      <code className="md-code">{children}</code>
+    );
+  },
   code: ({ className, children }) => {
     const lang = /language-([\w+#.-]+)/.exec(className ?? "")?.[1];
     return <CodeCard code={String(children ?? "")} label={lang} collapsible />;
@@ -231,9 +253,7 @@ const components: Components = {
         {children}
       </a>
     ) : (
-      <span className="md-deadlink" title={href || undefined}>
-        {children}
-      </span>
+      <RepoLink href={href}>{children}</RepoLink>
     ),
   img: ({ src, alt }) => (typeof src === "string" && src ? <RemoteImage src={src} alt={alt ?? ""} /> : null),
 };

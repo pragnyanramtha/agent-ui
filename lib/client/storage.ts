@@ -29,6 +29,31 @@ export function carryOver(from: string, to: string, pending?: unknown[]) {
   save(`draft:${from}`, null);
   const effort = loadEffort(from);
   if (effort && !loadEffort(to)) saveEffort(to, effort);
+  const review = loadLocal(`${REVIEW_PREFIX}${from}`);
+  if (review && !loadLocal(`${REVIEW_PREFIX}${to}`)) saveLocal(`${REVIEW_PREFIX}${to}`, review);
+  saveLocal(`${REVIEW_PREFIX}${from}`, null);
+}
+
+/** Where a session's review comments on diff lines are kept (localStorage, per session). */
+export const REVIEW_PREFIX = "cui:review:";
+
+/** localStorage that never throws, for what should outlast the tab. */
+export function loadLocal(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocal(key: string, value: string | null): boolean {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /* The reasoning effort picked for a session, kept across reloads (localStorage); null when it uses the default. */
