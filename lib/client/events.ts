@@ -20,9 +20,6 @@ export const OPEN_TERMINAL_EVENT = "open-terminal";
 /** Fired on window with `detail: { path?: string }` to open the open session's Changes panel, scrolled to that file. */
 export const OPEN_CHANGES_EVENT = "agentu:open-changes";
 
-/** Fired on window with `detail: { id: string }` to open a session in a tab of its own. */
-export const OPEN_SESSION_EVENT = "agentu:open-session";
-
 /** Fired on window with `detail: { path, line?, endLine? }` (absolute path) to show a file in the open session's
  * Files panel. */
 export const OPEN_FILE_PANEL_EVENT = "agentu:open-file-panel";

@@ -89,12 +89,15 @@ export function SessionScreen({
   id,
   onMenu,
   onNavigate,
+  onOpen,
   onNew,
   extra,
 }: {
   id: string;
   onMenu: () => void;
   onNavigate: (id: string) => void;
+  /** opens a session in a tab of its own */
+  onOpen: (id: string) => void;
   onNew: () => void;
   /** trailing header control (the phone tab switcher) */
   extra?: ReactNode;
@@ -228,6 +231,7 @@ export function SessionScreen({
     profile: profileId,
     effort,
     onNavigate,
+    onOpen,
   });
   const usage = useMemo(() => {
     for (let i = view.entries.length - 1; i >= 0; i--) {
