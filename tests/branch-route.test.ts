@@ -62,6 +62,9 @@ beforeAll(async () => {
   original = fs.readFileSync(file, "utf8");
   cpId = (await checkpoint(repo, SID, "two"))!.id;
   fs.writeFileSync(path.join(repo, "a.txt"), "v2\n");
+  /* same length as v1, so bump the mtime: a snapshot reuses the index stat cache and can miss a same-second rewrite */
+  const later = new Date(Date.now() + 2000);
+  fs.utimesSync(path.join(repo, "a.txt"), later, later);
 });
 
 afterAll(() => {
