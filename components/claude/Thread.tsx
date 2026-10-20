@@ -20,6 +20,7 @@ import { ACTIONS_GAP, ACTIONS_HOST, ACTIONS_PAD, MessageActions } from "./Messag
 import { ENTER } from "./motion";
 import { ToolRun, type RunItem } from "./ToolRun";
 import { TurnChanges, TurnFold } from "./TurnFold";
+import { SelectionAsk } from "./SelectionAsk";
 import "./thread.css";
 import { scrollBehavior } from "@/lib/client/motion";
 import { estimateHeight, growWindow, windowStart, WINDOW_FILL_STEP, WINDOW_INITIAL, WINDOW_STEP } from "@/lib/client/thread-window";
@@ -182,7 +183,21 @@ function UserText({ text }: { text: string }) {
   );
 }
 
-const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }: { text: string; images?: number; pending?: boolean; ts?: string }) {
+const UserBubble = memo(function UserBubble({
+  text: full,
+  images,
+  pending,
+  ts,
+  id,
+  onEdit,
+}: {
+  text: string;
+  images?: number;
+  pending?: boolean;
+  ts?: string;
+  id?: string;
+  onEdit?: (id: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { text, paths } = useMemo(() => splitAttachments(full), [full]);
   const handoff = parseHandoff(text);
@@ -229,7 +244,7 @@ const UserBubble = memo(function UserBubble({ text: full, images, pending, ts }:
           </button>
         )}
       </div>
-      {actions && <MessageActions text={text} ts={ts} align="end" />}
+      {actions && <MessageActions text={text} ts={ts} align="end" onEdit={onEdit && id ? () => onEdit(id) : undefined} />}
     </div>
   );
 });
@@ -285,13 +300,16 @@ type BlockListProps = {
   undoKey: string | null;
   onUndo: () => Promise<string | null>;
   onView?: () => void;
+  cwd?: string;
+  onEdit?: (id: string) => void;
+  onFork?: (id: string) => void;
 };
 
 /**
  * The rendered part of the thread, from `start` to the end. Its own memo boundary, so the composer growing
  * or anything else that re-renders the thread around it costs nothing here.
  */
-const BlockList = memo(function BlockList({ blocks, start, dividers, runs, results, timestamps, foldsOpen, changesCard, activeLast, liveThinking, undoKey, onUndo, onView }: BlockListProps) {
+const BlockList = memo(function BlockList({ blocks, start, dividers, runs, results, timestamps, foldsOpen, changesCard, activeLast, liveThinking, undoKey, onUndo, onView, cwd, onEdit, onFork }: BlockListProps) {
   return blocks.slice(start).map((b, at) => {
     const i = start + at;
     /* off-screen blocks skip layout and paint; the newest stay live so streaming and scroll-to-bottom stay exact */
@@ -308,21 +326,21 @@ const BlockList = memo(function BlockList({ blocks, start, dividers, runs, resul
             </div>
           )}
           <Boundary resetKey={b.entry} entry={b.entry}>
-            <UserBubble text={b.entry.text} images={b.entry.images} ts={b.entry.ts} />
+            <UserBubble text={b.entry.text} images={b.entry.images} ts={b.entry.ts} id={b.entry.id} onEdit={onEdit} />
           </Boundary>
         </div>
       );
     }
     if (b.type === "text")
       return b.final ? (
-        <div key={b.key} data-block className={ACTIONS_HOST} style={style}>
+        <div key={b.key} data-block data-reply className={ACTIONS_HOST} style={style}>
           <Boundary resetKey={b.entry} entry={b.entry}>
             <Markdown text={b.entry.text} />
-            <MessageActions text={b.entry.text} ts={timestamps ? b.entry.ts : undefined} />
+            <MessageActions text={b.entry.text} ts={timestamps ? b.entry.ts : undefined} onFork={onFork ? () => onFork(b.entry.id) : undefined} />
           </Boundary>
         </div>
       ) : (
-        <div key={b.key} data-block style={style}>
+        <div key={b.key} data-block data-reply style={style}>
           <Boundary resetKey={b.entry} entry={b.entry}>
             <Markdown text={b.entry.text} />
           </Boundary>
@@ -339,12 +357,14 @@ const BlockList = memo(function BlockList({ blocks, start, dividers, runs, resul
     if (b.type === "fold")
       return (
         <div key={b.key} data-block style={style}>
-          <TurnFold ms={b.ms} tools={b.tools} defaultOpen={foldsOpen} failed={b.blocks.reduce((n, c) => n + (c.type === "run" ? failedCount(c.items, runs.get(c.key)?.results ?? EMPTY_RESULTS) : 0), 0)}>
+          <TurnFold ms={b.ms} tools={b.tools} defaultOpen={foldsOpen} edits={b.edits} results={results} cwd={cwd} failed={b.blocks.reduce((n, c) => n + (c.type === "run" ? failedCount(c.items, runs.get(c.key)?.results ?? EMPTY_RESULTS) : 0), 0)}>
             {b.blocks.map((c) =>
               c.type === "run" ? (
                 <ToolRun key={c.key} items={runs.get(c.key)?.items ?? c.items} results={runs.get(c.key)?.results ?? EMPTY_RESULTS} active={false} />
               ) : c.type === "text" ? (
-                <Markdown key={c.key} text={c.entry.text} />
+                <div key={c.key} data-reply>
+                  <Markdown text={c.entry.text} />
+                </div>
               ) : null,
             )}
           </TurnFold>
@@ -380,6 +400,7 @@ export function Thread({
   empty,
   pendingSlot,
   changes,
+  messageActions,
 }: {
   /** renders a not-yet-recorded message (status, retry, discard) */
   pendingSlot?: (p: SessionView["pending"][number]) => ReactNode;
@@ -393,6 +414,8 @@ export function Thread({
   empty?: ReactNode;
   /** the session's folder, for a finished turn's changed-files card: View diff and Undo */
   changes?: { session: string; git: GitInfo | null; onView?: () => void; onUndone?: () => void };
+  /** Edit from here on prompts and Fork from here on replies, by entry id; left out where they can't run */
+  messageActions?: { onEdit?: (id: string) => void; onFork?: (id: string) => void };
 }) {
   const live = useLiveTurn(view.entries, busy);
   const [timeFmt] = useSetting("timeFormat");
@@ -423,6 +446,10 @@ export function Thread({
   const undoIdRef = useRef(undoId);
   undoIdRef.current = undoId;
   const onView = useCallback(() => changesRef.current?.onView?.(), []);
+  const actionsRef = useRef(messageActions);
+  actionsRef.current = messageActions;
+  const onEdit = useCallback((id: string) => actionsRef.current?.onEdit?.(id), []);
+  const onFork = useCallback((id: string) => actionsRef.current?.onFork?.(id), []);
   const onUndo = useCallback(async () => {
     const id = undoIdRef.current;
     const changes = changesRef.current;
@@ -677,6 +704,9 @@ export function Thread({
             undoKey={undoId ? (lastChanges ?? null) : null}
             onUndo={onUndo}
             onView={changes?.onView ? onView : undefined}
+            cwd={view.cwd || undefined}
+            onEdit={messageActions?.onEdit ? onEdit : undefined}
+            onFork={messageActions?.onFork ? onFork : undefined}
           />
 
           {view.pending.map((p) => (
@@ -708,6 +738,8 @@ export function Thread({
           {footer}
         </div>
       </div>
+
+      <SelectionAsk scroller={scrollRef} />
 
       {!atBottom && (
         <button

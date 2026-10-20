@@ -47,6 +47,7 @@ export const COMMANDS = [
   { id: "recall", label: "Edit last message", group: "Composer", keys: ["ArrowUp"], scope: "composer", fixed: "In an empty composer." },
   { id: "stash", label: "Stash the draft", group: "Composer", keys: ["Mod+S"], scope: "composer", keywords: ["save", "later"] },
   { id: "stop", label: "Stop the turn", group: "Composer", keys: ["Escape"], scope: "composer", keywords: ["interrupt", "cancel"] },
+  { id: "askSelection", label: "Ask about the selected text", group: "Composer", keys: ["Mod+Shift+L"], keywords: ["quote", "reply", "selection"] },
   { id: "gitPanel", label: "Toggle Git panel", group: "Panels", keys: ["Mod+Shift+G"], keywords: ["checkpoints", "branch", "commit"] },
   { id: "changesPanel", label: "Toggle changes", group: "Panels", keys: ["Mod+Shift+D"], keywords: ["diff", "files", "edits"] },
   /* Cmd+Shift+[ and ] switch browser tabs on a Mac, so the arrows are there too */

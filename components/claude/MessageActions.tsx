@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Check, Copy } from "iconoir-react";
+import { Check, Copy, EditPencil, GitFork } from "iconoir-react";
 import { useSetting } from "@/lib/client/settings";
 import { clockTime, fullDateTime } from "@/lib/time-format";
 import { copyText } from "./CodeCard";
@@ -34,14 +34,29 @@ function CopyButton({ text, onCopied }: { text: string; onCopied: (v: boolean) =
   );
 }
 
+const ACTION =
+  "tap relative flex h-8 items-center gap-1 rounded-[6px] px-1.5 font-medium transition-colors duration-100 hover:bg-hover hover:text-ink pointer-fine:h-6";
+
 /**
- * The quiet row under a message: copy, and for prompts the time it was sent.
+ * The quiet row under a message: copy, Edit from here on prompts and Fork from here on replies, and for prompts the time it was sent.
  * Touch screens see it in flow and always on; with a fine pointer it sits in
  * the gap below the message (the wrapper reserves that space with matching
  * padding and negative margin) and fades in on hover or keyboard focus, so
  * revealing it never moves anything.
  */
-export const MessageActions = memo(function MessageActions({ text, ts, align = "start" }: { text: string; ts?: string; align?: "start" | "end" }) {
+export const MessageActions = memo(function MessageActions({
+  text,
+  ts,
+  align = "start",
+  onEdit,
+  onFork,
+}: {
+  text: string;
+  ts?: string;
+  align?: "start" | "end";
+  onEdit?: () => void;
+  onFork?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
   const [fmt] = useSetting("timeFormat");
   const time = ts ? clockTime(ts, fmt) : "";
@@ -53,6 +68,18 @@ export const MessageActions = memo(function MessageActions({ text, ts, align = "
       }`}
     >
       {text && <CopyButton text={text} onCopied={setCopied} />}
+      {onEdit && (
+        <button type="button" onClick={onEdit} aria-label="Edit from here" data-tip="Edit from here" className={ACTION}>
+          <EditPencil width={13} height={13} strokeWidth={1.8} aria-hidden />
+          Edit
+        </button>
+      )}
+      {onFork && (
+        <button type="button" onClick={onFork} aria-label="Fork from here" data-tip="Fork from here" className={ACTION}>
+          <GitFork width={13} height={13} strokeWidth={1.8} aria-hidden />
+          Fork
+        </button>
+      )}
       {time && (
         <time dateTime={ts} title={fullDateTime(ts!, fmt)} className="px-1 tabular-nums">
           {time}
