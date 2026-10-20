@@ -160,12 +160,20 @@ export const PromptTimeline = memo(function PromptTimeline({
     return () => window.removeEventListener("keydown", onKey);
   }, [scrollRef, measure, reveal]);
 
+  const sheetList = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    if (!sheet) return;
+    const raf = requestAnimationFrame(() => sheetList.current?.querySelector<HTMLElement>("[data-autofocus]")?.scrollIntoView({ block: "center" }));
+    return () => cancelAnimationFrame(raf);
+  }, [sheet]);
+
   const jump = (i: number) => {
     const m = marks[i];
     if (m) reveal(m.key);
   };
   const focusable = current >= 0 ? current : marks.length - 1;
   const onStripKey = (e: ReactKeyEvent<HTMLElement>) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const at = ticks.current.findIndex((t) => t === document.activeElement);
     if (at === -1) return;
     const next = { ArrowUp: at - 1, ArrowDown: at + 1, Home: 0, End: marks.length - 1 }[e.key];
@@ -232,7 +240,7 @@ export const PromptTimeline = memo(function PromptTimeline({
       {sheet && (
         <Sheet title="Jump to prompt" onClose={onSheetClose}>
           {marks.length ? (
-            <ol className="flex flex-col gap-0.5">
+            <ol ref={sheetList} className="flex flex-col gap-0.5">
               {marks.map((m, i) => (
                 <li key={m.key}>
                   <button
