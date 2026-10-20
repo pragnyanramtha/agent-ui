@@ -21,3 +21,6 @@ export const OPEN_TERMINAL_EVENT = "open-terminal";
  * Files panel. */
 export const OPEN_FILE_PANEL_EVENT = "agentu:open-file-panel";
 export type OpenFilePanel = { path: string; line?: number; endLine?: number };
+
+/** Fired on window to open the Mod+P file picker in the open session. */
+export const OPEN_FILE_PICKER_EVENT = "agentu:open-file-picker";
