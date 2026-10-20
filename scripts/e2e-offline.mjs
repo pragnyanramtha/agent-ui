@@ -269,7 +269,11 @@ try {
         return es.some((e) => e.kind === "text" && e.text.includes("hello-from-gemini")) && es.some((e) => e.kind === "tool" && e.name === "Bash");
       }, 30_000);
       assert(ev.seen[0]?.type === "history", `first event: ${ev.seen[0]?.type}`);
-      assert(ev.seen.some((e) => e.type === "run"), "no run status");
+      /* the history event carries the run as it stood and "run" events every change after it; the turn may end
+       * before the stream opens or after its entries arrive, so the check is that the latest of those reaches its end */
+      const last = () => ev.seen.filter((e) => e.type === "run" || e.type === "history").at(-1);
+      /* run null is a turn that ended cleanly */
+      await until("the stream to show the turn ended", () => last() && !["running", "starting"].includes(last().run?.status), 30_000);
     });
 
     let first = null;
