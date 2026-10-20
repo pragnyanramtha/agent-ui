@@ -6,7 +6,7 @@ import { onFirstLine, onLastLine } from "@/lib/client/caret";
 import { composing, enterAction, enterSends, sendHint, type KeyLike } from "@/lib/client/composer-keys";
 import { lineCount, pasteAction, pasteFile } from "@/lib/client/composer-paste";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, NavArrowDown, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Trash, Xmark } from "iconoir-react";
+import { Archive, ArrowUp, Attachment, Brain, Check, Folder, Map as PlanIcon, NavArrowDown, Plus, ShieldAlert, ShieldCheck, ShieldQuestion, Trash, TriangleFlag, Xmark } from "iconoir-react";
 import { APP_COMMANDS, rankCommands, type SlashItem } from "@/lib/commands";
 import { ContextRing, type ContextUsage } from "./ContextRing";
 import { confirmAsk, promptAsk } from "./Ask";
@@ -120,7 +120,7 @@ export function Composer({
   slashCommands,
   mode,
   onModeChange,
-  model,
+  model: chosenModel,
   onModelChange,
   notice,
   autoFocus,
@@ -208,6 +208,8 @@ export function Composer({
    * `text` starts the box with it, `tone` "accent" for what isn't a denial */
   note?: { label: string; placeholder: string; onSend: (text: string) => Promise<boolean>; onCancel: () => void; text?: string; tone?: "accent"; cancelLabel?: string } | null;
 }) {
+  /* lists without a "Default" row (Claude's) run their first model when none is chosen */
+  const model = chosenModel ?? (models.some((m) => m.key === "") ? null : (models[0]?.key ?? null));
   const [draft, setDraft] = useState("");
   const [caret, setCaret] = useState(0);
   /* where the caret goes once a picked path is in the box */
@@ -732,6 +734,23 @@ export function Composer({
               <span>Commands</span>
               <span className="ml-auto text-xs text-ink-3">Type /</span>
             </button>
+            {agent === "claude" && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeMenu(true);
+                  void promptAsk({ title: "Set a goal", body: "Claude keeps working until this holds, checking it before it stops. Send /goal clear to remove it.", confirm: "Set goal", value: "" }).then(
+                    (g) => g && void onSend(`/goal ${g}`),
+                  );
+                }}
+                className={menuRow}
+              >
+                <TriangleFlag width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+                <span>Set a goal</span>
+                <span className="ml-auto text-xs text-ink-3">/goal</span>
+              </button>
+            )}
             <div role="separator" className="mx-2.5 my-1 h-px bg-line" />
             <button
               type="button"

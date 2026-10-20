@@ -6,6 +6,8 @@ import { fakes } from "./fake-claude-sdk";
 /* A message sent while the session is being opened in a terminal goes to that terminal once it's up,
  * never into a second claude. The terminal, the pane and the launch are fakes; the routes are real. */
 
+/* these are the Agent SDK path's races; with tmux the default driver would start a TUI instead (tests/claude-tui.test.ts) */
+vi.hoisted(() => void (process.env.CLAUDE_WEB_DRIVER = "sdk"));
 vi.mock("@anthropic-ai/claude-agent-sdk", async () => ({ query: (await import("./fake-claude-sdk")).query }));
 const terminals = new Map<string, TerminalInfo>();
 const typed: string[] = [];

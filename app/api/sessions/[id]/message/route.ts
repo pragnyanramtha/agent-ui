@@ -3,6 +3,7 @@ import { folderGone, parseMode, readJson, sessionContext, str } from "@/lib/serv
 import { FOLDER_GONE, folderGoneMessage } from "@/lib/empty-states";
 import { InputRefused, inputTarget, typeIntoTerminal } from "@/lib/server/input";
 import { getRun, startRun } from "@/lib/server/runner";
+import { claudeInTmux, startClaudeTui } from "@/lib/server/claude-tui";
 import { liveTerminals } from "@/lib/server/sessions";
 import { awaitLaunch, isLaunching } from "@/lib/server/launching";
 import { parseSessionKey } from "@/lib/server/agents";
@@ -14,6 +15,8 @@ import { beforeTurn } from "@/lib/server/checkpoints";
 import { parseEffort } from "@/lib/agent-traits";
 
 export const dynamic = "force-dynamic";
+
+const resuming = new Map<string, Promise<unknown>>();
 
 /**
  * Sends a message to the one claude that owns this session; the server decides
@@ -34,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return once(body.clientId, async () => (await checkpointFirst(), claudeMessage(key.native, body)));
 }
 
-async function claudeMessage(id: string, body: Record<string, unknown>) {
+async function claudeMessage(id: string, body: Record<string, unknown>): Promise<NextResponse> {
   const text = str(body.text)?.trim();
   if (!text) return NextResponse.json({ error: "Enter a message." }, { status: 400 });
   const before = pickProfile("claude", null, id);
@@ -97,6 +100,22 @@ async function claudeMessage(id: string, body: Record<string, unknown>) {
 
   if (await folderGone(ctx.cwd)) return NextResponse.json({ error: folderGoneMessage(ctx.cwd), code: FOLDER_GONE }, { status: 409 });
   const mode = parseMode(body.permissionMode) ?? parseMode(ctx.meta.permissionMode) ?? "default";
+  if (await claudeInTmux()) {
+    /* a second message while the TUI is still starting is typed into it once it's up */
+    const starting = resuming.get(id);
+    if (starting) return starting.catch(() => undefined).then(() => claudeMessage(id, body));
+    const launch = startClaudeTui({ profile, cwd: ctx.cwd, text, model, effort, permissionMode: mode, resume: id });
+    resuming.set(id, launch);
+    try {
+      await launch;
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : String(err), code: "tui_start" }, { status: 502 });
+    } finally {
+      resuming.delete(id);
+    }
+    setSessionProfile(id, profile.id);
+    return NextResponse.json({ id, via: "terminal" });
+  }
   const run = startRun({ resume: id, cwd: ctx.cwd, model, effort, permissionMode: mode, profile });
   run.send(text);
   setSessionProfile(id, profile.id);

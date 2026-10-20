@@ -5,7 +5,7 @@ import type { Entry, PendingAsk, PermissionMode, Question, RunState, StreamDelta
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 import { CLAUDE_BIN, IDLE_REAP_MS } from "./config";
 import { childEnv } from "./child-env";
-import { LIMIT_ERROR, type ResolvedProfile } from "./profiles";
+import { LIMIT_ERROR, modelFor, type ResolvedProfile } from "./profiles";
 import { parseEffort } from "@/lib/agent-traits";
 
 /** A profile's args for the SDK: "--flag value" / "--flag" pairs as extraArgs, and short flags ("-d x") as they are.
@@ -124,7 +124,7 @@ export class Run {
     this.cwd = opts.cwd;
     this.profile = opts.profile ?? null;
     const p = this.profile;
-    const model = opts.model ?? p?.defaultModel;
+    const model = modelFor(p, opts.model);
     this.effort = (parseEffort("claude", opts.effort === undefined ? p?.defaultEffort : opts.effort) ?? null) as EffortLevel | null;
     this.state = {
       status: "starting",
@@ -225,7 +225,8 @@ export class Run {
     this.effort = e;
   }
 
-  async setModel(model: string | undefined) {
+  async setModel(requested: string | undefined) {
+    const model = modelFor(this.profile, requested);
     await this.q.setModel(model);
     this.update({ model: model ?? null });
   }

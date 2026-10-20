@@ -14,6 +14,7 @@ export const APP_COMMANDS: SlashItem[] = [
 
 /** Claude Code commands that work in SDK-driven sessions. */
 export const BUILTIN_COMMANDS: SlashItem[] = [
+  { name: "goal", description: "Set a goal Claude checks before stopping (or clear it)", kind: "builtin", hint: "all tests pass" },
   { name: "compact", description: "Summarize to free context", kind: "builtin", hint: "focus on the API work" },
   { name: "context", description: "Show what's using the context window", kind: "builtin" },
   { name: "cost", description: "Show token usage and cost for this session", kind: "builtin" },

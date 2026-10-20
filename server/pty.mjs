@@ -283,11 +283,18 @@ function tmuxList() {
 const shellQuote = (s) => (/^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 const LOGIN_SHELL = process.env.SHELL || "/bin/bash";
 /** through a login shell, so the agent sees the same PATH and profile as an ssh session */
-const loginArgv = (cmd, args, prelude = "") => [LOGIN_SHELL, "-lc", `${prelude}exec ${[cmd, ...args].map(shellQuote).join(" ")}`];
+const loginArgv = (cmd, args, prelude = "", promptFile = null) => {
+  const exec = `exec ${[cmd, ...args].map(shellQuote).join(" ")}`;
+  if (!promptFile) return [LOGIN_SHELL, "-lc", `${prelude}${exec}`];
+  /* the first message goes in as the last argument, read from a file: newlines survive and tmux's command length limit doesn't apply */
+  const f = shellQuote(promptFile);
+  return [LOGIN_SHELL, "-lc", `${prelude}p=$(cat -- ${f}); rm -f -- ${f}; ${exec} -- "$p"`];
+};
 /** tmux reads an argument ending in ";" as a command separator; "\;" is a literal one */
 const tmuxArg = (s) => (s.endsWith(";") ? `${s.slice(0, -1)}\\;` : s);
+const isPromptFile = (f) => typeof f === "string" && path.dirname(f) === os.tmpdir() && /^agent-u-prompt-[a-f0-9]{16}$/.test(path.basename(f));
 
-function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, rows }) {
+function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, rows, promptFile }) {
   const name = `${TMUX_PREFIX}${randomBytes(4).toString("hex")}`;
   /* a tmux server started by an older version of this service still holds the app's secrets in its global environment */
   try {
@@ -306,7 +313,7 @@ function tmuxLaunch({ cmd, args, env, cwd, label, kind, profile, session, cols, 
     prelude = `. ${shellQuote(file)}; rm -rf ${shellQuote(envDir)}; `;
   }
   const dropEnv = () => envDir && fs.rmSync(envDir, { recursive: true, force: true });
-  const line = loginArgv(cmd, args, prelude).map(shellQuote).join(" ");
+  const line = loginArgv(cmd, args, prelude, promptFile).map(shellQuote).join(" ");
   /* the pane starts with remain-on-exit already set (via the chained commands), so a crash at startup stays readable */
   /* -c is format-expanded: a folder named "#(cmd)" would run cmd; "##" is a literal "#" */
   const argv = ["new-session", "-d", "-s", name, "-x", String(cols), "-y", String(rows), "-c", tmuxArg(cwd.replace(/#/g, "##")), tmuxArg(line)];
@@ -659,12 +666,14 @@ async function internal(req, res, route) {
       session: typeof body.session === "string" ? body.session : null,
       cols: clamp(Number(body.cols), 10, 500, 120),
       rows: clamp(Number(body.rows), 5, 200, 40),
+      promptFile: isPromptFile(body.promptFile) ? body.promptFile : null,
     };
+    if (body.backing === "tmux" && !TMUX) return reply(res, 409, { error: "tmux isn't installed on the server." });
     const useTmux = TMUX && body.backing !== "pty";
     try {
       if (useTmux) return reply(res, 200, { id: tmuxLaunch(spec), backing: "tmux" });
       if (terms.size >= MAX_TERMINALS) return reply(res, 429, { error: "Too many terminals are open. Close one first." });
-      const t = createTerm({ ...spec, cmd: loginArgv(spec.cmd, spec.args) });
+      const t = createTerm({ ...spec, cmd: loginArgv(spec.cmd, spec.args, "", spec.promptFile) });
       return reply(res, 200, { id: t.id, backing: "pty" });
     } catch (err) {
       return reply(res, 500, { error: `Couldn't start: ${String(err?.stderr || err?.message || err).trim().slice(0, 300)}` });

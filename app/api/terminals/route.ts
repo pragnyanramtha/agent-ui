@@ -61,7 +61,12 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
     const kept = (await listTerminals().catch(() => null))?.terminals.find((t) => t.session === key && t.exited === null);
     if (kept) return NextResponse.json({ ...kept, label: kept.label });
     if (k.agent === "claude") {
-      if (getRun(k.native)?.state.status === "running") return NextResponse.json({ error: "Claude is busy. Try again when the turn ends.", code: "busy" }, { status: 409 });
+      const run = getRun(k.native);
+      if (run?.state.status === "running" && body.takeover !== true) {
+        return NextResponse.json({ error: "Claude is busy. Try again when the turn ends.", code: "busy" }, { status: 409 });
+      }
+      /* the SDK run ends mid-turn; the TUI resumes the same transcript */
+      if (run && body.takeover === true) run.close();
       cwd = (await sessionContext(k.native))?.cwd ?? cwd;
     } else {
       const a = await adapterFor(k.agent);
@@ -69,10 +74,17 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
       cwd = (await a?.get(k.native))?.cwd ?? cwd;
     }
     profile = pickProfile(k.agent, str(body.profile), key);
-    const live = await terminalForKey(key);
+    let live = await terminalForKey(key);
+    /* a headless (Agent SDK) process has no screen to join: stop it, when asked, and open the session here */
+    if (live?.headless && body.takeover === true) {
+      if (!(await stopProcess(live.pid))) return NextResponse.json({ error: "Couldn't stop the program running this session." }, { status: 409 });
+      live = null;
+    }
     if (live) {
       return NextResponse.json(
-        { error: live.multiplexer ? "This session is already open in a terminal." : "This session is running elsewhere. Continue it there.", code: "live_terminal" },
+        live.headless
+          ? { error: "Another program is running this session through the Agent SDK.", code: "headless" }
+          : { error: live.multiplexer ? "This session is already open in a terminal." : "This session is running elsewhere. Continue it there.", code: "live_terminal" },
         { status: 409 },
       );
     }
@@ -100,6 +112,34 @@ async function launch(body: Record<string, unknown>, raw: string | undefined): P
     if (claude) launchDone(claude);
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
   }
+}
+
+/** SIGTERM, then SIGKILL after 5 seconds; resolves once the process is gone. */
+async function stopProcess(pid: number) {
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return !alive();
+  }
+  for (let i = 0; i < 70 && alive(); i++) {
+    if (i === 50) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* exited meanwhile */
+      }
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return !alive();
 }
 
 export async function DELETE(req: NextRequest) {
