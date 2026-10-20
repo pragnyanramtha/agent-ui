@@ -35,6 +35,6 @@ describe("POST /api/files mkdir", () => {
     expect((await post({ action: "mkdir", path: parent, name: "taken" })).status).toBe(200);
     const again = await post({ action: "mkdir", path: parent, name: "taken" });
     expect(again.status).toBe(409);
-    expect(again.body.error).toMatch(/already exists/);
+    expect(again.body.error).toBe(`${path.join(parent, "taken")} already exists.`);
   });
 });

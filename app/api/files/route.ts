@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
   try {
     if (action === "mkdir") {
       const dir = path.join(await real(target), safeName(str(body.name)));
-      await fs.mkdir(dir);
+      /* an EEXIST would otherwise be reported against the parent folder */
+      await fs.mkdir(dir).catch((err) => Promise.reject(err?.code === "EEXIST" ? new FsError(`${dir} already exists.`, 409) : err));
       return NextResponse.json({ path: dir });
     }
     if (action === "rename") {
