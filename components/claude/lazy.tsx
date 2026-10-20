@@ -36,6 +36,7 @@ const askCards = () => import("./AskCards");
 
 export const FilesScreen = dynamic(() => import("./FilesScreen").then((m) => m.FilesScreen), { ssr: false, loading: () => <ScreenWait label="Loading files…" /> });
 export const AgentsScreen = dynamic(() => import("./AgentsScreen").then((m) => m.AgentsScreen), { ssr: false, loading: () => <ScreenWait label="Loading agents…" /> });
+export const UsageScreen = dynamic(() => import("./UsageScreen").then((m) => m.UsageScreen), { ssr: false, loading: () => <ScreenWait label="Loading usage…" /> });
 export const SettingsScreen = dynamic(() => import("./SettingsScreen").then((m) => m.SettingsScreen), { ssr: false, loading: () => <ScreenWait label="Loading settings…" /> });
 export const WebTerminal = dynamic(() => import("./WebTerminal").then((m) => m.WebTerminal), { ssr: false, loading: () => <PillWait label="Opening terminal…" /> });
 export const ShortcutsDialog = dynamic(() => import("./ShortcutsDialog").then((m) => m.ShortcutsDialog), { ssr: false });

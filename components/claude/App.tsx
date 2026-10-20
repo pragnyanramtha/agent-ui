@@ -10,11 +10,11 @@ import { SessionList, SessionRail } from "./SessionList";
 import { SidebarResizer } from "./SidebarResizer";
 import { useSessionCommands } from "./useSessionCommands";
 import { describeTab, TabBar, TabSheet, TabsButton } from "./TabBar";
-import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, useTabs, VIEW_TABS } from "./useTabs";
+import { AGENTS_TAB, FILES_TAB, INBOX_TAB, NEW_TAB, SETTINGS_TAB, USAGE_TAB, useTabs, VIEW_TABS } from "./useTabs";
 import { applyTheme, useSetting } from "@/lib/client/settings";
 import { InboxScreen, inboxCount } from "./InboxScreen";
 import { useFinished } from "@/lib/client/useFinished";
-import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, ShortcutsDialog, WebTerminal } from "./lazy";
+import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, ShortcutsDialog, UsageScreen, WebTerminal } from "./lazy";
 import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
@@ -425,6 +425,8 @@ export function App() {
             <InboxScreen sessions={sessions} finished={finished} onDismiss={dismiss} onOpen={openSession} onRefresh={() => void refresh()} onMenu={() => setDrawer(true)} extra={tabsButton} />
           ) : active === SETTINGS_TAB ? (
             <SettingsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onAgents={() => openView(AGENTS_TAB)} />
+          ) : active === USAGE_TAB ? (
+            <UsageScreen onMenu={() => setDrawer(true)} extra={tabsButton} onOpen={openSession} />
           ) : active === AGENTS_TAB ? (
             <AgentsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onOpenSession={openSession} projects={projects} />
           ) : sessionId ? (
