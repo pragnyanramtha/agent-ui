@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Eye, EyeClosed, Folder, NavArrowRight, Search, Xmark } from "iconoir-react";
-import { shortPath } from "@/lib/client/api";
+import { Eye, EyeClosed, Folder, NavArrowRight, Plus, Search, Xmark } from "iconoir-react";
+import { api, ApiError, shortPath } from "@/lib/client/api";
 
 /* A combobox for choosing a working folder on the server: recent projects on
  * top, then a browser of the server's filesystem (folders only) starting at
@@ -36,7 +36,11 @@ export function FolderPicker({
   const [error, setError] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
   const [active, setActive] = useState(0);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const crumbsRef = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -78,6 +82,9 @@ export function FolderPicker({
     setQuery("");
     setError(null);
     setActive(0);
+    setNaming(false);
+    setName("");
+    setCreating(false);
     void (async () => {
       if (!value || !(await browse(value, { quiet: true }))) await browse();
     })();
@@ -151,8 +158,50 @@ export function FolderPicker({
     if (data?.parent) void browse(data.parent);
   };
 
+  const startNaming = () => {
+    const typed = query.trim();
+    setName(!pathMode && typed && !typed.includes("/") && typed !== "." && typed !== ".." ? typed : "");
+    setNaming(true);
+    setError(null);
+    requestAnimationFrame(() => {
+      nameRef.current?.focus();
+      nameRef.current?.select();
+    });
+  };
+
+  const createFolder = async () => {
+    const folder = name.trim();
+    if (!data || !folder || creating) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const created = await api<{ path: string }>("/api/files", { action: "mkdir", path: data.path, name: folder });
+      setNaming(false);
+      setName("");
+      setQuery("");
+      await browse(created.path);
+      inputRef.current?.focus();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't create the folder.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (naming && e.target === nameRef.current && e.key !== "Tab") {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void createFolder();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setNaming(false);
+        requestAnimationFrame(() => inputRef.current?.focus());
+      }
+      return;
+    }
     switch (e.key) {
       case "ArrowDown":
       case "ArrowUp":
@@ -371,18 +420,57 @@ export function FolderPicker({
           {data?.truncated && !leaf && <p className="px-2.5 py-2 text-xs text-ink-3">First 500 shown. Type to filter.</p>}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-4">
-          <span className="min-w-0 flex-1 truncate text-sm text-ink-3" title={chosen} translate="no">
-            {chosen ? shortPath(chosen) : "\u00a0"}
-          </span>
+        <div className="flex shrink-0 items-center gap-2 border-t border-line py-2.5 pr-2.5 pl-3">
+          {naming ? (
+            <input
+              ref={nameRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              aria-label="Folder name"
+              placeholder="Folder name"
+              disabled={creating}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="h-10 min-w-0 flex-1 rounded-[9px] bg-field px-3 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:h-8 sm:text-sm sm:pointer-coarse:text-[16px]"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate pl-1 text-sm text-ink-3" title={chosen} translate="no">
+              {chosen ? shortPath(chosen) : "\u00a0"}
+            </span>
+          )}
+          {naming ? (
+            <button
+              type="button"
+              onClick={() => {
+                setNaming(false);
+                inputRef.current?.focus();
+              }}
+              disabled={creating}
+              className="tap relative h-10 shrink-0 rounded-full px-3 text-sm font-medium text-ink-2 hover:bg-hover disabled:opacity-40 sm:h-8"
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startNaming}
+              disabled={!data || loading}
+              className="tap relative flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-ink-2 hover:bg-hover disabled:opacity-40 sm:h-8"
+            >
+              <Plus width={14} height={14} strokeWidth={2} aria-hidden />
+              New folder
+            </button>
+          )}
           <button
             type="button"
-            disabled={!chosen}
-            onClick={() => chosen && pick(chosen)}
-            title="Use this folder (Ctrl+Enter)"
+            disabled={naming ? !name.trim() || creating : !chosen}
+            onClick={() => (naming ? void createFolder() : chosen && pick(chosen))}
+            title={naming ? "Create folder" : "Use this folder (Ctrl+Enter)"}
             className="tap relative h-10 shrink-0 rounded-full bg-ink px-4 text-sm font-medium text-surface transition-[opacity,transform] duration-150 enabled:active:scale-[0.97] disabled:opacity-40 sm:h-8"
           >
-            Use this folder
+            {naming ? (creating ? "Creating…" : "Create") : "Use this folder"}
           </button>
         </div>
       </div>
