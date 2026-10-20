@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_LABEL, type AgentId, type Entry, type PermissionMode } from "@/lib/types";
 import { api } from "@/lib/client/api";
 import { editBody, editPlan, lastPrompt, lastReply } from "@/lib/client/branching";
-import { OPEN_SESSION_EVENT } from "@/lib/client/events";
 import { usePaletteSource } from "@/lib/client/palette-actions";
 import { toast } from "@/lib/client/toast";
 import type { GitInfo } from "@/lib/client/useGitInfo";
@@ -31,6 +30,7 @@ export function useBranching(o: {
   profile: string;
   effort: string;
   onNavigate: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
   const latest = useRef(o);
   latest.current = o;
@@ -59,7 +59,7 @@ export function useBranching(o: {
     try {
       const r = await api<{ id: string }>(`/api/sessions/${id}/fork`, { entryId, text: text || undefined, permissionMode: mode, model: model ?? undefined, profile, effort: effort || undefined, clientId: clientId() });
       toast({ title: "Forked into a new tab.", key, tone: "success" });
-      window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { id: r.id } }));
+      latest.current.onOpen(r.id);
     } catch (err) {
       toast({ title: "Couldn't fork.", body: failure(err), key, tone: "error" });
     }

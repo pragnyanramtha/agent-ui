@@ -15,7 +15,7 @@ import { applyTheme, useSetting } from "@/lib/client/settings";
 import { InboxScreen, inboxCount } from "./InboxScreen";
 import { useFinished } from "@/lib/client/useFinished";
 import { AgentsScreen, FilesScreen, preloadSessionChunks, SettingsScreen, ShortcutsDialog, WebTerminal } from "./lazy";
-import { OPEN_FILES_EVENT, OPEN_SESSION_EVENT } from "@/lib/client/events";
+import { OPEN_FILES_EVENT } from "@/lib/client/events";
 import { OfflineBanner } from "./OfflineBanner";
 import { useKeyboardInset } from "@/lib/client/useKeyboardInset";
 import { setBaseTitle } from "@/lib/client/attention";
@@ -157,14 +157,6 @@ export function App() {
     },
     [open, refresh],
   );
-  useEffect(() => {
-    const on = (e: Event) => {
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
-      if (id) openSession(id);
-    };
-    window.addEventListener(OPEN_SESSION_EVENT, on);
-    return () => window.removeEventListener(OPEN_SESSION_EVENT, on);
-  }, [openSession]);
   useNotifications({ sessions, activeId: sessionId, looking, finished, onOpen: openSession });
   useSessionCommands({ sessions, activeId: sessionId, finished, onOpen: openSession });
   /* the service worker: a tapped notification opens its session, a push means the list just changed */
@@ -436,7 +428,7 @@ export function App() {
           ) : active === AGENTS_TAB ? (
             <AgentsScreen onMenu={() => setDrawer(true)} extra={tabsButton} onOpenSession={openSession} projects={projects} />
           ) : sessionId ? (
-            <OpenSession key={sessionId} id={sessionId} onMenu={openDrawer} onNavigate={navigate} onNew={newTab} extra={tabsButton} />
+            <OpenSession key={sessionId} id={sessionId} onMenu={openDrawer} onNavigate={navigate} onOpen={openSession} onNew={newTab} extra={tabsButton} />
           ) : (
             <NewSession projects={projects} sessions={sessions} onMenu={() => setDrawer(true)} onOpen={openSession} extra={tabsButton} />
           )}
