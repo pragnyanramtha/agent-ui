@@ -150,3 +150,10 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
  more than `CHECKPOINT_MAX_TOTAL_MB` of new files, or 20k of them, skips the checkpoint. Checkpoints older than
  `CHECKPOINT_MAX_AGE_DAYS` are pruned, at most hourly per repo.
 - UI copy: no em dashes; loading labels end with an ellipsis.
+
+## Cursor Cloud specific instructions
+- Install with `pnpm install --frozen-lockfile`, then `pnpm build`. Node 22 and pnpm 11.17.0 (`packageManager`) are on the login-shell PATH.
+- `pnpm dev` fails while compiling `instrumentation.ts`: the edge bundle follows the `web-push` import and cannot resolve Node's `http`. `pnpm start` serves the production build on 127.0.0.1:3311.
+- Boot writes gitignored `.env.local` with `UI_PASSWORD` and `UI_SECRET` when that file is missing. Read it for the login password and leave it uncommitted.
+- Boot starts `node server/pty.mjs` on 127.0.0.1:3312 and a local proxy on 127.0.0.1:3310. The proxy sends `/pty` to the terminal backend and every other path to the app, the same split as the Cloudflare tunnel. Open http://127.0.0.1:3310 so the web terminal connects.
+- `pnpm typecheck` and `pnpm test` are the checks. The web terminal needs Python 3.
