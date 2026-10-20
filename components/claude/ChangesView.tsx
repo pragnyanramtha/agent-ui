@@ -29,6 +29,7 @@ export function ChangesView({
 }) {
   const [open, setOpen] = useState<string | null>(() => (focus && changes.some((f) => f.path === focus) ? focus : (changes[0]?.path ?? null)));
   const ref = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const totals = useMemo(() => changes.reduce((t, f) => ({ added: t.added + f.added, removed: t.removed + f.removed }), { added: 0, removed: 0 }), [changes]);
@@ -45,9 +46,12 @@ export function ChangesView({
     if (!focus) return;
     setOpen(focus);
     const frame = requestAnimationFrame(() => {
-      const row = [...(ref.current?.querySelectorAll<HTMLElement>("[data-path]") ?? [])].find((n) => n.dataset.path === focus);
-      if (!row) return;
-      row.scrollIntoView({ block: "start", behavior: scrollBehavior() });
+      const list = listRef.current;
+      const row = [...(list?.querySelectorAll<HTMLElement>("[data-path]") ?? [])].find((n) => n.dataset.path === focus);
+      if (!list || !row) return;
+      /* not scrollIntoView: on a phone the panel sits over the thread, and that would scroll the screen under it too */
+      const top = row.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop - 8;
+      list.scrollTo({ top: Math.max(0, top), behavior: scrollBehavior() });
       row.querySelector("button")?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
@@ -75,7 +79,7 @@ export function ChangesView({
           </button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 sm:px-3">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 sm:px-3">
         {partial && <p className="px-2 pb-2 text-[11.5px] text-ink-3">From the loaded part of the conversation. Load earlier messages to include older edits.</p>}
         {changes.length === 0 ? (
           <p className="px-2 py-8 text-center text-sm text-ink-3">No file edits in this conversation yet.</p>
