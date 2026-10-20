@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextResponse } from "next/server";
 import { once } from "@/lib/server/dedupe";
-import { postReliably } from "@/lib/client/send";
+import { postReliably, transient } from "@/lib/client/send";
+import { ApiError } from "@/lib/client/api";
 
 describe("server-side send dedupe", () => {
   it("a retried send with the same client id gets the first answer and doesn't run again", async () => {
@@ -67,7 +68,7 @@ describe("client reliable post", () => {
   const netErr = () => Promise.reject(new TypeError("Failed to fetch"));
 
   it("retries network errors and gateway failures with the same client id", async () => {
-    answers = [netErr, json(502, { error: "bad gateway" }), json(530, {}), json(200, { via: "web" })];
+    answers = [netErr, () => new Response("<html>Bad gateway</html>", { status: 502 }), json(530, {}), json(200, { via: "web" })];
     const retries: number[] = [];
     const out = await postReliably<{ via: string }>("/api/x", { text: "hi" }, "cid-123456", { onRetry: (n) => retries.push(n) });
     expect(out).toEqual({ via: "web" });
@@ -85,6 +86,13 @@ describe("client reliable post", () => {
     }
   });
 
+  it("doesn't retry an app error even when it comes with a gateway status", async () => {
+    answers = [json(502, { error: "Message too long." }), json(200, {})];
+    calls.length = 0;
+    await expect(postReliably("/api/x", {}, "cid-app502")).rejects.toMatchObject({ status: 502, message: "Message too long." });
+    expect(calls).toHaveLength(1);
+  });
+
   it("gives up after its time budget", async () => {
     answers = Array.from({ length: 20 }, () => netErr);
     await expect(postReliably("/api/x", {}, "cid-budget1", { forMs: 1000 })).rejects.toThrow("Failed to fetch");
@@ -98,5 +106,15 @@ describe("client reliable post", () => {
     setTimeout(() => ac.abort(), 200);
     await expect(postReliably("/api/x", {}, "cid-abort12", { signal: ac.signal })).rejects.toThrow();
     expect(calls.length).toBeLessThan(4);
+  });
+});
+
+describe("transient", () => {
+  it("is true for network failures and bare gateway answers only", () => {
+    expect(transient(new TypeError("Failed to fetch"))).toBe(true);
+    for (const status of [502, 503, 504, 530]) expect(transient(new ApiError(`Request failed (${status})`, status))).toBe(true);
+    expect(transient(new ApiError("Couldn't send to the terminal: gone", 502))).toBe(false);
+    expect(transient(new ApiError("Request failed (500)", 500))).toBe(false);
+    expect(transient(new ApiError("Busy", 409))).toBe(false);
   });
 });

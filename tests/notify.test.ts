@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GONE_MS, forgetSeen } from "@/lib/notify-events";
 import { SETTLE_MS, phaseOf, step, type Seen } from "@/lib/server/notify";
 import type { PendingAsk, RunState, SessionSummary } from "@/lib/types";
 
@@ -33,6 +34,7 @@ describe("phaseOf", () => {
     expect(phaseOf(row(run("running")))).toBe("busy");
     expect(phaseOf(row(run("idle", [ask])))).toBe("needs");
     expect(phaseOf(row(run("error", [], "boom")))).toBe("failed");
+    expect(phaseOf(row(run("idle", [], "boom")))).toBe("failed");
     expect(phaseOf(row(run("idle")))).toBe("idle");
     expect(phaseOf(row(null, { terminal: { pid: 1, status: "busy", multiplexer: null, name: null } }))).toBe("busy");
     expect(phaseOf(row(null, { terminal: { pid: 1, status: "idle", multiplexer: null, name: null } }))).toBe("idle");
@@ -44,6 +46,14 @@ describe("step", () => {
     const seen = new Map<string, Seen>();
     expect(step(seen, [row(run("idle", [ask]))], 0)).toEqual([]);
     expect(step(seen, [row(run("idle"))], 10_000)).toEqual([]);
+  });
+
+  it("notifies about a session that shows up after a first poll with none, and seeds again after forgetting", () => {
+    const seen = new Map<string, Seen>();
+    expect(step(seen, [], 0)).toEqual([]);
+    expect(step(seen, [row(run("idle", [ask]))], 1000)).toMatchObject([{ kind: "needs" }]);
+    forgetSeen(seen);
+    expect(step(seen, [row(run("idle", [ask]), { id: "s2" })], 2000)).toEqual([]);
   });
 
   it("says done once the session stays idle, not on a short gap between turns", () => {
@@ -82,11 +92,56 @@ describe("step", () => {
     expect(out).toEqual([expect.objectContaining({ kind: "failed", title: "Cursor failed", body: "Fix the login: Not logged in" })]);
   });
 
-  it("forgets sessions that left the list", () => {
+  it("forgets sessions that left the list a while ago", () => {
     const seen = new Map<string, Seen>();
     step(seen, [row(run("running"))], 0);
     step(seen, [], 1000);
+    expect(seen.size).toBe(1);
+    step(seen, [], 1000 + GONE_MS);
     expect(seen.size).toBe(0);
+  });
+
+  it("a failed or waiting session that misses a poll doesn't notify again", () => {
+    const seen = new Map<string, Seen>();
+    step(seen, [row(run("running"))], 0);
+    const failed = row(run("error", [], "Not logged in"));
+    expect(step(seen, [failed], 3000).map((m) => m.kind)).toEqual(["failed"]);
+    /* the agent's list timed out once */
+    expect(step(seen, [], 6000)).toEqual([]);
+    expect(step(seen, [failed], 9000)).toEqual([]);
+    const needs = row(run("running", [ask]), { id: "s2", mtime: 9000 });
+    expect(step(seen, [failed, needs], 12_000).map((m) => m.kind)).toEqual(["needs"]);
+    step(seen, [failed], 15_000);
+    expect(step(seen, [failed, needs], 18_000)).toEqual([]);
+  });
+
+  it("a session that appears after the first poll notifies like any other", () => {
+    const seen = new Map<string, Seen>();
+    step(seen, [row(run("idle"))], 0);
+    const two = row(run("running", [ask]), { id: "s2", mtime: 100_000 });
+    expect(step(seen, [row(run("idle")), two], 100_000)).toEqual([expect.objectContaining({ kind: "needs", url: "/?s=s2" })]);
+    const three = row(run("idle", [], "Not logged in"), { id: "s3", mtime: 100_000 });
+    expect(step(seen, [row(run("idle")), three], 101_000)).toEqual([expect.objectContaining({ kind: "failed", url: "/?s=s3" })]);
+  });
+
+  it("a new session whose quick turn ended between polls says done; one that only reappeared doesn't", () => {
+    const seen = new Map<string, Seen>();
+    step(seen, [row(run("idle"))], 0);
+    const fresh = row(null, { id: "s2", mtime: 200_000 });
+    const old = row(null, { id: "s3", mtime: 1_000 });
+    expect(step(seen, [row(run("idle")), fresh, old], 200_500)).toEqual([]);
+    const out = step(seen, [row(run("idle")), fresh, old], 200_500 + SETTLE_MS);
+    expect(out).toEqual([expect.objectContaining({ kind: "done", url: "/?s=s2" })]);
+    expect(seen.get("s2")?.doneSent).toBe(true);
+  });
+
+  it("a new busy session starts with done not yet sent", () => {
+    const seen = new Map<string, Seen>();
+    step(seen, [row(run("idle"))], 0);
+    step(seen, [row(run("idle")), row(run("running"), { id: "s2" })], 1000);
+    expect(seen.get("s2")).toMatchObject({ phase: "busy", doneSent: false });
+    step(seen, [row(run("idle")), row(run("idle"), { id: "s2" })], 2000);
+    expect(step(seen, [row(run("idle")), row(run("idle"), { id: "s2" })], 2000 + SETTLE_MS)).toEqual([expect.objectContaining({ kind: "done", url: "/?s=s2" })]);
   });
 
   it("clips long bodies", () => {

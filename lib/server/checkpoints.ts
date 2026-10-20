@@ -4,7 +4,9 @@ import { sessionContext } from "./http";
 import { getRun } from "./runner";
 
 /* A checkpoint before each message sent from the web, so the files can go back to how they were before that turn.
- * Never in the way: a slow snapshot (huge repo) stops being waited for after a few seconds, and errors are dropped. */
+ * Never in the way: a slow snapshot (huge repo) stops being waited for after a few seconds, and errors are dropped.
+ * Large untracked files are left out of it, and a folder with too much new data is skipped (git.ts keeps the reason
+ * for the git panel), so checkpoints don't fill the repository's object store. */
 
 const WAIT_MS = 4000;
 

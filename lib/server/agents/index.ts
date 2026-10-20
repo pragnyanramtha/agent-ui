@@ -10,6 +10,8 @@ const adapters: Partial<Record<AgentId, () => Promise<AgentAdapter>>> = {
   cursor: () => import("./cursor").then((m) => m.default),
   devin: () => import("./devin").then((m) => m.default),
   kimi: () => import("./kimi").then((m) => m.default),
+  gemini: () => import("./gemini").then((m) => m.default),
+  antigravity: () => import("./antigravity").then((m) => m.default),
 };
 
 export async function adapterFor(id: AgentId): Promise<AgentAdapter | null> {

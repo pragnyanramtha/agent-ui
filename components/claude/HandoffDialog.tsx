@@ -53,14 +53,6 @@ export function HandoffDialog({
     }
   };
 
-  const how = !chosen
-    ? ""
-    : chosen.agent === "claude"
-      ? "Claude gets the conversation as its own history."
-      : chosen.agent === "codex"
-        ? "Codex gets the conversation injected as its thread history."
-        : `${AGENT_LABEL[chosen.agent]} gets the conversation as context in its first message.`;
-
   return (
     <Sheet
       title="Continue in another agent"
@@ -76,16 +68,16 @@ export function HandoffDialog({
         </>
       }
     >
-      <p className="pb-3 text-[13px] text-ink-3">The conversation so far carries over to a new session. This one stays as it is.</p>
+      <p className="pb-3 text-sm text-ink-3">Starts a new session with this history. This one is kept.</p>
       {profiles === null ? (
-        <p className="py-4 text-[13px] text-ink-3">Loading profiles…</p>
+        <p className="py-4 text-sm text-ink-3">Loading profiles…</p>
       ) : choices.length === 0 ? (
-        <p className="py-4 text-[13px] text-ink-3">No other agent or profile is installed. Add one under Agents.</p>
+        <p className="py-4 text-sm text-ink-3">No other profiles. Add one under Agents.</p>
       ) : (
         <div className="flex flex-col gap-3">
           <div role="radiogroup" aria-label="Continue on" className="flex flex-col gap-0.5">
             {AGENT_IDS.flatMap((a) => choices.filter((p) => p.agent === a)).map((p) => (
-              <label key={p.id} className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-[9px] px-2.5 text-[13.5px] hover:bg-hover ${chosen?.id === p.id ? "bg-hover" : ""}`}>
+              <label key={p.id} className={`flex min-h-10 cursor-pointer items-center gap-3 rounded-[9px] px-2.5 text-sm hover:bg-hover ${chosen?.id === p.id ? "bg-hover" : ""}`}>
                 <input
                   type="radio"
                   name="handoff-profile"
@@ -97,24 +89,23 @@ export function HandoffDialog({
                   className="accent-[var(--color-ink)]"
                 />
                 <span className="min-w-0 flex-1 truncate text-ink">{p.label}</span>
-                {p.id !== p.agent && <span className="shrink-0 text-[12px] text-ink-3">{AGENT_LABEL[p.agent]}</span>}
+                {p.id !== p.agent && <span className="shrink-0 text-xs text-ink-3">{AGENT_LABEL[p.agent]}</span>}
               </label>
             ))}
           </div>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-ink-3">Model (optional)</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} list="handoff-models" placeholder={chosen?.defaultModel ?? "The profile's default"} className={field} autoComplete="off" spellCheck={false} />
+            <span className="text-xs font-medium text-ink-3">Model (optional)</span>
+            <input value={model} onChange={(e) => setModel(e.target.value)} list="handoff-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
             <datalist id="handoff-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-ink-3">Next message (optional)</span>
+            <span className="text-xs font-medium text-ink-3">Next message (optional)</span>
             <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Carry on where it left off" className={area} />
           </label>
-          <p className="text-[12px] text-ink-3">{how}</p>
         </div>
       )}
       {error && (
-        <p role="alert" className="mt-3 rounded-[10px] bg-red-tint px-3 py-2 text-[13px] text-red-ink">
+        <p role="alert" className="mt-3 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">
           {error}
         </p>
       )}

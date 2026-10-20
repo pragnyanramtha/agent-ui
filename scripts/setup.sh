@@ -26,7 +26,7 @@ step "Checking the server"
   command -v python3 >/dev/null && echo "ok   python3" || { echo "MISSING python3 (the web terminal needs it)"; miss=1; }
   command -v tmux >/dev/null && echo "ok   tmux" || echo "note tmux not found: agents started from the browser then stop when agent-u-pty restarts"
   command -v cloudflared >/dev/null && echo "ok   cloudflared" || echo "note cloudflared not found: no public URL until it is installed"
-  for b in claude codex opencode cursor-agent devin kimi; do command -v $b >/dev/null && echo "ok   $b" || echo "--   $b not installed"; done
+  for b in claude codex opencode cursor-agent devin kimi gemini agy; do command -v $b >/dev/null && echo "ok   $b" || echo "--   $b not installed"; done
   exit $miss' || { echo "Install the missing tools on the server, then run this again." >&2; exit 1; }
 
 step "Shipping the code to ~/$DIR"
@@ -38,7 +38,7 @@ HASH=""
 if [ -n "${SETUP_PASSWORD:-}" ]; then HASH=$(printf '%s\n' "$SETUP_PASSWORD" | node scripts/hash-password.mjs | sed 's/^UI_PASSWORD_HASH=//'); fi
 EXTRA=""; [ -f .env.server ] && EXTRA=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env.server || true)
 EXTRA64=$(printf '%s\n' "$EXTRA" | base64 | tr -d '\n')
-"${SSH[@]}" "HASH='$HASH' DIR='$DIR' EXTRA64='$EXTRA64' bash -s" <<'REMOTE'
+"${SSH[@]}" "HASH='$HASH' DIR='$DIR' EXTRA64='$EXTRA64' PUBLIC='${PUBLIC_HOSTNAME:-}' TUNNEL='${TUNNEL_NAME:-}' bash -s" <<'REMOTE'
 set -euo pipefail
 f="$HOME/$DIR/.env.local"
 extra=$(printf '%s' "$EXTRA64" | base64 -d)
@@ -58,6 +58,10 @@ elif ! grep -q '^UI_PASSWORD\(_HASH\)\?=.' "$f"; then
   set_key UI_PASSWORD "$pw"
   echo "New login password (shown once, change it with SETUP_PASSWORD=...): $pw"
 fi
+# the app and the terminal backend only answer this name (plus loopback and ALLOWED_HOSTS)
+if [ -n "$PUBLIC" ]; then set_key PUBLIC_HOSTNAME "$PUBLIC"; fi
+# the Cloudflare tunnel sets cf-connecting-ip itself, so the login limiter can tell clients apart by it
+if [ -n "$PUBLIC" ] && [ -n "$TUNNEL" ]; then set_key TRUST_PROXY_HEADERS 1; fi
 while IFS= read -r line; do [ -n "$line" ] && set_key "${line%%=*}" "${line#*=}"; done <<< "$extra"
 echo "$(grep -c . "$f") keys in $f"
 REMOTE
@@ -97,7 +101,7 @@ credentials-file: $HOME/.cloudflared/$id.json
 no-autoupdate: true
 ingress:
   - hostname: $HOST
-    path: ^/pty
+    path: ^/pty\$
     service: http://127.0.0.1:3312
   - hostname: $HOST
     service: http://127.0.0.1:3311
@@ -113,12 +117,14 @@ REMOTE
 fi
 
 step "Agent logins"
-"${SSH[@]}" 'export PATH=$HOME/.local/bin:$HOME/.opencode/bin:$HOME/.kimi-code/bin:$PATH
+"${SSH[@]}" 'export PATH=$HOME/.local/bin:$HOME/.local/npm-global/bin:$HOME/.npm-global/bin:$HOME/.opencode/bin:$HOME/.kimi-code/bin:/usr/local/bin:$PATH
   [ -d ~/.claude ] && ls ~/.claude/.credentials.json >/dev/null 2>&1 && echo "claude: credentials found" || { command -v claude >/dev/null && echo "claude: run claude, then /login"; }
   command -v codex >/dev/null && { codex login status >/dev/null 2>&1 && echo "codex: credentials found" || echo "codex: run codex login"; }
   command -v opencode >/dev/null && echo "opencode: opencode auth login if not done"
   command -v cursor-agent >/dev/null && { cursor-agent status 2>/dev/null | grep -qi "logged in" && echo "cursor: credentials found" || echo "cursor: run cursor-agent login"; }
   command -v kimi >/dev/null && echo "kimi: run kimi, then /login if not done"
+  command -v gemini >/dev/null && { [ -n "$GEMINI_API_KEY$GOOGLE_API_KEY" ] || grep -qs "^GEMINI_API_KEY=." "$HOME/'"$DIR"'/.env.local" && echo "gemini: API key found" || echo "gemini: set GEMINI_API_KEY in .env.local (or Vertex AI / Code Assist); Google sign-in moved to Antigravity"; }
+  command -v agy >/dev/null && { [ -f ~/.gemini/antigravity-cli/conversation_summaries.db ] && echo "antigravity: has run before; run agy once if turns say it is not signed in" || echo "antigravity: run agy once to sign in"; }
   true'
 echo
 echo "Found credentials can still be expired: if a turn says the login or token expired, log in again on the server."

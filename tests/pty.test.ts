@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -15,7 +15,8 @@ const home = fs.mkdtempSync(path.join(os.tmpdir(), "agentu-pty-"));
 let server: ChildProcess;
 let logs = "";
 
-const cookie = (secret = SECRET, expires = Date.now() + 3600_000) => `cui_session=${expires}.${createHmac("sha256", secret).update(String(expires)).digest("base64url")}`;
+/* signed as lib/auth.ts does: expiry, session epoch ("" with no auth.json yet) and password (none here) */
+const cookie = (secret = SECRET, expires = Date.now() + 3600_000) => `cui_session=${expires}.${createHmac("sha256", secret).update(`${expires}\n\n`).digest("base64url")}`;
 
 type Conn = { ws: WebSocket; out: () => string; msgs: Record<string, unknown>[]; closed: Promise<{ code: number; reason: string }>; opened: Promise<void> };
 function connect(query: string, headers: Record<string, string> = {}): Conn {
@@ -39,10 +40,11 @@ const until = async (check: () => boolean, ms = 8000) => {
   }
 };
 const type = (c: Conn, data: string) => c.ws.send(JSON.stringify({ type: "input", data }));
+const hasTmux = spawnSync("tmux", ["-V"], { stdio: "ignore" }).status === 0;
 
 beforeAll(async () => {
   server = spawn(process.execPath, ["server/pty.mjs"], {
-    env: { NODE_ENV: "test", PATH: process.env.PATH, HOME: home, SHELL: "/bin/sh", UI_SECRET: SECRET, PTY_PORT: String(PORT), TERM: "xterm-256color" },
+    env: { NODE_ENV: "test", PATH: process.env.PATH, HOME: home, SHELL: "/bin/sh", UI_SECRET: SECRET, PTY_PORT: String(PORT), TERM: "xterm-256color", TMUX_TMPDIR: home },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout!.on("data", (d) => (logs += d));
@@ -57,6 +59,8 @@ beforeAll(async () => {
 });
 afterAll(() => {
   server?.kill("SIGTERM");
+  /* without TMUX in the env, kill-server can only reach the test's own socket under TMUX_TMPDIR, never the caller's tmux */
+  if (hasTmux) spawnSync("tmux", ["kill-server"], { env: { ...process.env, TMUX: undefined, TMUX_TMPDIR: home }, stdio: "ignore" });
   fs.rmSync(home, { recursive: true, force: true });
 });
 
@@ -77,8 +81,9 @@ describe("web terminal backend", () => {
     const c = connect(`cwd=${encodeURIComponent(home)}`);
     await until(() => c.msgs.some((m) => m.type === "hello"));
     const id = c.msgs.find((m) => m.type === "hello")!.id as string;
-    type(c, "echo first-part\r");
-    await until(() => c.out().includes("first-part\r\n"));
+    /* wait for the command's output, not the echo of what was typed, and its prompt after it, so nothing of it lands after `seen` */
+    type(c, "echo first-$((1))-part\r");
+    await until(() => /first-1-part\r\n.*\$ $/s.test(c.out()));
     const seen = Buffer.byteLength(c.out());
     c.ws.terminate();
     await c.closed;
@@ -88,11 +93,11 @@ describe("web terminal backend", () => {
     expect(r.msgs.find((m) => m.type === "hello")).toMatchObject({ id, offset: seen });
     type(r, "echo second-part\r");
     await until(() => r.out().includes("second-part\r\n"));
-    expect(r.out()).not.toContain("first-part");
+    expect(r.out()).not.toContain("first-1-part");
 
     const full = connect(`term=${id}&since=0`);
     await until(() => full.out().includes("second-part\r\n"));
-    expect(full.out()).toContain("first-part");
+    expect(full.out()).toContain("first-1-part");
     type(full, "exit\r");
     await until(() => full.msgs.some((m) => m.type === "exit"));
     r.ws.close();
@@ -150,5 +155,41 @@ describe("web terminal backend", () => {
     const ok = await fetch(`http://${HOST}/internal/terminals`, { headers: { "x-agent-u-internal": key } });
     expect(ok.status).toBe(200);
     expect(Array.isArray((await ok.json()).terminals)).toBe(true);
+  });
+
+  it.skipIf(!hasTmux)("tmux launches get profile secrets without putting them on a command line", async () => {
+    const key = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
+    const out = path.join(home, "launch.out");
+    const secret = "s3cr;et 'quoted' $HOME";
+    const res = await fetch(`http://${HOST}/internal/launch`, {
+      method: "POST",
+      headers: { "x-agent-u-internal": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "sh", args: ["-c", `printf '%s' "$AGENTU_TEST_SECRET" > ${out}; sleep 30`], env: { AGENTU_TEST_SECRET: secret }, cwd: home, label: "ends with;" }),
+    });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    await until(() => fs.existsSync(out) && fs.readFileSync(out, "utf8").length > 0);
+    expect(fs.readFileSync(out, "utf8")).toBe(secret);
+    expect(fs.readdirSync(os.tmpdir()).filter((d) => d.startsWith("agentu-env-")).some((d) => fs.existsSync(path.join(os.tmpdir(), d, "env")) && fs.readFileSync(path.join(os.tmpdir(), d, "env"), "utf8").includes("s3cr"))).toBe(false);
+    const list = await (await fetch(`http://${HOST}/internal/terminals`, { headers: { "x-agent-u-internal": key } })).json();
+    expect(list.terminals.find((t: { id: string }) => t.id === id)).toMatchObject({ label: "ends with;", backing: "tmux" });
+    await fetch(`http://${HOST}/internal/kill`, { method: "POST", headers: { "x-agent-u-internal": key, "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  });
+
+  it.skipIf(!hasTmux)("tmux launches take a folder named like a tmux format literally", async () => {
+    const key = createHmac("sha256", SECRET).update("agent-u pty internal").digest("base64url");
+    const dir = path.join(home, "x#(echo hi)#{session_name}y");
+    fs.mkdirSync(dir);
+    const out = path.join(home, "pwd.out");
+    const res = await fetch(`http://${HOST}/internal/launch`, {
+      method: "POST",
+      headers: { "x-agent-u-internal": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "sh", args: ["-c", `pwd -P > ${out}; sleep 30`], cwd: dir, label: "formats" }),
+    });
+    expect(res.status).toBe(200);
+    const { id } = await res.json();
+    await until(() => fs.existsSync(out) && fs.readFileSync(out, "utf8").length > 0);
+    expect(fs.readFileSync(out, "utf8").trim()).toBe(fs.realpathSync(dir));
+    await fetch(`http://${HOST}/internal/kill`, { method: "POST", headers: { "x-agent-u-internal": key, "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
   });
 });

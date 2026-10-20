@@ -16,8 +16,6 @@ const SLOW_MS = 90_000;
  */
 export function PendingBubble({
   pending,
-  where,
-  agentName = "Claude",
   claudeBusy,
   queued = false,
   onRetry,
@@ -45,39 +43,38 @@ export function PendingBubble({
   }, [pending.state]);
 
   const { text: body, paths } = splitAttachments(pending.text);
-  const slow = pending.state === "sent" && !queued && pending.via !== "queued" && now - pending.at > SLOW_MS;
-  const target = pending.via === "terminal" ? where ?? "the terminal" : agentName;
+  const slow = pending.state === "sent" && !queued && pending.via !== "queued" && now - (pending.sentAt ?? pending.at) > SLOW_MS;
   const status =
     pending.state === "sending"
-      ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: pending.via === "terminal" || where ? `Typing into ${where ?? "the terminal"}…` : "Sending…", tone: "text-ink-3" }
+      ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: "Sending…", tone: "text-ink-3" }
       : pending.state === "failed"
         ? { icon: <WarningTriangle width={12} height={12} strokeWidth={2} />, text: pending.error ?? "Couldn't send.", tone: "text-red-ink" }
         : queued
-          ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: `Queued. Sends when ${agentName} finishes.`, tone: "text-ink-3" }
+          ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: "Queued", tone: "text-ink-3" }
         : slow
-          ? { icon: <WarningTriangle width={12} height={12} strokeWidth={2} />, text: `Sent to ${target}, but it isn't in this conversation yet. Check the terminal view.`, tone: "text-orange-ink" }
+          ? { icon: <WarningTriangle width={12} height={12} strokeWidth={2} />, text: "Sent, not in history yet", tone: "text-orange-ink" }
           : claudeBusy && pending.via !== "queued"
-            ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: `Queued. ${pending.via === "terminal" ? `${agentName} in ${target}` : agentName} reads it after the current step.`, tone: "text-ink-3" }
-            : { icon: <Check width={12} height={12} strokeWidth={2.2} />, text: `Delivered to ${target}`, tone: "text-ink-3" };
+            ? { icon: <Clock width={12} height={12} strokeWidth={2} />, text: "Queued", tone: "text-ink-3" }
+            : { icon: <Check width={12} height={12} strokeWidth={2.2} />, text: "Delivered", tone: "text-ink-3" };
 
   return (
-    <div className="flex flex-col items-end gap-1 pl-8 sm:pl-20" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
+    <div className="flex flex-col items-end gap-1" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <SentFiles paths={paths} />
       <div
-        className={`max-w-full min-w-0 rounded-[14px] border border-dashed px-3.5 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:py-2 sm:text-[13.5px] ${
+        className={`max-w-[80%] min-w-0 rounded-2xl border border-dashed px-3.5 py-2.5 text-md leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:px-4 sm:py-3 sm:text-base ${
           pending.state === "failed" ? "border-red/40 bg-red-tint" : "border-line-strong bg-field/60"
         }`}
         aria-busy={pending.state === "sending" || undefined}
       >
         {body}
       </div>
-      <div role="status" className={`flex max-w-full items-center gap-1.5 text-[11.5px] ${status.tone}`}>
+      <div role="status" className={`flex max-w-full items-center gap-1.5 text-xs ${status.tone}`}>
         <span className="shrink-0">{status.icon}</span>
         <span className="min-w-0">{status.text}</span>
         {queued && (
           <span className="ml-1 flex shrink-0 items-center gap-1">
             {onSendNow && (
-              <button type="button" onClick={onSendNow} title="Stops the current turn and sends this now" className="tap relative rounded-full px-2 py-0.5 font-medium text-ink hover:bg-hover">
+              <button type="button" onClick={onSendNow} title="Stop turn and send" className="tap relative rounded-full px-2 py-0.5 font-medium text-ink hover:bg-hover">
                 Send now
               </button>
             )}

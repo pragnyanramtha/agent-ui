@@ -252,7 +252,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
           input: { description: str(p.data.description), prompt: str(p.data.prompt), subagent_type: str(p.data.agent) },
         });
       }
-      if (p.data.type === "compaction") out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Conversation compacted" });
+      if (p.data.type === "compaction") out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Context compacted" });
     }
     return out;
   }
@@ -298,7 +298,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
         break;
       }
       case "compaction":
-        out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Conversation compacted" });
+        out.push({ kind: "notice", id: p.id, ts: iso(p.created), tone: "info", text: "Context compacted" });
         break;
     }
   }
@@ -308,7 +308,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
     const msg = str(obj(err.data).message);
     out.push(
       name === "MessageAbortedError"
-        ? { kind: "notice", id: `${m.id}:error`, ts: iso(time.completed ?? m.updated), tone: "info", text: "Interrupted" }
+        ? { kind: "notice", id: `${m.id}:error`, ts: iso(time.completed ?? m.updated), tone: "info", text: "Stopped" }
         : { kind: "notice", id: `${m.id}:error`, ts: iso(time.completed ?? m.updated), tone: "warn", text: authHint(name, msg || name || "The model request failed") },
     );
   }
@@ -316,7 +316,7 @@ export function messageEntries(m: Msg, parts: Part[], now: number): Entry[] {
 }
 
 function authHint(name: string, msg: string): string {
-  if (name === "ProviderAuthError" || /api key|unauthori[sz]ed|401|credentials/i.test(msg)) return `${msg} (run \`opencode auth login\` on the host)`;
+  if (name === "ProviderAuthError" || /api key|unauthori[sz]ed|401|credentials/i.test(msg)) return `${msg}. Run opencode auth login on the server.`;
   return msg;
 }
 

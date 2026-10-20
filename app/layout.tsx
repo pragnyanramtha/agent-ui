@@ -1,9 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Fira_Code, Geist, Geist_Mono, Inter, JetBrains_Mono } from "next/font/google";
+import { SettingsRuntime } from "@/components/claude/settings/SettingsRuntime";
+import { PALETTES, prePaintScript } from "@/lib/settings-schema";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const sans = Geist({ subsets: ["latin"], variable: "--font-sans-face" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono-face" });
+/* picked in Settings > Appearance; not preloaded, so their files only download once a setting uses them */
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter-face", preload: false });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono-face", preload: false });
+const fira = Fira_Code({ subsets: ["latin"], variable: "--font-fira-face", preload: false });
 
 export const metadata: Metadata = {
   title: "agent-u",
@@ -14,9 +20,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/* Browser chrome color per theme, matched to --page. Keep in sync with ThemeToggle. */
-const THEME_COLOR = { dark: "#17181a", light: "#fafafb" };
-
 /* theme-color is rendered by hand (below) instead of through `viewport`, so it
  * follows the app's own theme choice rather than the OS color scheme. */
 export const viewport: Viewport = {
@@ -26,18 +29,21 @@ export const viewport: Viewport = {
   interactiveWidget: "resizes-content",
 };
 
-/* Dark by default; the stored choice is applied before paint so there's no flash,
- * and the browser chrome color is matched to it. */
-const themeScript = `(function(){var d=true;try{d=localStorage.getItem("bui-theme")!=="light"}catch(e){}document.documentElement.classList.toggle("dark",d);var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?"${THEME_COLOR.dark}":"${THEME_COLOR.light}")})()`;
+/* Dark by default (or the OS scheme when set to System). The stored theme, palette, fonts, sizes and so on are put on
+ * <html> before paint so there's no flash, and the browser chrome color is matched to the page (lib/settings-schema.ts). */
+const themeScript = prePaintScript();
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content={THEME_COLOR.dark} suppressHydrationWarning />
+        <meta name="theme-color" content={PALETTES[0].dark.page} suppressHydrationWarning />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className={`${inter.variable} ${mono.variable} font-sans`}>{children}</body>
+      <body className={`${sans.variable} ${mono.variable} ${inter.variable} ${geistMono.variable} ${fira.variable} font-sans`}>
+        {children}
+        <SettingsRuntime />
+      </body>
     </html>
   );
 }

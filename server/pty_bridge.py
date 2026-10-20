@@ -76,11 +76,26 @@ try:
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                     set_size(int(parts[0]), int(parts[1]))
 finally:
+    status = None
     try:
-        os.kill(pid, signal.SIGHUP)
-    except ProcessLookupError:
-        pass
-    try:
-        os.waitpid(pid, 0)
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if not done:
+            try:
+                os.kill(pid, signal.SIGHUP)
+            except ProcessLookupError:
+                pass
+            _, status = os.waitpid(pid, 0)
     except ChildProcessError:
-        pass
+        status = None
+
+
+def exit_code(st):
+    if hasattr(os, "waitstatus_to_exitcode"):  # Python 3.9+
+        code = os.waitstatus_to_exitcode(st)
+        return 128 - code if code < 0 else code
+    if os.WIFSIGNALED(st):
+        return 128 + os.WTERMSIG(st)
+    return os.WEXITSTATUS(st) if os.WIFEXITED(st) else 1
+
+
+sys.exit(0 if status is None else exit_code(status))

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const terminal = await terminalForKey(id);
-  if (!terminal) return NextResponse.json({ error: "Not open in a terminal." }, { status: 404 });
+  if (!terminal) return NextResponse.json({ error: "This session isn't open in a terminal." }, { status: 404 });
   const target = await inputTarget(terminal.pid);
   if (!target) return NextResponse.json({ error: "Can't read this terminal." }, { status: 404 });
   try {

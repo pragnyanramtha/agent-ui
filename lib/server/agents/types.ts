@@ -16,6 +16,8 @@ export type AgentSession = {
   cwd: string;
   /** last activity, epoch ms */
   mtime: number;
+  /** when it started, epoch ms, if the agent's storage records it */
+  created?: number;
   /** bytes of history, for display only (0 if unknown) */
   size: number;
   model?: string | null;
@@ -32,8 +34,9 @@ export type CliRunState = {
   pending?: PendingAsk[];
 };
 
-export type StartOptions = { cwd: string; text: string; model?: string; mode: PermissionMode };
-export type SendOptions = { model?: string; mode: PermissionMode };
+/** `effort` is a level from lib/agent-traits.ts; drivers without levels ignore it */
+export type StartOptions = { cwd: string; text: string; model?: string; effort?: string; mode: PermissionMode };
+export type SendOptions = { model?: string; effort?: string; mode: PermissionMode };
 
 export interface AgentAdapter {
   id: AgentId;
@@ -58,4 +61,7 @@ export interface AgentAdapter {
   /** state of the web-driven run for this session, if one exists */
   runState(id: string): CliRunState | null;
   stop(id: string): Promise<void>;
+  /** every file the agent's own store keeps this session's history in, and the folders that store lives under;
+   * agents without one file per session leave this out (their history can't be deleted from here) */
+  transcriptFiles?(id: string): Promise<{ files: string[]; roots: string[] }>;
 }

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import webpush from "web-push";
+import type { NotifyMessage } from "@/lib/notify-events";
 import { CONFIG_DIR } from "./profiles";
 
 /* Web Push: one VAPID key pair for this server, and the browsers that asked for notifications. Kept next to the
@@ -12,26 +13,59 @@ type Store = { publicKey: string; privateKey: string; subs: Subscription[] };
 export const PUSH_PATH = process.env.AGENT_U_PUSH || path.join(CONFIG_DIR, "push.json");
 const MAX_SUBS = 20;
 
-let cache: Store | null = null;
+/* instrumentation (notify) and the route handlers are separate bundles with their own module state: share the cache
+ * through globalThis, and re-read the file whenever another writer replaced it */
+const g = globalThis as typeof globalThis & { __agentuPush?: { cache: Store | null; stamp: string } };
+const held = (g.__agentuPush ??= { cache: null, stamp: "" });
+
+function stampOf() {
+  try {
+    const st = fs.statSync(PUSH_PATH);
+    return `${st.ino}:${st.size}:${st.mtimeMs}`;
+  } catch {
+    return "";
+  }
+}
 
 function load(): Store {
-  if (cache) return cache;
+  const stamp = stampOf();
+  if (held.cache && stamp && stamp === held.stamp) return held.cache;
+  let text: string;
   try {
-    const raw = JSON.parse(fs.readFileSync(PUSH_PATH, "utf8")) as Partial<Store>;
-    if (raw.publicKey && raw.privateKey) return (cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
-  } catch {}
-  const keys = webpush.generateVAPIDKeys();
-  cache = { ...keys, subs: [] };
-  write();
-  return cache;
+    text = fs.readFileSync(PUSH_PATH, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") return unreadable(err, stamp);
+    held.cache = { ...webpush.generateVAPIDKeys(), subs: [] };
+    write();
+    return held.cache;
+  }
+  try {
+    const raw = JSON.parse(text) as Partial<Store>;
+    if (!raw.publicKey || !raw.privateKey) throw new Error("no key pair in it");
+    held.stamp = stamp;
+    return (held.cache = { publicKey: raw.publicKey, privateKey: raw.privateKey, subs: Array.isArray(raw.subs) ? raw.subs : [] });
+  } catch (err) {
+    return unreadable(err, stamp);
+  }
+}
+
+/* new keys would silently unsubscribe every browser, so a damaged file is never replaced with fresh ones */
+function unreadable(err: unknown, stamp: string): Store {
+  const why = `Can't read ${PUSH_PATH}: ${err instanceof Error ? err.message : String(err)}`;
+  if (!held.cache) throw new Error(why);
+  console.warn(`${why} (using the keys loaded earlier)`);
+  /* warn once per version of the file, not on every poll */
+  held.stamp = stamp;
+  return held.cache;
 }
 
 function write() {
-  if (!cache) return;
+  if (!held.cache) return;
   fs.mkdirSync(path.dirname(PUSH_PATH), { recursive: true, mode: 0o700 });
-  const tmp = `${PUSH_PATH}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2), { mode: 0o600 });
+  const tmp = `${PUSH_PATH}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(held.cache, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, PUSH_PATH);
+  held.stamp = stampOf();
 }
 
 export const vapidPublicKey = () => load().publicKey;
@@ -51,7 +85,16 @@ export function unsubscribe(endpoint: string) {
   if (store.subs.length !== before) write();
 }
 
-export type PushMessage = { title: string; body: string; tag: string; url: string; kind: "done" | "needs" | "failed" | "test" };
+/** Forgets every browser: after "Sign out everywhere" no device should keep getting session details. */
+export function unsubscribeAll() {
+  const store = load();
+  if (!store.subs.length) return;
+  store.subs = [];
+  write();
+}
+
+/** `respond` makes an approval answerable from the notification (lib/server/push-token.ts) */
+export type PushMessage = NotifyMessage & { respond?: { token: string } };
 
 /** Sends to every subscribed browser; ones the push service says are gone are dropped. */
 export async function pushAll(msg: PushMessage, only?: string) {
@@ -78,7 +121,9 @@ export async function pushAll(msg: PushMessage, only?: string) {
     }),
   );
   if (gone.length) {
-    store.subs = store.subs.filter((s) => !gone.includes(s.endpoint));
+    /* reloaded: a browser may have subscribed while these were in flight */
+    const now = load();
+    now.subs = now.subs.filter((s) => !gone.includes(s.endpoint));
     write();
   }
   return { sent, dropped: gone.length };
@@ -86,5 +131,6 @@ export async function pushAll(msg: PushMessage, only?: string) {
 
 /** test hook */
 export const resetPushCache = () => {
-  cache = null;
+  held.cache = null;
+  held.stamp = "";
 };

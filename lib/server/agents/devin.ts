@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Entry, PermissionMode } from "@/lib/types";
-import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run } from "./cli-run";
+import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run, type SpawnSpec } from "./cli-run";
 import { profileBin } from "../profiles";
 import {
   devinDataDir,
@@ -60,6 +60,7 @@ const toSession = (r: DevinSessionRow): AgentSession => ({
   title: r.title,
   cwd: r.cwd,
   mtime: r.lastActivity * 1000,
+  created: r.createdAt ? r.createdAt * 1000 : undefined,
   size: 0,
   model: r.model || null,
 });
@@ -207,7 +208,7 @@ const pids = (() => {
   return (gg.__devinTurnPids ??= new Map());
 })();
 
-const LOGIN_HINT = "Devin isn't logged in on this server. Run `devin auth login --force-manual-token-flow` there (as the user running this UI), then try again.";
+const LOGIN_HINT = "Devin isn't logged in. Run devin auth login --force-manual-token-flow on the server.";
 
 function friendly(err: string | null): string | null {
   if (!err) return err;
@@ -241,35 +242,51 @@ function promptFor(text: string, mode: PermissionMode, savedMode: string | null)
   return text;
 }
 
-function argsFor(text: string, mode: PermissionMode, model: string | undefined, resume: string | null): string[] {
+function argsFor(text: string, mode: PermissionMode, model: string | undefined, resume: string | null): { args: string[]; promptDir: string | null } {
   const args = ["--permission-mode", CLI_MODE[mode] ?? "auto", "--respect-workspace-trust", "false"];
   if (model) args.push("--model", model);
   if (resume) args.push("--resume", resume);
   /* one argument is capped at 128 KiB; long prompts go in a private file (Devin reads it at start; removed later) */
-  if (Buffer.byteLength(text) > 64 * 1024) args.push("-p", "--prompt-file", promptFile(text));
-  else args.push("-p", "--", text);
-  return args;
+  if (Buffer.byteLength(text) <= 64 * 1024) return { args: [...args, "-p", "--", text], promptDir: null };
+  const { file, dir } = promptFile(text);
+  return { args: [...args, "-p", "--prompt-file", file], promptDir: dir };
 }
 
-function promptFile(text: string): string {
-  const dir = path.join(os.tmpdir(), "agent-u-prompts");
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, `devin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.md`);
+/* a folder of its own per prompt (mkdtemp is 0700), so no other user can plant or swap the file */
+function promptFile(text: string): { file: string; dir: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-u-"));
+  const file = path.join(dir, "devin-prompt.md");
   fs.writeFileSync(file, text, { mode: 0o600 });
-  setTimeout(() => fs.rm(file, { force: true }, () => undefined), 30 * 60_000).unref();
-  return file;
+  setTimeout(() => fs.rm(dir, { recursive: true, force: true }, () => undefined), 30 * 60_000).unref();
+  return { file, dir };
+}
+
+/** startTurn; a prompt file's folder goes when the turn's process does */
+function startDevinTurn(key: string, { promptDir, ...spec }: SpawnSpec & { promptDir: string | null }, onChunk: (chunk: string) => void): Run {
+  const drop = () => {
+    if (promptDir) fs.rm(promptDir, { recursive: true, force: true }, () => undefined);
+  };
+  try {
+    const run = startTurn(key, spec, undefined, onChunk);
+    run.child.once("close", drop);
+    run.child.once("error", drop);
+    return run;
+  } catch (err) {
+    drop();
+    throw err;
+  }
 }
 
 async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
   const bin = await profileBin(findBinary);
-  if (!bin) throw new Error("Devin isn't installed on the server.");
+  if (!bin) throw new Error("Devin isn't installed.");
   if (!hasCredentials()) throw new Error(LOGIN_HINT);
   const db = openDb();
   const known = new Set(db ? listAllIds(db) : []);
   const t0 = Date.now();
   const tempKey = `devin:pending-${t0.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let onChunk: (chunk: string) => void = () => {};
-  const run = startTurn(tempKey, { cmd: bin, args: argsFor(promptFor(opts.text, opts.mode, null), opts.mode, opts.model, null), cwd: opts.cwd }, undefined, (c) => onChunk(c));
+  const run = startDevinTurn(tempKey, { cmd: bin, ...argsFor(promptFor(opts.text, opts.mode, null), opts.mode, opts.model, null), cwd: opts.cwd }, (c) => onChunk(c));
   onChunk = liveText(run);
   const rootPid = run.child.pid ?? -1;
 
@@ -305,7 +322,7 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
       }
       if (Date.now() > deadline) {
         stopTurn(tempKey);
-        return reject(new Error("Devin didn't report a session id in time."));
+        return reject(new Error("Devin didn't start a session in time."));
       }
       setTimeout(tick, 300);
     };
@@ -339,13 +356,13 @@ function listAllIds(db: NonNullable<ReturnType<typeof openDb>>): string[] {
 
 async function send(id: string, text: string, opts: { model?: string; mode: PermissionMode }): Promise<void> {
   const bin = await profileBin(findBinary);
-  if (!bin) throw new Error("Devin isn't installed on the server.");
+  if (!bin) throw new Error("Devin isn't installed.");
   const db = openDb();
   const row = db ? getSession(db, id) : null;
   if (!row) throw new Error("Devin session not found.");
   const cwd = row.cwd && fs.existsSync(row.cwd) ? row.cwd : os.homedir();
   let onChunk: (chunk: string) => void = () => {};
-  const run = startTurn(keyOf(id), { cmd: bin, args: argsFor(promptFor(text, opts.mode, row.agentMode), opts.mode, opts.model, id), cwd }, undefined, (c) => onChunk(c));
+  const run = startDevinTurn(keyOf(id), { cmd: bin, ...argsFor(promptFor(text, opts.mode, row.agentMode), opts.mode, opts.model, id), cwd }, (c) => onChunk(c));
   onChunk = liveText(run);
   if (run.child.pid) pids.set(keyOf(id), run.child.pid);
 }

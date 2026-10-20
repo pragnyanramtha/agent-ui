@@ -269,7 +269,7 @@ export function messageToEntries(m: Json, fallbackModel = ""): Entry[] {
   if (role === "system") {
     const mode = obj(ext.mode_transition);
     if (s(mode.to)) return [{ kind: "notice", id, ts, tone: "info", text: `Switched to ${titleCase(s(mode.to))} mode` }];
-    return [{ kind: "notice", id, ts, tone: "info", text: "Context compacted: earlier messages were summarized" }];
+    return [{ kind: "notice", id, ts, tone: "info", text: "Context compacted" }];
   }
 
   if (role === "tool") {

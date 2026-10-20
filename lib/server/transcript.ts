@@ -29,7 +29,7 @@ type Rec = {
     content?: string | Block[];
     usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; output_tokens?: number };
   };
-  attachment?: { type?: string; prompt?: string; origin?: { kind?: string } };
+  attachment?: { type?: string; prompt?: string | Block[]; origin?: { kind?: string } };
   aiTitle?: string;
   customTitle?: string;
   summary?: string;
@@ -75,15 +75,24 @@ function userString(rec: Rec, text: string, id: string, ts: string): Entry[] {
   }
   const bash = tag(text, "bash-input");
   if (bash) return [{ kind: "user", id, ts, text: `! ${bash}`, images: 0 }];
-  if (text.startsWith("[Request interrupted by user")) return [{ kind: "notice", id, ts, tone: "warn", text: "Interrupted" }];
+  if (text.startsWith("[Request interrupted by user")) return [{ kind: "notice", id, ts, tone: "warn", text: "Stopped" }];
   if (/^<(task-notification|local-command-caveat|user-memory-input)>/.test(text) || rec.isCompactSummary) return [];
   const imported = text.startsWith("<imported-session>") ? tag(text, "imported-session") : null;
   if (imported !== null) {
     const from = /moved here from (.+?) \(/.exec(imported)?.[1];
-    return [{ kind: "notice", id, ts, tone: "info", text: from ? `Continued from ${from}. The turns before this point happened there; tool runs show as text.` : imported }];
+    return [{ kind: "notice", id, ts, tone: "info", text: from ? `Continued from ${from}` : imported }];
   }
   const clean = text.replace(SYSTEM_REMINDER, "").trim();
   return clean ? [{ kind: "user", id, ts, text: clean, images: 0 }] : [];
+}
+
+/** A user message given as text blocks and images. */
+function userBlocks(rec: Rec, texts: string[], images: number, id: string, ts: string): Entry[] {
+  if (!texts.length && !images) return [];
+  const parsed = userString(rec, texts.join("\n\n"), id, ts);
+  if (parsed.length && parsed[0].kind === "user") parsed[0] = { ...parsed[0], images };
+  else if (images) parsed.push({ kind: "user", id, ts, text: "", images });
+  return parsed;
 }
 
 export function parseRecord(rec: Rec): Entry[] {
@@ -100,8 +109,12 @@ export function parseRecord(rec: Rec): Entry[] {
   /* a message sent while claude was mid-turn is stored as a queued command, not a user record */
   if (rec.type === "attachment") {
     const a = rec.attachment;
-    if (a?.type !== "queued_command" || typeof a.prompt !== "string" || (a.origin?.kind && a.origin.kind !== "human")) return [];
-    return userString(rec, a.prompt, base, ts);
+    if (a?.type !== "queued_command" || (a.origin?.kind && a.origin.kind !== "human")) return [];
+    if (typeof a.prompt === "string") return userString(rec, a.prompt, base, ts);
+    /* a queued message with a pasted image is stored as content blocks */
+    if (!Array.isArray(a.prompt)) return [];
+    const texts = a.prompt.flatMap((b) => (b.type === "text" && b.text ? [b.text] : []));
+    return userBlocks(rec, texts, a.prompt.filter((b) => b.type === "image").length, base, ts);
   }
 
   const content = rec.message?.content;
@@ -119,13 +132,7 @@ export function parseRecord(rec: Rec): Entry[] {
       } else if (block.type === "text" && block.text && !rec.isMeta) texts.push(block.text);
       else if (block.type === "image" && !rec.isMeta) images += 1;
     });
-    if (texts.length || images) {
-      const joined = texts.join("\n\n");
-      const parsed = userString(rec, joined, base, ts);
-      if (parsed.length && parsed[0].kind === "user") parsed[0] = { ...parsed[0], images };
-      else if (images) parsed.push({ kind: "user", id: base, ts, text: "", images });
-      out.unshift(...parsed);
-    }
+    out.unshift(...userBlocks(rec, texts, images, base, ts));
     return out;
   }
 
@@ -136,7 +143,7 @@ export function parseRecord(rec: Rec): Entry[] {
     if (synthetic && rec.isApiErrorMessage) {
       const said = content.map((b) => (b.type === "text" ? b.text ?? "" : "")).join(" ").trim();
       const auth = rec.error === "authentication_failed" || /authenticat|log ?in|oauth/i.test(said);
-      return [{ kind: "notice", id: base, ts, tone: "warn", text: auth ? `${said ? said.replace(/[^.!?]$/, "$&.") : "Claude couldn't sign in."} Log in again on the server: run claude, then /login.` : said || "The API returned an error." }];
+      return [{ kind: "notice", id: base, ts, tone: "warn", text: auth ? `${said ? said.replace(/[^.!?]$/, "$&.") : "Claude couldn't sign in."} Log in again on the server: run claude, then /login.` : said || "API error." }];
     }
     /* the acknowledgement written after an imported session's preamble */
     if (synthetic && msgId.startsWith("msg_import_") && content.length === 1 && content[0].text === "Understood.") return [];
@@ -200,6 +207,20 @@ export const parseLines = (lines: string[]) => lines.flatMap((line) => {
   const rec = line ? safeParse(line) : null;
   return rec ? parseRecord(rec) : [];
 });
+
+/** Entries from outside the transcript (a web run's slash command output, notices; oldest first) placed among a
+ * history page by time, so they stay where they happened. Ones without a usable time go last. */
+export function placeByTime(page: Entry[], extras: Entry[]): Entry[] {
+  if (!extras.length) return page;
+  const out: Entry[] = [];
+  let j = 0;
+  for (const e of page) {
+    const at = Date.parse(e.ts);
+    while (j < extras.length && Date.parse(extras[j].ts) < at) out.push(extras[j++]);
+    out.push(e);
+  }
+  return [...out, ...extras.slice(j)];
+}
 
 /**
  * Reads the complete lines inside [start, end). A start mid-line skips to the

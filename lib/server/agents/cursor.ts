@@ -106,9 +106,10 @@ function session(id: string, dir: string): AgentSession | null {
   const sum = !meta?.title || !meta?.cwd ? storeSummary(dir, st.mtime) : summaries.get(dir);
   return {
     id,
-    title: meta?.title || sum?.title || "Cursor chat",
+    title: meta?.title || sum?.title || "Cursor session",
     cwd: meta?.cwd || sum?.cwd || startedCwds.get(id) || "",
     mtime: meta?.updatedAtMs ? Math.max(meta.updatedAtMs, st.mtime) : st.mtime,
+    created: meta?.createdAtMs || undefined,
     size: st.size,
     model: sum?.model ?? null,
   };
@@ -358,7 +359,7 @@ function capturer(initialId: string | null) {
 
 async function start(opts: { cwd: string; text: string; model?: string; mode: PermissionMode }): Promise<{ id: string }> {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("Cursor CLI (cursor-agent) isn't installed on the server.");
+  if (!bin) throw new Error("Cursor isn't installed.");
   const tmp = KEY(`new-${randomUUID()}`);
   const cap = capturer(null);
   return new Promise((resolve, reject) => {
@@ -395,13 +396,13 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
       if (settled) return;
       settled = true;
       stopTurn(tmp);
-      reject(new Error("Cursor didn't start a chat within 85 seconds."));
+      reject(new Error("Cursor didn't start a session in time."));
     }, 85_000);
     run.child.on("exit", (code) => {
       clearTimeout(deadline);
       if (settled) return;
       settled = true;
-      reject(new Error(friendlyError(turnState(tmp)?.error ?? run.stderr) || `cursor-agent exited with code ${code} before starting a chat.`));
+      reject(new Error(friendlyError(turnState(tmp)?.error ?? run.stderr) || `Cursor exited before starting a session (code ${code}).`));
     });
     run.child.on("error", (err) => {
       if (settled) return;
@@ -413,17 +414,17 @@ async function start(opts: { cwd: string; text: string; model?: string; mode: Pe
 
 function friendlyError(msg: string | null | undefined): string {
   const m = (msg ?? "").trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
-  if (/Authentication required|not logged in|agent login/i.test(m)) return `Cursor CLI isn't logged in on the server. Run \`cursor-agent login\` there (or set CURSOR_API_KEY). (${m.replace(/^Error:\s*/, "")})`;
+  if (/Authentication required|not logged in|agent login/i.test(m)) return "Cursor isn't logged in. Run cursor-agent login on the server.";
   return m;
 }
 
 async function send(id: string, text: string, opts: { model?: string; mode: PermissionMode }): Promise<void> {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("Cursor CLI (cursor-agent) isn't installed on the server.");
+  if (!bin) throw new Error("Cursor isn't installed.");
   const dir = findChatDir(id);
-  if (!dir && !startedCwds.has(id)) throw new Error("Cursor chat not found.");
+  if (!dir && !startedCwds.has(id)) throw new Error("Cursor session not found.");
   const cwd = chatCwd(id, dir);
-  if (!cwd || !fs.existsSync(cwd)) throw new Error("Couldn't work out which folder this Cursor chat belongs to, so it can't be resumed here.");
+  if (!cwd || !fs.existsSync(cwd)) throw new Error("Can't resume: unknown folder.");
   const cap = capturer(id);
   /* failures (e.g. "Authentication required. Please run 'agent login' first") land in runState().error via cli-run */
   let live: (line: string) => void = () => {};

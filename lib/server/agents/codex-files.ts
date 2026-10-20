@@ -10,7 +10,7 @@ import { parseLines, safeParse, userTitle, type ParseCtx } from "./codex-parse";
  * tails forward from the last complete line. */
 
 export const codexHome = () => process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
-const roots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
+export const rolloutRoots = () => [path.join(codexHome(), "sessions"), path.join(codexHome(), "archived_sessions")];
 
 const ROLLOUT = /^rollout-.+-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 export const idOfRollout = (file: string) => ROLLOUT.exec(path.basename(file))?.[1] ?? null;
@@ -39,7 +39,7 @@ export async function allRollouts(): Promise<string[]> {
       else if (it.isFile() && ROLLOUT.test(it.name)) out.push(p);
     }
   };
-  for (const root of roots()) await walk(root, 0);
+  for (const root of rolloutRoots()) await walk(root, 0);
   const files = cache().files;
   for (const f of out) files.set(idOfRollout(f)!, f);
   return out;
@@ -95,6 +95,8 @@ export type FileMeta = {
   subagent: boolean;
   /** last model seen (turn_context / thread settings) */
   model: string | null;
+  /** when the session started (session_meta's timestamp), ms */
+  created?: number;
   mtime: number;
   size: number;
   /** head facts never change once found; only the tail is re-read on growth */
@@ -117,8 +119,11 @@ async function scanHead(file: string, size: number, meta: FileMeta) {
     const { lines } = await readRecords(file, 0, Math.min(size, step));
     for (const { line } of lines) {
       if (line.includes('"type":"session_meta"')) {
-        const p = safeParse(line)?.payload ?? {};
+        const rec = safeParse(line);
+        const p = rec?.payload ?? {};
         if (typeof p.cwd === "string") meta.cwd = p.cwd;
+        const at = Date.parse(String(p.timestamp ?? rec?.timestamp ?? ""));
+        if (at > 0) meta.created = at;
         const src = p.source;
         meta.subagent = p.thread_source === "subagent" || Boolean(src && typeof src === "object" && "subagent" in src);
       } else if (!meta.firstPrompt && line.includes('"role":"user"')) {
@@ -178,6 +183,9 @@ export async function threadNames(): Promise<Map<string, string>> {
 
 type Listener = (entries: Entry[], end: number) => void;
 
+/** most bytes one live-tail step reads, so a big backlog doesn't land in memory at once */
+const LIVE_STEP = 8 * 1024 * 1024;
+
 /** Follows one rollout from `from`; waits for the file if the session was just started. */
 export function tailRollout(locate: () => Promise<string | null>, from: number, ctx: ParseCtx, fn: Listener) {
   let offset = from;
@@ -215,12 +223,23 @@ export function tailRollout(locate: () => Promise<string | null>, from: number, 
         if (!file) break;
         attach();
         const stat = await fs.stat(file).catch(() => null);
-        if (!stat || closed) break;
+        if (closed) break;
+        if (!stat) {
+          /* moved (archived_sessions) or deleted: find it again next time */
+          file = null;
+          watcher?.close();
+          watcher = null;
+          break;
+        }
         if (stat.size < offset) offset = 0;
         if (stat.size === offset) continue;
-        const { lines, end } = await readRecords(file, offset, stat.size);
+        const stop = Math.min(stat.size, offset + LIVE_STEP);
+        let { lines, end } = await readRecords(file, offset, stop);
+        /* one record longer than a step */
+        if (end <= offset && stop < stat.size) ({ lines, end } = await readRecords(file, offset, stat.size));
         if (end <= offset) continue;
         offset = end;
+        if (stop < stat.size) dirty = true;
         const entries = parseLines(lines, ctx);
         if (!closed) fn(entries, end);
       } while (dirty && !closed);

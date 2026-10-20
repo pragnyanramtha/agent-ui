@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Entry } from "@/lib/types";
 import { liveStream, rekeyTurn, startTurn, stopTurn, turnState, type Run } from "./cli-run";
+import { childEnv } from "../child-env";
 import { activeProfile, profileBin } from "../profiles";
 import { changedSince, getSession, historyPage, listSessions, sessionEnd, sessionsSince } from "./opencode-store";
 import type { AgentAdapter, AgentSession, CliRunState, SendOptions, StartOptions } from "./types";
@@ -61,11 +62,12 @@ async function binary(): Promise<string | null> {
   return found;
 }
 
-const toSession = (s: { id: string; title: string; directory: string; time_updated: number; model: string | null }): AgentSession => ({
+const toSession = (s: { id: string; title: string; directory: string; time_created?: number; time_updated: number; model: string | null }): AgentSession => ({
   id: s.id,
   title: s.title.replace(/^New session - \d{4}-\d\d-\d\dT[\d:.]+Z$/, "") || "",
   cwd: s.directory,
   mtime: s.time_updated,
+  created: s.time_created || undefined,
   size: 0,
   model: s.model,
 });
@@ -111,7 +113,7 @@ async function startServe(bin: string, cwd: string): Promise<Serve | null> {
     const profile = activeProfile();
     const child = spawn(bin, [...(profile?.args ?? []), "serve", "--port", String(port), "--hostname", "127.0.0.1", "--print-logs", "--log-level", "ERROR"], {
       cwd,
-      env: { ...process.env, ...profile?.env, PWD: cwd, OPENCODE_SERVER_PASSWORD: password },
+      env: childEnv(profile?.env, { PWD: cwd, OPENCODE_SERVER_PASSWORD: password }),
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stderr = "";
@@ -206,7 +208,7 @@ async function streamEvents(serve: Serve, cwd: string, signal: AbortSignal, sess
 /** Spawns one turn; `onSession` sees the session id from the first JSON event. */
 async function spawnTurn(key: string, cwd: string, text: string, opts: SendOptions, extra: string[], onSession?: (id: string) => void) {
   const bin = await profileBin(binary);
-  if (!bin) throw new Error("OpenCode isn't installed (no `opencode` binary found).");
+  if (!bin) throw new Error("OpenCode isn't installed.");
   if (turnState(key)?.status === "running") throw new Error("A turn is already running for this session.");
   const serve = await startServe(bin, cwd);
   let current = key;
@@ -298,8 +300,8 @@ function describeError(raw: unknown, stderr: string): string {
   const kind = `${e.name ?? ""} ${/^(\w+Error): /.exec(msg)?.[1] ?? ""}`;
   msg = msg.replace(/^\w+Error: /, "");
   if (/ProviderModelNotFound/.test(kind) || /model not found/i.test(msg))
-    return `${msg} (log in to that provider with \`opencode auth login\` on the host, or pick a model from \`opencode models\`)`;
-  if (/ProviderAuthError/.test(kind) || /api key|unauthori[sz]ed|credential|401/i.test(msg)) return `${msg} (run \`opencode auth login\` on the host)`;
+    return `${msg}. Run opencode auth login on the server, or pick another model.`;
+  if (/ProviderAuthError/.test(kind) || /api key|unauthori[sz]ed|credential|401/i.test(msg)) return `${msg}. Run opencode auth login on the server.`;
   return msg;
 }
 
@@ -391,7 +393,7 @@ const adapter: AgentAdapter = {
             } catch {}
             if (Date.now() - startedAt > START_TIMEOUT_MS) {
               stopTurn(key());
-              finish(new Error("OpenCode didn't start a session within a minute."));
+              finish(new Error("OpenCode didn't start a session in time."));
             }
           }, 400);
           run.child.on("exit", () => {

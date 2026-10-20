@@ -32,11 +32,14 @@ export type TerminalInfo = {
 };
 
 /** Which coding agent a session belongs to. Plain session ids are Claude; others are "<agent>:<id>". */
-export type AgentId = "claude" | "codex" | "opencode" | "cursor" | "devin" | "kimi";
+export type AgentId = "claude" | "codex" | "opencode" | "cursor" | "devin" | "kimi" | "gemini" | "antigravity";
 
-export const AGENT_IDS: AgentId[] = ["claude", "codex", "opencode", "cursor", "devin", "kimi"];
+export const AGENT_IDS: AgentId[] = ["claude", "codex", "opencode", "cursor", "devin", "kimi", "gemini", "antigravity"];
 
-export const AGENT_LABEL: Record<AgentId, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", cursor: "Cursor", devin: "Devin", kimi: "Kimi" };
+/** Agents that keep each session in one file of their own, which "Delete" can remove on request. */
+export const TRANSCRIPT_DELETABLE: AgentId[] = ["claude", "codex", "gemini"];
+
+export const AGENT_LABEL: Record<AgentId, string> = { claude: "Claude", codex: "Codex", opencode: "OpenCode", cursor: "Cursor", devin: "Devin", kimi: "Kimi", gemini: "Gemini CLI", antigravity: "Antigravity" };
 
 /** An agent profile as the browser sees it (secrets masked). */
 export type ProfileInfo = {
@@ -50,6 +53,7 @@ export type ProfileInfo = {
   env: Record<string, string>;
   models: string[];
   defaultModel: string | null;
+  defaultEffort: string | null;
   fallback: string[];
   launchArgs: string[];
   hidden: boolean;
@@ -81,9 +85,16 @@ export type SessionSummary = {
   cwd: string;
   project: string;
   mtime: number;
+  /** when the session started (epoch ms), where the agent's storage tells; sorting falls back to mtime */
+  created?: number;
   size: number;
   terminal: TerminalInfo | null;
   web: RunState | null;
+  /** set from the list's row menu; archived rows still come back so they can be restored */
+  pinned?: boolean;
+  archived?: boolean;
+  /** hidden from the main lists until then (epoch ms); only sent while it's still ahead */
+  snoozedUntil?: number;
 };
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
@@ -136,4 +147,7 @@ export type ServerEvent =
   | { type: "queue"; items: { id: string; text: string }[] }
   /** messages whose turn was stopped before the agent saved them (it never read them) */
   | { type: "unsent"; items: { id: string; text: string; error: string }[] }
+  /** the stream resumed too far behind and skipped transcript bytes [from, to): entries written there never came,
+   * so a client should load the history afresh */
+  | { type: "gap"; from: number; to: number }
   | { type: "ping" };

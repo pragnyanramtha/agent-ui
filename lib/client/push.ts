@@ -53,7 +53,14 @@ async function subscription(publicKey: string) {
 /** Asks for permission (call from a tap), subscribes, and has the server send a test notification. */
 export async function enablePush() {
   registerWorker();
-  if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site. Allow them in the browser's site settings.");
+  if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked. Allow them in site settings.");
+  const { publicKey } = await api<{ publicKey: string }>("/api/push");
+  const sub = await subscription(publicKey);
+  await api("/api/push", { subscription: sub.toJSON(), test: true });
+}
+
+/** Has the server send this browser a test notification (push already on). */
+export async function testPush() {
   const { publicKey } = await api<{ publicKey: string }>("/api/push");
   const sub = await subscription(publicKey);
   await api("/api/push", { subscription: sub.toJSON(), test: true });
@@ -74,4 +81,13 @@ export async function resyncPush() {
   const { publicKey } = await api<{ publicKey: string }>("/api/push");
   const fresh = await subscription(publicKey);
   await api("/api/push", { subscription: fresh.toJSON() });
+}
+
+/** Ends this browser's session (every device's with `everywhere`) and goes to the login page. The server forgets this
+ * browser's push subscription too, so a signed-out device stops getting session titles and prompts. */
+export async function signOut(everywhere = false) {
+  const sub = supported() ? await Promise.race([current().then((c) => c.sub), new Promise<null>((r) => setTimeout(() => r(null), 1500))]).catch(() => null) : null;
+  await api("/api/auth/logout", { ...(everywhere ? { everywhere: true } : {}), ...(sub ? { endpoint: sub.endpoint } : {}) }).catch(() => undefined);
+  await sub?.unsubscribe().catch(() => undefined);
+  window.location.href = "/login";
 }

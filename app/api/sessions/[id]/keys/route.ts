@@ -11,9 +11,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const key = (await readJson(req)).key;
   if (!isTerminalKey(key)) return NextResponse.json({ error: "Unknown key." }, { status: 400 });
   const terminal = await terminalForKey(id);
-  if (!terminal) return NextResponse.json({ error: "This session is not open in a terminal." }, { status: 409 });
+  if (!terminal) return NextResponse.json({ error: "This session isn't open in a terminal." }, { status: 409 });
   const target = await inputTarget(terminal.pid);
-  if (!target) return NextResponse.json({ error: "Can't reach this terminal's pane." }, { status: 409 });
+  if (!target) return NextResponse.json({ error: "Can't reach this terminal." }, { status: 409 });
   try {
     await pressKey(target, key);
   } catch (err) {

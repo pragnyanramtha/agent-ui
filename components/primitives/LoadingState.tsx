@@ -141,13 +141,13 @@ export default function LoadingState({
   const paused = !live;
 
   const labelEl = (
-    <span className={`text-[13px] font-medium ${SHIMMER}`} style={paused ? { animationPlayState: "paused" } : undefined}>
+    <span className={`text-sm font-medium ${SHIMMER}`} style={paused ? { animationPlayState: "paused" } : undefined}>
       {resolvedLabel}
     </span>
   );
   /* the timer ticks ten times a second; keep it out of the live region so screen readers only hear the label */
   const elapsedEl = (
-    <span aria-hidden className="font-mono text-[12px] text-ink-3 tabular-nums">
+    <span aria-hidden className="font-mono text-xs text-ink-3 tabular-nums">
       {elapsed}
     </span>
   );
@@ -180,7 +180,7 @@ export default function LoadingState({
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-1.5">
                 <LoaderGrid {...PATTERNS.Drive} />
-                <span className="px-3 text-center font-mono text-[10px]" style={{ color: "var(--tooltip-muted)" }}>
+                <span className="px-3 text-center font-mono text-2xs" style={{ color: "var(--tooltip-muted)" }}>
                   Video unavailable
                 </span>
               </div>

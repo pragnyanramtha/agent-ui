@@ -11,6 +11,7 @@ const CAP = 500;
  * Directory listing for the folder picker: subfolders only, never file contents.
  * GET /api/fs?path=<abs>[&hidden=1] → { path, parent, home, dirs: [{ name, path }], truncated }.
  * No path lists the home folder. The path is resolved through symlinks first, so `path` is always the real folder.
+ * `&stat=1` only checks the folder is there: { path } or the same errors, without reading it.
  */
 export async function GET(req: NextRequest) {
   const home = os.homedir();
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
     if (code === "EACCES" || code === "EPERM") return NextResponse.json({ error: `No permission to open ${raw}.` }, { status: 403 });
     return NextResponse.json({ error: `No folder at ${raw}.` }, { status: 404 });
   }
+  if (req.nextUrl.searchParams.get("stat") === "1") return NextResponse.json({ path: real });
 
   let entries: import("node:fs").Dirent[];
   try {

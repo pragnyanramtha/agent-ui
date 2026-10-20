@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import path from "node:path";
+import fs from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import type { PendingAsk, StreamDelta } from "@/lib/types";
+import { childEnv } from "../child-env";
 import { activeProfile } from "../profiles";
 import type { CliRunState } from "./types";
 
@@ -27,6 +28,8 @@ export type Run = {
   deltas: Map<string, StreamDelta>;
   /** answers to the approvals in state.pending, by request id */
   asks: Map<string, (a: Answer) => void>;
+  /** set by failTurn: the turn ends as an error with this message, however the process exits */
+  failure?: string;
 };
 
 export type Answer = { allow: boolean; always: boolean };
@@ -69,14 +72,14 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
   /* Linux caps one argument at 128 KiB (and all of them at a few MB); spawn would fail with a bare E2BIG */
   const big = Math.max(0, ...spec.args.map((a) => Buffer.byteLength(a)));
   if (big > MAX_ARG || spec.args.reduce((n, a) => n + Buffer.byteLength(a), 0) > MAX_ARGS) {
-    throw new Error(`This message is too long to hand to ${path.basename(spec.cmd)} (${Math.round(big / 1024)} KB). Shorten it, or put the long part in a file and point the agent at it.`);
+    throw new Error(`Message too long (${Math.round(big / 1024)} KB). Shorten it or attach a file.`);
   }
   const piped = spec.keepStdin || spec.stdin !== undefined;
   /* a profile (another backend, an API key, a proxy) adds its global flags and environment */
   const profile = activeProfile();
   const child = spawn(spec.cmd, [...(profile?.args ?? []), ...spec.args], {
     cwd: spec.cwd,
-    env: { ...process.env, ...spec.env, ...profile?.env },
+    env: childEnv(spec.env, profile?.env),
     stdio: [piped ? "pipe" : "ignore", "pipe", "pipe"],
     /* its own process group, so Stop also ends the commands and helpers the agent started */
     detached: true,
@@ -119,6 +122,7 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
     run.state = { ...run.state, status: "error", error: err.message, pending: [] };
     run.deltas.clear();
     emit();
+    release(run);
   });
   /* stdout can still deliver the last lines (a final error or result) after "exit"; "close" waits for them,
    * but an orphaned helper holding stdout open would keep it from ever firing */
@@ -139,20 +143,46 @@ export function startTurn(key: string, spec: SpawnSpec, onStdout?: (line: string
     buf = "";
     if (run.state.status !== "running") return;
     run.asks.clear();
-    run.state =
-      code === 0 || signal === "SIGTERM" || signal === "SIGKILL"
+    run.state = run.failure
+      ? { ...run.state, status: "error", error: run.failure, pending: [] }
+      : code === 0 || signal === "SIGTERM" || signal === "SIGKILL"
         ? { ...run.state, status: "idle", pending: [] }
         : { ...run.state, status: "error", error: lastLine(run.stderr) || `Exited with code ${code}`, pending: [] };
     run.deltas.clear();
     emit();
+    release(run);
   };
   emit();
   return run;
 }
 
+/** a turn that ended cleanly shows as no run at all (toRunState), so it can go */
+const forgettable = (run: Run) => run.state.status === "idle" && !run.state.error;
+
+/* Adapters still read a finished run's state and stderr for a moment (start promises, close handlers), so this
+ * waits. Failures stay in the map: their error is shown and notified until the next turn. */
+function release(run: Run) {
+  setTimeout(() => {
+    run.stderr = "";
+    if (forgettable(run) && !run.listeners.size && runs.get(run.key) === run) runs.delete(run.key);
+  }, 5000).unref();
+}
+
 const lastLine = (s: string) => s.trim().split("\n").filter(Boolean).slice(-1)[0]?.slice(0, 300) ?? "";
 
 export const turnState = (key: string) => runs.get(key)?.state ?? null;
+
+/** The agent reported the turn failed (its own message, clearer than stderr): it ends as an error, kept until the next turn. */
+export function failTurn(run: Run, error: string) {
+  run.failure = error;
+  if (run.state.status === "running") return;
+  /* a newer turn owns the key (and the listeners this one handed over): a late error from this one isn't its news */
+  if (runs.has(run.key) && runs.get(run.key) !== run) return;
+  run.state = { ...run.state, status: "error", error };
+  /* a clean finish may already have been forgotten */
+  if (!runs.has(run.key)) runs.set(run.key, run);
+  run.listeners.forEach((fn) => fn(run.state));
+}
 
 /** The agent asks before acting: the approval shows in the session (and the inbox) until it's answered or the turn ends. */
 export function askUser(run: Run, ask: PendingAsk, onAnswer: (a: Answer) => void) {
@@ -194,6 +224,7 @@ export function rekeyTurn(from: string, to: string) {
 export function killGroup(child: ChildProcess) {
   const pid = child.pid;
   if (!pid) return;
+  const members = membersOf(-pid, processTable());
   const signal = (sig: NodeJS.Signals) => {
     try {
       process.kill(-pid, sig);
@@ -206,12 +237,103 @@ export function killGroup(child: ChildProcess) {
     }
   };
   signal("SIGTERM");
-  setTimeout(() => signal("SIGKILL"), 5000).unref();
+  setTimeout(() => {
+    /* once Node has reaped the child its number can be reused: only a group that still holds one of ours is ours */
+    const reaped = child.exitCode !== null || child.signalCode !== null;
+    if (!reaped || !members.length || alive(-pid, members, processTable())) signal("SIGKILL");
+  }, 5000).unref();
+}
+
+type Proc = { ppid: number; pgid: number; start: string };
+
+/** ppid, process group and start time of every process (empty without /proc) */
+function processTable(): Map<number, Proc> {
+  const out = new Map<number, Proc>();
+  let names: string[];
+  try {
+    names = fs.readdirSync("/proc");
+  } catch {
+    return out;
+  }
+  for (const n of names) {
+    if (!/^\d+$/.test(n)) continue;
+    try {
+      const stat = fs.readFileSync(`/proc/${n}/stat`, "utf8");
+      /* the command name (field 2) can hold spaces and parentheses; state, ppid, pgrp and (field 22) starttime follow it */
+      const f = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      out.set(Number(n), { ppid: Number(f[1]), pgid: Number(f[2]), start: f[19] });
+    } catch {
+      /* gone */
+    }
+  }
+  return out;
+}
+
+/** What to signal so `pid` and everything it started end: the process groups inside its tree (negative), else single pids. */
+function treeTargets(pid: number, table: Map<number, Proc>): number[] {
+  const kids = new Map<number, number[]>();
+  for (const [p, { ppid }] of table) kids.set(ppid, [...(kids.get(ppid) ?? []), p]);
+  const tree = new Set([pid]);
+  for (const queue = [pid]; queue.length; ) {
+    for (const k of kids.get(queue.shift()!) ?? []) {
+      if (tree.has(k)) continue;
+      tree.add(k);
+      queue.push(k);
+    }
+  }
+  /* a group led from outside the tree isn't ours to end */
+  const out = new Set<number>();
+  for (const p of tree) {
+    const g = table.get(p)?.pgid;
+    if (p !== pid) out.add(g && tree.has(g) ? -g : p);
+  }
+  out.delete(-pid);
+  return [...out];
+}
+
+/**
+ * killGroup plus the process groups the agent's descendants made for themselves (Gemini runs each shell command
+ * detached). The tree is read before the first signal: once a parent dies its children move to init and can't be found.
+ */
+export function killTree(child: ChildProcess) {
+  const pid = child.pid;
+  if (!pid) return;
+  const before = processTable();
+  const targets = new Map(treeTargets(pid, before).map((t) => [t, membersOf(t, before)]));
+  for (const t of targets.keys()) kill(t, "SIGTERM");
+  killGroup(child);
+  setTimeout(() => {
+    const now = processTable();
+    /* only while the pid is still ours: once Node has reaped it, it may belong to someone else */
+    if (child.exitCode === null && child.signalCode === null) for (const t of treeTargets(pid, now)) if (!targets.has(t)) targets.set(t, membersOf(t, now));
+    for (const [t, members] of targets) if (alive(t, members, now)) kill(t, "SIGKILL");
+  }, 5000).unref();
+}
+
+/** the processes a target (a pid, or a negative process group) stands for, with start times to tell a reused number apart */
+function membersOf(target: number, table: Map<number, Proc>) {
+  const out: { pid: number; start: string }[] = [];
+  for (const [p, info] of table) if (target > 0 ? p === target : info.pgid === -target) out.push({ pid: p, start: info.start });
+  return out;
+}
+
+const alive = (target: number, members: { pid: number; start: string }[], table: Map<number, Proc>) =>
+  members.some((m) => {
+    const now = table.get(m.pid);
+    return now?.start === m.start && (target > 0 || now.pgid === -target);
+  });
+
+function kill(target: number, sig: NodeJS.Signals) {
+  try {
+    process.kill(target, sig);
+  } catch {
+    /* gone */
+  }
 }
 
 export function stopTurn(key: string) {
   const run = runs.get(key);
-  if (run?.state.status === "running") killGroup(run.child);
+  if (run?.state.status === "running") killTree(run.child);
 }
 
 export function onTurn(key: string, fn: (s: CliRunState) => void) {
@@ -234,8 +356,8 @@ export function onTurn(key: string, fn: (s: CliRunState) => void) {
     r.listeners.delete(fn);
     /* a rekey moved this listener onto the run that took the key */
     runs.get(r.key)?.listeners.delete(fn);
-    /* a placeholder for a session someone only looked at goes once nobody listens */
-    if (!r.child && !r.listeners.size && runs.get(r.key) === r) runs.delete(r.key);
+    /* a placeholder for a session someone only looked at, or a finished turn, goes once nobody listens */
+    if ((!r.child || forgettable(r)) && !r.listeners.size && runs.get(r.key) === r) runs.delete(r.key);
   };
 }
 

@@ -65,9 +65,35 @@ describe("push store", () => {
     expect(sent.find((s) => s.endpoint.endsWith("/flaky"))?.subject).toMatch(/^mailto:/);
   });
 
+  it("sees subscriptions another bundle wrote to the file", () => {
+    const before = push.subscriptionCount();
+    const onDisk = JSON.parse(fs.readFileSync(file, "utf8"));
+    onDisk.subs.push(sub("https://push.example/other-bundle"));
+    fs.writeFileSync(`${file}.x`, JSON.stringify(onDisk));
+    fs.renameSync(`${file}.x`, file);
+    expect(push.subscriptionCount()).toBe(before + 1);
+    push.unsubscribe("https://push.example/other-bundle");
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).subs).toHaveLength(before);
+  });
+
   it("can send to one browser only", async () => {
     sent.length = 0;
     await push.pushAll(msg, "https://push.example/a");
     expect(sent.map((s) => s.endpoint)).toEqual(["https://push.example/a"]);
+  });
+
+  it("never replaces a damaged file with new keys", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const key = push.vapidPublicKey();
+    const good = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, "{ not json");
+    expect(push.vapidPublicKey()).toBe(key);
+    expect(warn).toHaveBeenCalledTimes(1);
+    push.resetPushCache();
+    expect(() => push.vapidPublicKey()).toThrow(/Can't read/);
+    expect(fs.readFileSync(file, "utf8")).toBe("{ not json");
+    fs.writeFileSync(file, good);
+    expect(push.vapidPublicKey()).toBe(key);
+    warn.mockRestore();
   });
 });

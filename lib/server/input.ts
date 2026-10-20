@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
+import { childEnv } from "./child-env";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +37,7 @@ export async function inputTarget(pid: number): Promise<InputTarget | null> {
   return null;
 }
 
-const run = (cmd: string, args: string[]) => execFileAsync(cmd, args, { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }).then((r) => r.stdout);
+const run = (cmd: string, args: string[]) => execFileAsync(cmd, args, { env: childEnv(), timeout: 10_000, maxBuffer: 4 * 1024 * 1024 }).then((r) => r.stdout);
 
 /** The visible screen of the pane; `ansi` keeps styling (needed to tell dim placeholders from typed text). */
 export async function paneScreen(target: InputTarget, ansi = false) {
@@ -82,6 +83,9 @@ export function readPrompt(ansiScreen: string): PromptState {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** waits before each read of the prompt after Ctrl+U */
+const CLEAR_CHECKS_MS = [200, 300, 500];
 
 /* tmux refuses a send-keys over about 16 KB ("command too long"), so long text goes in pieces of at most 8 KB */
 const CHUNK = 2000;
@@ -152,8 +156,12 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
   for (let i = 0; i < 4 && !before.ok && before.code === "has_text"; i++) {
     const shown = before.text;
     await clearLine(target);
-    await sleep(200);
-    before = readPrompt(await paneScreen(target, true));
+    /* a busy Claude can take a moment to redraw, so unchanged text is read again before it counts as unchanged */
+    for (const ms of CLEAR_CHECKS_MS) {
+      await sleep(ms);
+      before = readPrompt(await paneScreen(target, true));
+      if (before.ok || before.code !== "has_text" || before.text !== shown) break;
+    }
     /* Ctrl+U removes typed text but not Claude's suggestion: unchanged text is the suggestion, and typing replaces it */
     if (!before.ok && before.code === "has_text" && before.text === shown) {
       ghost = true;
@@ -163,15 +171,15 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
     cleared ??= shown;
   }
   if (!before.ok) {
-    if (before.code === "agent_focus") throw new InputRefused(`The terminal is focused on agent @${before.agent}, not this session. Switch it back to main in the terminal first.`, before.code);
-    if (before.code === "has_text") throw new InputRefused(`Couldn't clear the terminal's prompt ("${before.text.slice(0, 60)}"). Check the terminal view.`, before.code);
-    throw new InputRefused("The terminal isn't showing Claude's prompt right now (a dialog or menu may be open). Check the terminal view.", before.code);
+    if (before.code === "agent_focus") throw new InputRefused(`@${before.agent} has focus in the terminal. Switch to main first.`, before.code);
+    if (before.code === "has_text") throw new InputRefused(`Unsent text in the terminal prompt ("${before.text.slice(0, 60)}"). Send or clear it first.`, before.code);
+    throw new InputRefused("A dialog is open in the terminal. Answer it first.", before.code);
   }
   try {
     await keys(target, typeable(text));
   } catch (err) {
     /* the prompt was already emptied: say what was in it, or it's lost without a word */
-    if (cleared && err instanceof Error) err.message = `${err.message}. The terminal's prompt held "${cleared.slice(0, 80)}", which was cleared.`;
+    if (cleared && err instanceof Error) err.message = `${err.message}. Cleared unsent text: "${cleared.slice(0, 80)}".`;
     throw err;
   }
   /* a busy Claude keeps a submitted message in its prompt area as queued, so text still showing isn't a failure;

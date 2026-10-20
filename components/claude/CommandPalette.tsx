@@ -2,69 +2,100 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ChatBubble, EditPencil, Folder, HalfMoon, LogOut, MailIn, Search, SidebarCollapse, SunLight, Terminal, Xmark } from "iconoir-react";
+import { Archive, ArrowRight, Bell, Brain, ChatLines, Check, Download, EditPencil, Folder, GitBranch, GitCompare, GitFork, HalfMoon, KeyCommand, LogOut, MailIn, Page, Palette, Pin, PinSlash, Search, Settings, ShieldCheck, SidebarCollapse, Sparks, StatsReport, SunLight, Computer, Terminal, Xmark } from "iconoir-react";
 import type { SessionSummary } from "@/lib/types";
-import { api, shortPath, timeAgo } from "@/lib/client/api";
+import { shortPath, timeAgo } from "@/lib/client/api";
+import { signOut } from "@/lib/client/push";
 import { Pulse } from "./Pulse";
 import { isBusy } from "./SessionList";
+import { AgentIcon } from "./AgentIcon";
+import { applyAppearance, applyTheme, getSettings, setSetting, type Settings as SettingValues } from "@/lib/client/settings";
+import { comboFor, isCommand, isMac, terminalOwns, useBindings } from "@/lib/client/shortcuts";
+import type { CommandId } from "@/lib/keybindings";
+import { matchSession, queryWords, score } from "@/lib/session-match";
+import { PALETTES, settingDef, type EnumSetting } from "@/lib/settings-schema";
+import { noMatchCopy } from "@/lib/empty-states";
+import { EmptyState } from "@/components/primitives/EmptyState";
+import { OPEN_PALETTE_PICKER_EVENT, paletteActions, palettePicker, usePaletteVersion, type PaletteIcon } from "@/lib/client/palette-actions";
+import { actionRank, filterActions, parsePaletteQuery, settingRows } from "@/lib/palette-search";
+import { searchSettingsFor } from "@/lib/client/settings-link";
 
-/* Browser chrome color for each theme, matched to --page. Keep in sync with ThemeToggle and app/layout.tsx. */
-const THEME_COLOR = { dark: "#17181a", light: "#fafafb" } as const;
+import { OPEN_PALETTE_EVENT, OPEN_SHORTCUTS_EVENT, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT } from "@/lib/client/events";
+import type { ViewTab } from "./useTabs";
 
-/** Fired on window to open the palette from anywhere: `window.dispatchEvent(new Event("open-palette"))`. */
-export const OPEN_PALETTE_EVENT = "open-palette";
-
-/** Fired on window to fold or unfold the sidebar (the drawer on a phone). */
-export const TOGGLE_SIDEBAR_EVENT = "toggle-sidebar";
-
-/** Fired on window with `detail: TerminalTarget` to open the web terminal. */
-export const OPEN_TERMINAL_EVENT = "open-terminal";
+export { OPEN_PALETTE_EVENT, OPEN_SHORTCUTS_EVENT, OPEN_TERMINAL_EVENT, TOGGLE_SIDEBAR_EVENT };
 
 const isLive = (s: SessionSummary) => Boolean(s.terminal) || (s.web !== null && s.web.status !== "closed");
 
-/**
- * How well `q` matches `text`: prefix > word start > substring > in-order
- * characters (so "agu" finds "agent-u"). 0 means no match.
- */
-function score(text: string, q: string) {
-  const t = text.toLowerCase();
-  const i = t.indexOf(q);
-  if (i === 0) return 100;
-  if (i > 0) return /[\s/_.-]/.test(t[i - 1]) ? 80 : 60;
-  let at = 0;
-  for (const ch of q) {
-    at = t.indexOf(ch, at);
-    if (at < 0) return 0;
-    at++;
-  }
-  return q.length > 1 ? 20 : 0;
-}
-
-/** Every word of the query has to land somewhere; the title counts most. */
-function matchSession(s: SessionSummary, words: string[]) {
-  let total = 0;
-  for (const w of words) {
-    const best = Math.max(score(s.title, w) * 1.5, score(s.project, w), score(s.cwd, w) * 0.8);
-    if (!best) return 0;
-    total += best;
-  }
-  return total;
-}
-
 type Item = {
   id: string;
-  group: "Sessions" | "Actions";
+  /** "Sessions", "This session", "Actions", "Settings", "Messages", or a picker's heading */
+  group: string;
   label: string;
   hint?: ReactNode;
+  /** command from lib/keybindings.ts whose current shortcut shows on the right */
+  combo?: CommandId;
   icon: ReactNode;
   run: () => void;
+  /** opens a picker inside the palette instead of closing it */
+  keep?: boolean;
+  /** picker rows: the appearance this row shows while it's highlighted */
+  preview?: Partial<SettingValues>;
+  current?: boolean;
 };
+
+/** A quick picker inside the palette: arrow keys preview each choice, Enter keeps it, Esc puts the old one back.
+ * `session:<id>` is one the open session registered (model, approvals, effort); those have no preview. */
+type Picker = "palette" | "theme" | `session:${string}`;
+
+const ic = { width: 15, height: 15, strokeWidth: 1.8 } as const;
+const ACTION_ICONS: Record<PaletteIcon, ReactNode> = {
+  git: <GitBranch {...ic} />,
+  changes: <GitCompare {...ic} />,
+  usage: <StatsReport {...ic} />,
+  rename: <EditPencil {...ic} />,
+  pin: <Pin {...ic} />,
+  unpin: <PinSlash {...ic} />,
+  archive: <Archive {...ic} />,
+  download: <Download {...ic} />,
+  handoff: <ArrowRight {...ic} />,
+  edit: <EditPencil {...ic} />,
+  fork: <GitFork {...ic} />,
+  stop: <Xmark {...ic} />,
+  model: <Sparks {...ic} />,
+  mode: <ShieldCheck {...ic} />,
+  effort: <Brain {...ic} />,
+  needsYou: <Bell {...ic} />,
+  file: <Page {...ic} />,
+};
+const PICKER_ICONS: Record<string, ReactNode> = { model: ACTION_ICONS.model, mode: ACTION_ICONS.mode, effort: ACTION_ICONS.effort };
+
+/** The palette setting the theme picker changes: the light-mode one while light, if it's set apart. */
+function paletteKey(): "palette" | "lightPalette" {
+  const s = getSettings();
+  return !document.documentElement.classList.contains("dark") && s.lightPalette !== "same" ? "lightPalette" : "palette";
+}
+
+function PaletteDot({ id }: { id: string }) {
+  const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  const p = PALETTES.find((x) => x.id === id);
+  if (!p) return <Palette width={15} height={15} strokeWidth={1.8} />;
+  const c = dark ? p.dark : p.light;
+  return (
+    <span className="flex size-4 overflow-hidden rounded-[5px]" style={{ boxShadow: `inset 0 0 0 1px ${c.line}` }}>
+      <span className="w-1/2" style={{ background: c.sidebar }} />
+      <span className="flex w-1/2 items-center justify-center" style={{ background: c.page }}>
+        <span className="size-1.5 rounded-full" style={{ background: c.accent }} />
+      </span>
+    </span>
+  );
+}
 
 const SESSION_CAP_IDLE = 8;
 const SESSION_CAP_SEARCH = 50;
 
 export function CommandPalette({
-  sessions,
+  sessions: listed,
   activeId,
   onOpen,
   onNew,
@@ -76,7 +107,7 @@ export function CommandPalette({
   onOpen: (id: string) => void;
   onNew: () => void;
   /** opens the Agents or Files screen */
-  onView?: (tab: "@agents" | "@files" | "@inbox") => void;
+  onView?: (tab: ViewTab) => void;
   /** called after the theme flips, so other theme controls can resync */
   onTheme?: (dark: boolean) => void;
 }) {
@@ -84,6 +115,14 @@ export function CommandPalette({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [dark, setDark] = useState(true);
+  const [picker, setPicker] = useState<Picker | null>(null);
+  /* true while a picker shows a choice that hasn't been kept */
+  const previewing = useRef(false);
+  const parsed = useMemo(() => parsePaletteQuery(query), [query]);
+  const messages = useMessageSearch(query, open && !picker && !parsed.actionsOnly);
+  const bindings = useBindings();
+  /* the open session's rows and pickers, read again when a screen registers or leaves */
+  const registered = usePaletteVersion();
   const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,35 +133,61 @@ export function CommandPalette({
   const listId = `${uid}-list`;
   const optId = (i: number) => `${uid}-opt-${i}`;
 
-  const show = useCallback(() => {
-    setOpen((was) => {
-      if (!was) {
-        openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        navigated.current = false;
-        setQuery("");
-        setActive(0);
-        setDark(document.documentElement.classList.contains("dark"));
-      }
-      return true;
-    });
+  /** Opens the palette, on `start` if given (switching to it when the palette is already open), with `typed` in the search. */
+  const show = useCallback((start: Picker | null = null, typed = "") => {
+    if (!panelRef.current) {
+      openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      navigated.current = false;
+      setQuery(typed);
+      setActive(0);
+      setPicker(start);
+      setDark(document.documentElement.classList.contains("dark"));
+    } else if (start) {
+      setPicker(start);
+      setQuery("");
+    } else if (typed) setQuery(typed);
+    setOpen(true);
   }, []);
 
-  /* Ctrl+K / Cmd+K toggles from anywhere (capture, so text fields can't swallow it); the event opens it */
+  const endPreview = useCallback(() => {
+    if (!previewing.current) return;
+    previewing.current = false;
+    applyAppearance();
+  }, []);
+
+  const openPicker = useCallback((next: Picker | null) => {
+    endPreview();
+    setPicker(next);
+    setQuery("");
+    keyMove.current = true;
+  }, [endPreview]);
+
+  /* Mod+K toggles from anywhere (capture, so text fields can't swallow it); the event opens it */
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return;
       /* Ctrl+K in a shell kills to end of line */
-      if (e.ctrlKey && !e.metaKey && e.target instanceof Element && e.target.closest(".xterm")) return;
+      if (!isCommand(e, "palette") || terminalOwns(e)) return;
       e.preventDefault();
       e.stopPropagation();
       if (panelRef.current) setOpen(false);
       else show();
     };
+    const onOpen = (e: Event) => {
+      const q = (e as CustomEvent<{ query?: unknown } | null>).detail?.query;
+      show(null, typeof q === "string" ? q : "");
+    };
+    /* a shortcut such as Switch model opens the palette on that picker */
+    const onPicker = (e: Event) => {
+      const id = (e as CustomEvent<{ picker?: string }>).detail?.picker;
+      if (id) show(`session:${id}`);
+    };
     window.addEventListener("keydown", onKey, true);
-    window.addEventListener(OPEN_PALETTE_EVENT, show);
+    window.addEventListener(OPEN_PALETTE_EVENT, onOpen);
+    window.addEventListener(OPEN_PALETTE_PICKER_EVENT, onPicker);
     return () => {
       window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener(OPEN_PALETTE_EVENT, show);
+      window.removeEventListener(OPEN_PALETTE_EVENT, onOpen);
+      window.removeEventListener(OPEN_PALETTE_PICKER_EVENT, onPicker);
     };
   }, [show]);
 
@@ -140,26 +205,83 @@ export function CommandPalette({
     };
   }, [open]);
 
-  const close = () => setOpen(false);
+  const close = () => {
+    endPreview();
+    setPicker(null);
+    setOpen(false);
+  };
+
+  /* the page underneath never keeps a preview once the palette is gone (Mod+K, unmounts included) */
+  useEffect(() => {
+    if (!open) endPreview();
+  }, [open, endPreview]);
+  useEffect(() => () => endPreview(), [endPreview]);
+  const sessions = useFoundSessions(listed, query, open && !picker && !parsed.actionsOnly);
 
   const toggleTheme = useCallback(() => {
     const next = !document.documentElement.classList.contains("dark");
-    const root = document.documentElement;
-    root.classList.add("theme-switching");
-    root.classList.toggle("dark", next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next ? THEME_COLOR.dark : THEME_COLOR.light);
-    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("theme-switching")));
-    try {
-      localStorage.setItem("bui-theme", next ? "dark" : "light");
-    } catch {}
+    applyTheme(next ? "dark" : "light");
     onTheme?.(next);
   }, [onTheme]);
 
-  const items = useMemo<Item[]>(() => {
+  const pickerItems = useMemo<Item[] | null>(() => {
+    if (!picker || !open) return null;
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const s = getSettings();
+    const keep = (patch: Partial<SettingValues>) => () => {
+      previewing.current = false;
+      for (const [k, v] of Object.entries(patch)) setSetting(k as keyof SettingValues, v as never);
+    };
+    let rows: Item[];
+    if (picker.startsWith("session:")) {
+      const p = palettePicker(picker.slice("session:".length));
+      rows = (p?.choices ?? []).map((c) => ({
+        id: `c:${c.value || "default"}`,
+        group: p!.title,
+        label: c.label,
+        hint: c.hint,
+        icon: PICKER_ICONS[p!.id] ?? <Check {...ic} />,
+        current: c.current,
+        run: () => p!.pick(c.value),
+      }));
+    } else if (picker === "palette") {
+      const key = paletteKey();
+      const options = (settingDef("palette") as EnumSetting).options.filter((o) => o.value !== "custom" || s.customTheme);
+      rows = options.map((o) => ({
+        id: `p:${o.value}`,
+        group: "Themes",
+        label: o.label,
+        hint: key === "lightPalette" ? "Light mode" : undefined,
+        icon: <PaletteDot id={o.value} />,
+        preview: { [key]: o.value },
+        current: s[key] === o.value,
+        run: keep({ [key]: o.value }),
+      }));
+    } else {
+      const icons = { system: <Computer width={15} height={15} strokeWidth={1.8} />, light: <SunLight width={15} height={15} strokeWidth={1.8} />, dark: <HalfMoon width={15} height={15} strokeWidth={1.8} /> };
+      rows = (settingDef("theme") as EnumSetting<SettingValues["theme"]>).options.map((o) => ({
+        id: `t:${o.value}`,
+        group: "Appearance",
+        label: o.label,
+        hint: o.value === "system" ? "Follows this device" : undefined,
+        icon: icons[o.value],
+        preview: { theme: o.value },
+        current: s.theme === o.value,
+        run: keep({ theme: o.value }),
+      }));
+    }
+    return words.length ? rows.filter((r) => words.every((w) => score(r.label, w) > 0)) : rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picker, open, query, registered]);
+
+  const items = useMemo<Item[]>(() => {
+    if (pickerItems) return pickerItems;
+    const { actionsOnly, words } = parsed;
     const all = sessions ?? [];
     let picked: SessionSummary[];
-    if (words.length) {
+    if (actionsOnly) {
+      picked = [];
+    } else if (words.length) {
       picked = all
         .map((s) => ({ s, rank: matchSession(s, words) }))
         .filter((x) => x.rank > 0)
@@ -193,7 +315,7 @@ export function CommandPalette({
             <Pulse busy={isBusy(s)} />
           </span>
         ) : (
-          <ChatBubble width={15} height={15} strokeWidth={1.8} />
+          <AgentIcon agent={s.agent} size={15} tone={false} />
         ),
         run: () => {
           if (s.id !== activeId) navigated.current = true;
@@ -207,6 +329,7 @@ export function CommandPalette({
         id: "a:new",
         group: "Actions",
         label: "New session",
+        combo: "newSession",
         keywords: "new session start create chat",
         icon: <EditPencil width={15} height={15} strokeWidth={1.8} />,
         run: () => {
@@ -217,13 +340,14 @@ export function CommandPalette({
       {
         id: "a:shell",
         group: "Actions",
-        label: "Open a terminal",
+        label: "Open shell",
+        combo: "terminal",
         keywords: "terminal shell bash console command line ssh",
         icon: <Terminal width={15} height={15} strokeWidth={1.8} />,
         run: () => {
           navigated.current = true;
           const s = sessions?.find((x) => x.id === activeId);
-          window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: s?.cwd || undefined, label: s?.cwd ? `shell in ${s.cwd}` : "shell" } }));
+          window.dispatchEvent(new CustomEvent(OPEN_TERMINAL_EVENT, { detail: { cwd: s?.cwd || undefined, label: s?.cwd ? `Shell: ${shortPath(s.cwd)}` : "Shell" } }));
         },
       },
       ...(onView
@@ -261,23 +385,82 @@ export function CommandPalette({
                 onView("@files");
               },
             },
+            {
+              id: "a:usage",
+              group: "Actions" as const,
+              label: "Usage",
+              keywords: "usage tokens cost spend billing money price models chart",
+              icon: <StatsReport width={15} height={15} strokeWidth={1.8} />,
+              run: () => {
+                navigated.current = true;
+                onView("@usage");
+              },
+            },
+            {
+              id: "a:settings",
+              group: "Actions" as const,
+              label: "Settings",
+              combo: "settings",
+              keywords: "settings preferences options theme enter send keyboard",
+              icon: <Settings width={15} height={15} strokeWidth={1.8} />,
+              run: () => {
+                navigated.current = true;
+                onView("@settings");
+              },
+            },
           ]
         : []),
       {
         id: "a:sidebar",
         group: "Actions",
         label: "Toggle sidebar",
+        combo: "sidebar",
         keywords: "sidebar collapse expand hide show panel rail",
         icon: <SidebarCollapse width={15} height={15} strokeWidth={1.8} />,
-        run: () => window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT)),
+        run: () => {
+          /* on a phone this opens the drawer, which takes focus */
+          navigated.current = !window.matchMedia("(min-width: 1024px)").matches;
+          window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT));
+        },
       },
       {
         id: "a:theme",
         group: "Actions",
-        label: dark ? "Switch to light theme" : "Switch to dark theme",
-        keywords: "toggle theme dark light mode appearance",
+        label: "Toggle light/dark",
+        hint: dark ? "Switch to light" : "Switch to dark",
+        keywords: "toggle theme dark light mode appearance switch",
         icon: dark ? <SunLight width={15} height={15} strokeWidth={1.8} /> : <HalfMoon width={15} height={15} strokeWidth={1.8} />,
         run: toggleTheme,
+      },
+      {
+        id: "a:palette",
+        group: "Actions",
+        label: "Change theme…",
+        keywords: "theme palette colors color scheme nord solarized catppuccin rose pine github midnight graphite slate custom",
+        icon: <Palette width={15} height={15} strokeWidth={1.8} />,
+        keep: true,
+        run: () => openPicker("palette"),
+      },
+      {
+        id: "a:appearance",
+        group: "Actions",
+        label: "Change appearance…",
+        keywords: "appearance light dark system mode color scheme",
+        icon: <Computer width={15} height={15} strokeWidth={1.8} />,
+        keep: true,
+        run: () => openPicker("theme"),
+      },
+      {
+        id: "a:shortcuts",
+        group: "Actions",
+        label: "Keyboard shortcuts",
+        combo: "shortcuts",
+        keywords: "keyboard shortcuts keys hotkeys bindings help",
+        icon: <KeyCommand width={15} height={15} strokeWidth={1.8} />,
+        run: () => {
+          navigated.current = true;
+          window.dispatchEvent(new Event(OPEN_SHORTCUTS_EVENT));
+        },
       },
       {
         id: "a:signout",
@@ -287,28 +470,80 @@ export function CommandPalette({
         icon: <LogOut width={15} height={15} strokeWidth={1.8} />,
         run: () => {
           navigated.current = true;
-          void api("/api/auth/logout", {})
-            .catch(() => undefined)
-            .then(() => {
-              window.location.href = "/login";
-            });
+          void signOut();
         },
       },
     ];
-    const actionItems = words.length ? actions.filter((a) => words.every((w) => score(`${a.label} ${a.keywords}`, w) >= 60)) : actions;
+    const own: (Item & { keywords: string })[] = paletteActions().map((a) => ({
+      id: `x:${a.id}`,
+      group: "This session",
+      label: a.label,
+      hint: a.hint,
+      combo: a.command,
+      keywords: a.keywords ?? "",
+      icon: ACTION_ICONS[a.icon],
+      keep: Boolean(a.picker),
+      run: a.picker
+        ? () => openPicker(`session:${a.picker}`)
+        : () => {
+            if (a.takesFocus) navigated.current = true;
+            a.run();
+          },
+    }));
     /* "fil" means the Files action more than a session that mentions files */
     const typed = words.join(" ");
-    const prefix = (a: Item) => (typed && a.label.toLowerCase().startsWith(typed) ? 0 : 1);
-    const ranked = [...actionItems].sort((a, b) => prefix(a) - prefix(b));
-    return ranked.length && prefix(ranked[0]) === 0 ? [...ranked, ...sessionItems] : [...sessionItems, ...ranked];
-  }, [query, sessions, activeId, dark, onOpen, onNew, onView, toggleTheme]);
+    const ownRanked = filterActions(own, words);
+    const ranked = filterActions(actions, words);
+    const best = (list: Item[]) => (list.length ? actionRank(list[0], typed) : 1);
+    const actionRows = best(ranked) < best(ownRanked) ? [...ranked, ...ownRanked] : [...ownRanked, ...ranked];
+    const settingItems: Item[] =
+      actionsOnly || !onView
+        ? []
+        : settingRows(words).map((r) => ({
+            id: r.id,
+            group: "Settings",
+            label: r.label,
+            hint: <span className="truncate">{r.sectionLabel}</span>,
+            icon: <Settings {...ic} />,
+            run: () => {
+              navigated.current = true;
+              searchSettingsFor(r.label);
+              onView("@settings");
+            },
+          }));
+    const messageItems: Item[] = messages.hits.map((h) => ({
+      id: `m:${h.key}`,
+      group: "Messages",
+      label: all.find((s) => s.id === h.key)?.title || h.title,
+      hint: <Snippet text={h.snippet} match={h.match} />,
+      icon: <ChatLines width={15} height={15} strokeWidth={1.8} />,
+      run: () => {
+        if (h.key !== activeId) navigated.current = true;
+        onOpen(h.key);
+      },
+    }));
+    const head = Math.min(best(ranked), best(ownRanked)) < 1 ? [...actionRows, ...sessionItems] : [...sessionItems, ...actionRows];
+    return [...head, ...settingItems, ...messageItems];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerItems, parsed, sessions, activeId, dark, messages.hits, onOpen, onNew, onView, toggleTheme, openPicker, open, registered]);
 
-  /* a new query starts back at the top */
+  /* a new query starts back at the top; a picker starts on the choice in use */
   useEffect(() => {
     keyMove.current = true;
-    setActive(0);
-  }, [query]);
+    setActive(query ? 0 : Math.max(0, pickerItems?.findIndex((it) => it.current) ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, picker]);
   const current = Math.min(active, items.length - 1);
+
+  /* the highlighted choice of a picker shows at once on the whole app */
+  const previewKey = picker && current >= 0 ? JSON.stringify(items[current]?.preview ?? null) : null;
+  useEffect(() => {
+    if (!previewKey) return;
+    const patch = JSON.parse(previewKey) as Partial<SettingValues> | null;
+    if (!patch) return;
+    previewing.current = true;
+    applyAppearance({ ...getSettings(), ...patch }, { preview: true });
+  }, [previewKey]);
 
   /* only keyboard moves scroll the list; a row under the pointer is already in view */
   const keyMove = useRef(false);
@@ -322,11 +557,19 @@ export function CommandPalette({
   const runAt = (i: number) => {
     const item = items[i];
     if (!item) return;
+    if (item.keep) return item.run();
+    if (item.preview) {
+      item.run();
+      setPicker(null);
+      setOpen(false);
+      return;
+    }
     close();
     item.run();
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     const n = items.length;
     switch (e.key) {
       case "ArrowDown":
@@ -357,6 +600,12 @@ export function CommandPalette({
         if (query) setQuery("");
         else close();
         return;
+      case "Backspace":
+        if (picker && !query && e.target === inputRef.current) {
+          e.preventDefault();
+          openPicker(null);
+        }
+        return;
       case "Tab": {
         /* focus stays inside the dialog */
         const focusables = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("input, button:not([disabled])") ?? []).filter((el) => el.tabIndex >= 0);
@@ -375,7 +624,16 @@ export function CommandPalette({
   const groups = [...new Set(items.map((it) => it.group))]
     .map((g) => ({ g, rows: items.map((it, i) => ({ it, i })).filter((x) => x.it.group === g) }))
     .filter((x) => x.rows.length);
-  const loading = sessions === null;
+  const loading = sessions === null && !parsed.actionsOnly;
+  const themed = picker === "palette" || picker === "theme";
+  const placeholder =
+    picker === "palette"
+      ? "Choose a theme…"
+      : picker === "theme"
+        ? "Choose an appearance…"
+        : picker
+          ? (palettePicker(picker.slice("session:".length))?.placeholder ?? "Choose…")
+          : "Search sessions, messages and actions…";
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-start justify-center sm:px-4 sm:pt-[12vh]" onKeyDown={onKeyDown}>
@@ -407,13 +665,13 @@ export function CommandPalette({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={current >= 0 ? optId(current) : undefined}
-            aria-label="Search sessions and actions"
-            placeholder="Search sessions and actions…"
+            aria-label={placeholder.replace(/…$/, "")}
+            placeholder={placeholder}
             enterKeyHint="go"
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[14.5px] sm:pointer-coarse:text-[16px]"
+            className="h-full min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-base sm:pointer-coarse:text-[16px]"
           />
           <button
             type="button"
@@ -428,7 +686,7 @@ export function CommandPalette({
         <div ref={listRef} id={listId} role="listbox" aria-label="Results" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1.5">
           {groups.map(({ g, rows }) => (
             <div key={g} role="group" aria-labelledby={`${uid}-${g}`} className="pb-1">
-              <div id={`${uid}-${g}`} role="presentation" className="px-2.5 pt-2 pb-1 text-[12px] font-medium text-ink-3">
+              <div id={`${uid}-${g}`} role="presentation" className="px-2.5 pt-2 pb-1 text-xs font-medium text-ink-3">
                 {g}
               </div>
               {rows.map(({ it, i }) => {
@@ -448,13 +706,21 @@ export function CommandPalette({
                       {it.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[14px] font-medium sm:text-[13.5px]">{it.label}</span>
-                      {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-ink-3">{it.hint}</span>}
+                      <span className="block truncate text-base font-medium sm:text-sm">{it.label}</span>
+                      {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-ink-3">{it.hint}</span>}
                     </span>
-                    {on && (
-                      <kbd className="hidden shrink-0 rounded-[5px] bg-field px-1.5 py-0.5 font-sans text-[11px] text-ink-3 shadow-hairline pointer-fine:inline" aria-hidden>
+                    {it.current && <Check width={15} height={15} strokeWidth={2} className="shrink-0 text-accent-ink" aria-label="In use" />}
+                    {on ? (
+                      <kbd className="kbd hidden shrink-0 px-1.5 pointer-fine:inline-flex" aria-hidden>
                         Enter
                       </kbd>
+                    ) : (
+                      it.combo &&
+                      comboFor(it.combo, isMac(), { bindings }) && (
+                        <kbd className="kbd hidden shrink-0 px-1.5 pointer-fine:inline-flex" aria-hidden>
+                          {comboFor(it.combo, isMac(), { bindings })}
+                        </kbd>
+                      )
                     )}
                   </div>
                 );
@@ -462,27 +728,35 @@ export function CommandPalette({
             </div>
           ))}
           {loading && !groups.some((x) => x.g === "Sessions") && (
-            <p className="px-2.5 py-2 text-[13px] text-ink-3" role="status">
+            <p className="px-2.5 py-2 text-sm text-ink-3" role="status">
               Loading sessions…
             </p>
           )}
-          {!items.length && (
-            <p className="px-2.5 py-6 text-center text-[13px] text-ink-3" role="status">
-              Nothing matches <span className="font-medium text-ink-2">“{query.trim()}”</span>.
+          {messages.searching && (
+            <p className="px-2.5 py-2 text-sm text-ink-3" role="status">
+              Searching messages…
             </p>
+          )}
+          {!items.length && !messages.searching && (
+            <EmptyState announce className="py-8" icon={<Search width={18} height={18} strokeWidth={1.8} />} {...noMatchCopy(query, picker || query.trim().length < 2 ? "Try another word." : "Try fewer or different words. Message text was searched too.")} />
           )}
         </div>
 
-        <div className="hidden h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-[11.5px] text-ink-3 pointer-fine:flex" aria-hidden>
+        <div className="hidden h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-xs text-ink-3 pointer-fine:flex" aria-hidden>
           <span>
-            <Key>↑</Key> <Key>↓</Key> to move
+            <Key>↑</Key> <Key>↓</Key> {themed ? "to preview" : "to move"}
           </span>
           <span>
-            <Key>Enter</Key> to open
+            <Key>Enter</Key> {themed ? "to keep" : picker ? "to choose" : "to open"}
           </span>
           <span>
-            <Key>Esc</Key> to close
+            <Key>Esc</Key> {themed ? "to put it back" : "to close"}
           </span>
+          {!picker && (
+            <span className="ml-auto">
+              <Key>&gt;</Key> for actions only
+            </span>
+          )}
         </div>
       </div>
     </div>,
@@ -490,6 +764,76 @@ export function CommandPalette({
   );
 }
 
+type MessageHit = { key: string; title: string; snippet: string; match: [number, number] };
+const NO_HITS: MessageHit[] = [];
+
+/** Message text matching the query across sessions (/api/search), fetched once typing pauses. */
+function useMessageSearch(query: string, open: boolean) {
+  const q = query.trim();
+  const wanted = open && q.length >= 2 && q.length <= 200;
+  const [found, setFound] = useState<{ q: string; hits: MessageHit[] } | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, { cache: "no-store", signal: ctl.signal })
+        .then((res) => (res.ok ? (res.json() as Promise<{ hits?: MessageHit[] }>) : { hits: NO_HITS }))
+        .then((data) => setFound({ q, hits: data.hits ?? NO_HITS }))
+        .catch(() => {
+          if (!ctl.signal.aborted) setFound({ q, hits: NO_HITS });
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [q, wanted]);
+  if (!wanted) return { hits: NO_HITS, searching: false };
+  return found?.q === q ? { hits: found.hits, searching: false } : { hits: NO_HITS, searching: true };
+}
+
+function Snippet({ text, match: [start, end] }: { text: string; match: [number, number] }) {
+  return (
+    <span className="line-clamp-2 min-w-0 break-words">
+      {text.slice(0, start)}
+      <mark className="rounded-[3px] bg-accent-tint px-px text-ink">{text.slice(start, end)}</mark>
+      {text.slice(end)}
+    </span>
+  );
+}
+
 function Key({ children }: { children: ReactNode }) {
-  return <kbd className="rounded-[4px] bg-field px-1 py-px font-sans text-[11px] text-ink-2 shadow-hairline">{children}</kbd>;
+  return <kbd className="kbd">{children}</kbd>;
+}
+
+type Found = { q: string; sessions: SessionSummary[] };
+
+/** `listed` plus the sessions the server finds for the query (the list only holds the most recent pages). */
+function useFoundSessions(listed: SessionSummary[] | null, query: string, open: boolean) {
+  const q = queryWords(query).join(" ");
+  const wanted = open && q.length > 0 && q.length <= 200;
+  const [found, setFound] = useState<Found | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(`/api/sessions?q=${encodeURIComponent(q)}`, { cache: "no-store", signal: ctl.signal })
+        .then((res) => (res.ok ? (res.json() as Promise<{ sessions?: SessionSummary[] }>) : { sessions: [] }))
+        .then((data) => setFound({ q, sessions: data.sessions ?? [] }))
+        .catch(() => undefined);
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [q, wanted]);
+  return useMemo(() => mergeFound(listed, wanted && found?.q === q ? found.sessions : null), [listed, wanted, found, q]);
+}
+
+/** The listed rows (they're fresher), then found ones the list doesn't have. */
+export function mergeFound(listed: SessionSummary[] | null, found: SessionSummary[] | null): SessionSummary[] | null {
+  if (!listed || !found?.length) return listed;
+  const have = new Set(listed.map((s) => s.id));
+  const extra = found.filter((s) => !have.has(s.id));
+  return extra.length ? [...listed, ...extra] : listed;
 }

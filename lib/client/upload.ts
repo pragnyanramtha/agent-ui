@@ -20,7 +20,7 @@ export async function uploadFile(dir: string, file: File, opts: { replace?: bool
       res = await fetch(`/api/files/upload?${q(offset)}`, { method: "POST", body: chunk, signal: opts.signal, headers: { "Content-Type": "application/octet-stream" } });
     } catch (err) {
       if (opts.signal?.aborted) throw err;
-      if (++failures > 40) throw new ApiError("The connection kept dropping. Try again later.", 0);
+      if (++failures > 40) throw new ApiError("Connection lost. Try again.", 0);
       opts.onProgress?.({ sent: offset, total: file.size, retrying: true });
       await new Promise((r) => setTimeout(r, Math.min(10_000, 800 * 2 ** Math.min(failures, 4))));
       if (!navigator.onLine) await new Promise<void>((r) => window.addEventListener("online", () => r(), { once: true }));

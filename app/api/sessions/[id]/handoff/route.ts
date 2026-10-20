@@ -13,22 +13,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await readJson(req);
   return once(body.clientId, async () => {
     const profile = getProfile(str(body.profile));
-    if (!profile) return NextResponse.json({ error: "Pick a profile to continue on." }, { status: 400 });
-    if (profile.bin && !profile.binPath) return NextResponse.json({ error: `${profile.label} isn't installed on the server.` }, { status: 400 });
+    if (!profile) return NextResponse.json({ error: "Choose a profile." }, { status: 400 });
+    if (profile.bin && !profile.binPath) return NextResponse.json({ error: `${profile.label} isn't installed.` }, { status: 400 });
     const src = await loadSource(decodeURIComponent(raw));
-    if (!src) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    if (!src) return NextResponse.json({ error: "Session not found." }, { status: 404 });
     const text = str(body.text)?.trim() ?? "";
     const mode = parseMode(body.permissionMode) ?? "default";
     const model = str(body.model) || undefined;
     try {
       const id = await Promise.race([
         handoff(src, { text, mode, model, profile }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${profile.label} didn't start within 90 seconds.`)), 90_000)),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${profile.label} didn't start in time.`)), 90_000)),
       ]);
       guardTurn({ key: id, text: text || "Continue where the previous session left off.", mode, model, profile });
       return NextResponse.json({ id });
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 502 });
+      return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
     }
   });
 }

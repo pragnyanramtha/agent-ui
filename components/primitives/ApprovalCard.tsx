@@ -2,7 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Button } from "@/components/atoms/Button";
+import { KeyCap } from "@/components/atoms/KeyCap";
 import GlideMenu from "@/components/primitives/GlideMenu";
+import { reducedMotion } from "@/lib/client/motion";
+import { approvalKey, focusSpot, keyInScope, overlayOpen } from "@/lib/client/approval-keys";
 
 /* ─────────────────────────────────────────────────────────
  * APPROVAL CARD (human-in-the-loop)
@@ -43,6 +46,7 @@ export type ApprovalLabels = {
   send: string;
   customPlaceholder: string;
   sentMessage: string;
+  sendingMessage: string;
 };
 
 const DEFAULT_LABELS: ApprovalLabels = {
@@ -51,6 +55,7 @@ const DEFAULT_LABELS: ApprovalLabels = {
   send: "Send",
   customPlaceholder: "Something else…",
   sentMessage: "Answers sent",
+  sendingMessage: "Sending…",
 };
 
 const ROLL_MS = 400;
@@ -147,11 +152,13 @@ export default function ApprovalCard({
   onDismiss,
   resettable = true,
   className = "max-w-80",
+  keys = false,
 }: {
   questions?: ApprovalQuestion[];
   labels?: Partial<ApprovalLabels>;
-  /** answers by question index, plus any free-text "something else" answers */
-  onSubmitted?: (answers: Record<number, number[]>, custom: Record<number, string>) => void;
+  /** answers by question index, plus any free-text "something else" answers. A returned promise that
+   * rejects reopens the card with its error, answers kept, so it can be sent again. */
+  onSubmitted?: (answers: Record<number, number[]>, custom: Record<number, string>) => void | Promise<unknown>;
   onAnswerChange?: (questionIndex: number, answer: number[]) => void;
   /** when set, the close button calls this instead of collapsing the card */
   onDismiss?: () => void;
@@ -159,12 +166,15 @@ export default function ApprovalCard({
   variant?: string;
   /** width constraint for the card; defaults to the primitive's 320px */
   className?: string;
+  /** 1-9 pick options and Enter moves on (see approvalKey for when they apply) */
+  keys?: boolean;
 } = {}) {
   const t = { ...DEFAULT_LABELS, ...labels };
   const [qi, setQi] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<boolean | "sending">(false);
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(true);
 
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,7 +195,7 @@ export default function ApprovalCard({
   const sync = (withAnim: boolean) => {
     const item = questionRefs.current[qi];
     if (!item) return;
-    const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduce = reducedMotion();
     setViewportH(item.offsetHeight);
     setTrackY(item.offsetTop);
     setAnimate(withAnim && !reduce);
@@ -212,10 +222,22 @@ export default function ApprovalCard({
     setQi(Math.min(Math.max(next, 0), questions.length - 1));
   };
 
+  /* the auto-advance timer calls send from the render before the pick; it must see the pick */
+  const latest = useRef({ answers, custom });
+  latest.current = { answers, custom };
   const send = () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
-    setSent(true);
-    onSubmitted?.(answers, custom);
+    setError(null);
+    const done = onSubmitted?.(latest.current.answers, latest.current.custom);
+    if (!done) return setSent(true);
+    setSent("sending");
+    done.then(
+      () => setSent(true),
+      (err: unknown) => {
+        setSent(false);
+        setError(err instanceof Error && err.message ? err.message : "Couldn't send the answers.");
+      },
+    );
   };
 
   const advance = () => {
@@ -245,18 +267,40 @@ export default function ApprovalCard({
     }
   };
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const onKey = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  onKey.current = (e) => {
+    if (!open || sent || !keyInScope(e.target, rootRef.current)) return;
+    const question = questions[qi];
+    const options = Array.isArray(question?.options) ? question.options.length : 0;
+    const act = approvalKey(e, { kind: "question", focus: focusSpot(e.target), options, canContinue: hasAnswer, overlay: overlayOpen() });
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (act.type === "pick") toggle(act.index);
+    else if (act.type === "continue") advance();
+  };
+  useEffect(() => {
+    if (!keys) return;
+    const fn = (e: KeyboardEvent) => onKey.current(e);
+    /* capture: the message box takes Enter for itself even when it's empty */
+    window.addEventListener("keydown", fn, true);
+    return () => window.removeEventListener("keydown", fn, true);
+  }, [keys]);
+
   const reset = () => {
     setQi(0);
     setAnswers({});
     setCustom({});
     setSent(false);
+    setError(null);
     setOpen(true);
     measured.current = false;
   };
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="rounded-control bg-surface px-3 py-2 text-[12.5px] font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover">
+      <button type="button" onClick={() => setOpen(true)} className="rounded-control bg-surface px-3 py-2 text-sm font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover">
         Open approval
       </button>
     );
@@ -265,14 +309,20 @@ export default function ApprovalCard({
   if (sent) {
     return (
       <div className="flex w-full max-w-80 items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-green">
-          <span className="flex size-4.5 items-center justify-center rounded-full bg-green text-white">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+        {sent === "sending" ? (
+          <span role="status" className="inline-flex items-center rounded-full bg-hover px-2.5 py-1 text-sm font-medium text-ink-2">
+            {t.sendingMessage}
           </span>
-          {t.sentMessage}
-        </span>
-        {resettable && (
-          <button type="button" onClick={reset} className="text-[12px] font-medium text-ink-3 transition-colors duration-150 hover:text-ink">
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-green-tint py-1 pr-2.5 pl-1 text-sm font-medium text-green">
+            <span className="flex size-4.5 items-center justify-center rounded-full bg-green text-white">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+            </span>
+            {t.sentMessage}
+          </span>
+        )}
+        {resettable && sent === true && (
+          <button type="button" onClick={reset} className="text-xs font-medium text-ink-3 transition-colors duration-150 hover:text-ink">
             Start over
           </button>
         )}
@@ -281,7 +331,7 @@ export default function ApprovalCard({
   }
 
   return (
-    <div className={`w-full ${className}`}>
+    <div ref={rootRef} className={`w-full ${className}`}>
       <div className="relative overflow-hidden rounded-card bg-surface shadow-card" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
         <button
           type="button"
@@ -326,9 +376,9 @@ export default function ApprovalCard({
                     aria-hidden={active ? undefined : true}
                     style={questionStyle}
                   >
-                    <div className="pr-7 text-[14px] font-medium text-ink">{question.q}</div>
+                    <div className="pr-7 text-base font-medium text-ink">{question.q}</div>
                     <GlideMenu className="mt-2.5 flex flex-col gap-1" highlightClassName="inset-x-0 rounded-control bg-hover">
-                      {question.options.map((option, i) => {
+                      {(Array.isArray(question.options) ? question.options : []).map((option, i) => {
                         const on = picked.includes(i);
                         return (
                           <button
@@ -351,9 +401,10 @@ export default function ApprovalCard({
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                               )}
                             </span>
-                            <span className={`text-[13px] leading-snug transition-colors duration-200 sm:leading-none ${on ? "text-ink" : "text-ink-2"}`}>
+                            <span className={`text-sm leading-snug transition-colors duration-200 sm:leading-none ${on ? "text-ink" : "text-ink-2"}`}>
                               {option}
                             </span>
+                            {keys && i < 9 && <KeyCap className="ml-auto">{i + 1}</KeyCap>}
                           </button>
                         );
                       })}
@@ -367,6 +418,7 @@ export default function ApprovalCard({
                             if (question.type === "radio") setAnswers((current) => ({ ...current, [qIdx]: [] }));
                           }}
                           onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                             if (event.key === "Enter" && hasAnswer) {
                               event.preventDefault();
                               advance();
@@ -374,7 +426,7 @@ export default function ApprovalCard({
                           }}
                           placeholder={t.customPlaceholder}
                           aria-label="Custom answer"
-                          className="min-w-0 flex-1 bg-transparent pl-1.5 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-[13px] sm:pointer-coarse:text-[16px]"
+                          className="min-w-0 flex-1 bg-transparent pl-1.5 text-[16px] text-ink outline-none placeholder:text-ink-3 sm:text-sm sm:pointer-coarse:text-[16px]"
                         />
                       </label>
                     </GlideMenu>
@@ -384,6 +436,12 @@ export default function ApprovalCard({
             </div>
           </div>
         </div>
+
+        {error && (
+          <p role="alert" className="mx-3 mb-1 text-sm text-red-ink [overflow-wrap:anywhere]">
+            {error}
+          </p>
+        )}
 
         {/* footer: step nav (rolling counter) + pill actions */}
         <div className="primitive-card-footer flex items-center justify-between gap-3">
@@ -397,7 +455,7 @@ export default function ApprovalCard({
             >
               <Ico size={14} path={<path d="M18 15l-6-6-6 6" />} />
             </button>
-            <span className="inline-flex items-center text-[12px] font-medium tabular-nums text-ink-3" style={{ letterSpacing: "-0.1px", lineHeight: 1 }}>
+            <span className="inline-flex items-center text-xs font-medium tabular-nums text-ink-3" style={{ letterSpacing: "-0.1px", lineHeight: 1 }}>
               <RollingDigits value={`${qi + 1} / ${questions.length}`} />
             </span>
             <button
@@ -415,8 +473,9 @@ export default function ApprovalCard({
             <Button variant="ghost" size="sm" className="tap pointer-coarse:h-9" onClick={() => (last ? (onDismiss ? send() : setOpen(false)) : goTo(qi + 1))}>
               {t.skip}
             </Button>
-            <Button variant="accent" size="sm" className="tap pointer-coarse:h-9" disabled={!hasAnswer} onClick={advance}>
+            <Button variant="accent" size="sm" className={`tap pointer-coarse:h-9 ${keys ? "pointer-fine:pr-1.5" : ""}`} disabled={!hasAnswer} onClick={advance}>
               {last ? t.send : t.continue}
+              {keys && <KeyCap onFill>↵</KeyCap>}
             </Button>
           </div>
         </div>

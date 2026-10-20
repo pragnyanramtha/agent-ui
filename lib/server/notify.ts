@@ -1,74 +1,36 @@
-import { terminalBusy } from "@/lib/status";
-import { AGENT_LABEL, type SessionSummary } from "@/lib/types";
+import { forgetSeen, step, type Seen } from "@/lib/notify-events";
+import { pushWanted } from "@/lib/notify-prefs";
+import { DEFAULTS } from "@/lib/settings-schema";
+import type { SessionSummary } from "@/lib/types";
 import { pushAll, subscriptionCount, type PushMessage } from "./push";
+import { signRespondToken } from "./push-token";
 import { sessionRows } from "./rows";
+import { readSynced } from "./settings";
 
-/* Watches every session's state and pushes a notification when one finishes, needs an answer, or fails. */
+/* Watches every session's state and pushes a notification when one finishes, needs an answer, or fails. Which of
+ * those go out, and do not disturb, are synced settings: push reaches every device, so it follows the shared choice. */
 
-export type Phase = "busy" | "needs" | "failed" | "idle";
-export type Seen = { phase: Phase; idleSince?: number; doneSent?: boolean };
+export { phaseOf, SETTLE_MS, step, type Phase, type Seen } from "@/lib/notify-events";
 
-/** how long a session has to stay idle before it counts as done (a queued message starts the next turn sooner) */
-export const SETTLE_MS = 4000;
-
-export function phaseOf(s: Pick<SessionSummary, "terminal" | "web">): Phase {
-  if (s.web?.pending.length) return "needs";
-  if (s.web?.status === "error") return "failed";
-  const busy = s.web ? s.web.status === "running" || s.web.status === "starting" : terminalBusy(s.terminal?.status);
-  return busy ? "busy" : "idle";
+/** The messages the synced settings let through. */
+export function wanted(messages: PushMessage[], settings = readSynced().settings): PushMessage[] {
+  if (!messages.length) return messages;
+  const prefs = { ...DEFAULTS, ...settings };
+  return messages.filter((m) => pushWanted(m.kind, prefs));
 }
 
-const clip = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
-function detail(s: SessionSummary): string {
-  const ask = s.web?.pending[0];
-  if (!ask) return "";
-  if (ask.kind === "question") return ask.questions[0]?.question ?? "";
-  return ask.title || ask.toolName;
-}
-
-/** One poll: the notifications this change of state calls for, and the state to remember. A session seen for the
- * first time only seeds its state. */
-export function step(seen: Map<string, Seen>, rows: SessionSummary[], now: number): PushMessage[] {
-  const out: PushMessage[] = [];
-  const live = new Set<string>();
-  for (const s of rows) {
-    live.add(s.id);
-    const phase = phaseOf(s);
-    const prev = seen.get(s.id);
-    if (!prev) {
-      seen.set(s.id, { phase, idleSince: phase === "idle" ? now : undefined, doneSent: true });
-      continue;
+/** "Needs you" for a tool approval gets Allow and Deny: a token for that one request. Questions only open the session. */
+export function withActions(messages: PushMessage[], rows: SessionSummary[], sign = signRespondToken): PushMessage[] {
+  return messages.map((m) => {
+    if (m.kind !== "needs" || !m.session) return m;
+    const ask = rows.find((r) => r.id === m.session)?.web?.pending[0];
+    if (ask?.kind !== "permission") return m;
+    try {
+      return { ...m, respond: { token: sign(m.session, ask.requestId) } };
+    } catch {
+      return m;
     }
-    const agent = AGENT_LABEL[s.agent] ?? "Agent";
-    const title = s.title || s.project || "Session";
-    const msg = (kind: PushMessage["kind"], head: string, body: string): PushMessage => ({
-      kind,
-      title: head,
-      body: clip(body ? `${title}: ${body}` : title),
-      tag: `${kind === "done" ? "done" : "act"}:${s.id}`,
-      url: `/?s=${encodeURIComponent(s.id)}`,
-    });
-    const next: Seen = { phase, idleSince: prev.idleSince, doneSent: prev.doneSent };
-    if (phase === "needs" && prev.phase !== "needs") out.push(msg("needs", `${agent} needs you`, detail(s)));
-    if (phase === "failed" && prev.phase !== "failed") out.push(msg("failed", `${agent} failed`, s.web?.error ?? ""));
-    if (phase === "busy") {
-      next.idleSince = undefined;
-      next.doneSent = false;
-    } else if (phase === "idle") {
-      if (prev.phase !== "idle") next.idleSince = now;
-      if (!next.doneSent && next.idleSince !== undefined && now - next.idleSince >= SETTLE_MS) {
-        out.push(msg("done", `${agent} finished`, ""));
-        next.doneSent = true;
-      }
-    } else {
-      /* an answer or a failure ends the turn's "done" */
-      next.doneSent = true;
-    }
-    seen.set(s.id, next);
-  }
-  for (const id of seen.keys()) if (!live.has(id)) seen.delete(id);
-  return out;
+  });
 }
 
 const POLL_MS = 3000;
@@ -85,11 +47,12 @@ export function startNotify() {
     running = true;
     try {
       if (!subscriptionCount()) {
-        seen.clear();
+        forgetSeen(seen);
         return;
       }
       const rows = await sessionRows();
-      for (const m of step(seen, rows, Date.now())) await pushAll(m);
+      /* the state moves on either way, so turning an event back on doesn't replay old ones */
+      for (const m of withActions(wanted(step(seen, rows, Date.now())), rows)) await pushAll(m);
     } catch (err) {
       console.warn(`notify: ${(err as Error).message}`);
     } finally {

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { SessionSummary, TerminalInfo } from "@/lib/types";
 import { HIDDEN_PROJECTS, LIVE_SESSIONS_DIR, PROJECTS_DIR } from "./config";
+import { newestFirst } from "./order";
 import { emptyMeta, metaTitle, readEdges, scanMeta, type Meta } from "./transcript";
 
 type Cached = { mtime: number; size: number; meta: Meta };
@@ -12,6 +13,8 @@ const g = globalThis as typeof globalThis & {
   __claudeUiTerminals?: { at: number; map: Map<string, TerminalInfo> };
 };
 const metaCache = (g.__claudeUiMeta ??= new Map());
+/** more than the list ever shows, so listing stays cached; fewer than a server's whole history */
+const META_CACHE_MAX = 2000;
 const pathIndex = (g.__claudeUiPaths ??= new Map());
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -20,11 +23,25 @@ export const isSessionId = (id: string) => UUID.test(id);
 /** Head + tail scan, cached on (mtime, size) so listing stays cheap on multi-GB project dirs. */
 export async function sessionMeta(file: string, mtime: number, size: number) {
   const hit = metaCache.get(file);
-  if (hit && hit.mtime === mtime && hit.size === size) return hit.meta;
+  /* re-inserted on every use, so the Map's order is least recently used first */
+  metaCache.delete(file);
+  if (hit && hit.mtime === mtime && hit.size === size) {
+    metaCache.set(file, hit);
+    return hit.meta;
+  }
   const { head, tail } = await readEdges(file, size);
   const meta = scanMeta(tail, scanMeta(head, emptyMeta()));
   metaCache.set(file, { mtime, size, meta });
+  for (const old of metaCache.keys()) {
+    if (metaCache.size <= META_CACHE_MAX) break;
+    metaCache.delete(old);
+  }
   return meta;
+}
+
+/** Forgets cached metadata of transcripts under `dir` that are gone (deleted sessions, removed projects). */
+function pruneMeta(dir: string, present: Set<string>) {
+  for (const file of metaCache.keys()) if (file.startsWith(dir + path.sep) && !present.has(file)) metaCache.delete(file);
 }
 
 /* ── live terminal sessions ───────────────────────────────────
@@ -90,9 +107,13 @@ export async function liveTerminals(maxAgeMs = 1500): Promise<Map<string, Termin
 
 /* ── listing ───────────────────────────────────────────────── */
 
-export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "web">[]> {
+export type ListingSeen = { total: number; oldest?: { id: string; mtime: number } };
+
+/** The `limit` newest transcripts as rows (untitled ones skipped). `seen` gets how many transcripts there are and
+ * the oldest one looked at, where a page of rows merged with other agents' has to stop. */
+export async function listSessions(limit = 120, seen?: ListingSeen): Promise<Omit<SessionSummary, "web">[]> {
   const projects = await fs.readdir(PROJECTS_DIR, { withFileTypes: true }).catch(() => []);
-  const files: { file: string; id: string; mtime: number; size: number }[] = [];
+  const files: { file: string; id: string; mtime: number; created: number; size: number }[] = [];
   await Promise.all(
     projects
       .filter((d) => d.isDirectory() && !HIDDEN_PROJECTS.some((h) => d.name.includes(h)))
@@ -106,22 +127,25 @@ export async function listSessions(limit = 120): Promise<Omit<SessionSummary, "w
             if (!stat || stat.size === 0) return;
             const id = n.slice(0, -6);
             pathIndex.set(id, file);
-            files.push({ file, id, mtime: stat.mtimeMs, size: stat.size });
+            files.push({ file, id, mtime: stat.mtimeMs, created: stat.birthtimeMs, size: stat.size });
           }),
         );
       }),
   );
-  files.sort((a, b) => b.mtime - a.mtime);
+  files.sort(newestFirst);
+  pruneMeta(PROJECTS_DIR, new Set(files.map((f) => f.file)));
   const terminals = await liveTerminals();
   const rows = await Promise.all(
-    files.slice(0, limit).map(async ({ file, id, mtime, size }) => {
+    files.slice(0, limit).map(async ({ file, id, mtime, created, size }) => {
       const meta = await sessionMeta(file, mtime, size);
       const title = metaTitle(meta);
       if (!title) return null;
       const cwd = meta.cwd ?? "";
-      return { id, agent: "claude" as const, title, cwd, project: path.basename(cwd) || cwd, mtime, size, terminal: terminals.get(id) ?? null };
+      /* birthtime is 0 where the filesystem doesn't keep it */
+      return { id, agent: "claude" as const, title, cwd, project: path.basename(cwd) || cwd, mtime, ...(created > 0 ? { created } : {}), size, terminal: terminals.get(id) ?? null };
     }),
   );
+  if (seen) Object.assign(seen, { total: files.length, oldest: files[Math.min(limit, files.length) - 1] });
   return rows.filter((r): r is NonNullable<typeof r> => r !== null);
 }
 

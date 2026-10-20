@@ -1,12 +1,14 @@
 # agent-u
 
 Self-hosted, mobile-friendly web UI for coding-agent CLI sessions running on a server (Claude Code first; Codex,
-OpenCode, Cursor CLI, Devin CLI and Kimi Code through adapters). Built on Beautiful UI (Next.js 15, React 19, Tailwind v4, pnpm).
+OpenCode, Cursor CLI, Devin CLI, Kimi Code, Gemini CLI and Antigravity through adapters). Built on Beautiful UI (Next.js 15, React 19, Tailwind v4, pnpm).
 Watch live sessions, type into the terminal they run in, start/resume sessions from the browser, and open a full web terminal.
 
 ## Commands
 - `pnpm install` / `pnpm dev` (127.0.0.1:3311) / `pnpm build` / `pnpm start`
 - `pnpm typecheck` before every commit
+- `pnpm test` (vitest); `pnpm e2e:offline` runs the built app in a throwaway HOME against the Gemini CLI replaying canned
+ responses (no keys; needs `gemini` on PATH or `GEMINI_BIN`, reuses `.next` unless `E2E_REBUILD=1`). CI runs all of these.
 - `printf 'password\n' | node scripts/hash-password.mjs` prints a `UI_PASSWORD_HASH=` line
 - `scripts/deploy.sh` ships the committed code (`git archive HEAD`) to the server, builds, restarts (reads `.env.deploy`)
 - `scripts/setup.sh` does the whole server setup below and is safe to rerun (see "Setting up for a user")
@@ -15,9 +17,12 @@ Watch live sessions, type into the terminal they run in, start/resume sessions f
 All machine-specific values live in gitignored env files; `.env.example` documents every key.
 - `.env.local` on the server (chmod 600): `UI_PASSWORD` (plain) or `UI_PASSWORD_HASH` (`scrypt:salt:hash`, colon-separated
   because Next's dotenv expands `$`; wins if both are set), `UI_SECRET` (32+ chars, signs the session cookie), optional `CLAUDE_BIN`, `CLAUDE_HOME`, `HIDE_PROJECTS`,
- `IDLE_REAP_MS`, `PTY_PORT`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
- `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`), `AGENT_U_HOME`,
- `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, plus any secrets profiles reference as `${NAME}`.
+ `IDLE_REAP_MS`, `PTY_PORT`, `CLAUDE_WEB_DRIVER`, `CLAUDE_MODEL`, and per-agent overrides (`CODEX_BIN`, `CODEX_HOME`, `CODEX_WEB_DRIVER`, `OPENCODE_BIN`,
+ `OPENCODE_DB`, `CURSOR_AGENT_BIN`, `CURSOR_CONFIG_DIR`, `DEVIN_BIN`, `KIMI_BIN`, `KIMI_CODE_HOME`, `GEMINI_BIN`, `GEMINI_CLI_HOME`, `GEMINI_API_KEY`, `AGY_BIN`), `AGENT_U_HOME`,
+ `AGENT_U_CONFIG`, `SHELL_IDLE_MS`, checkpoint limits (`CHECKPOINT_MAX_FILE_MB`, `CHECKPOINT_MAX_TOTAL_MB`,
+ `CHECKPOINT_MAX_AGE_DAYS`), `GIT_FETCH_INTERVAL_MS` (default for Settings > Git > Check the remote), `PUBLIC_HOSTNAME` (written by `scripts/setup.sh`) and `ALLOWED_HOSTS` (comma list of
+ other names the site is reached by, `host` or `host:port`; see Security model), `TRUST_PROXY_HEADERS` (`1` behind the
+ tunnel, also written by setup.sh), plus any secrets profiles reference as `${NAME}`.
 - `.env.deploy` on your machine: `DEPLOY_SSH`, `DEPLOY_SSH_PORT`, `DEPLOY_DIR`, `PUBLIC_HOSTNAME`, `TUNNEL_NAME`.
 - Optional, also on your machine and gitignored: `.env.server` (KEY=value lines `scripts/setup.sh` merges into the server's
  `.env.local`) and `agent-u.config.json` (the profiles file it installs).
@@ -35,9 +40,9 @@ All machine-specific values live in gitignored env files; `.env.example` documen
      "env": { "ANTHROPIC_BASE_URL": "https://proxy.example/v1", "ANTHROPIC_AUTH_TOKEN": "${CLAUDE_PROXY_KEY}" } }
  ] }
  ```
- Fields: `id` (lowercase, `.`, `_`, `-`), `label`, `agent` (claude, codex, opencode, cursor, devin, kimi), `bin` (name on PATH
+ Fields: `id` (lowercase, `.`, `_`, `-`), `label`, `agent` (claude, codex, opencode, cursor, devin, kimi, gemini, antigravity), `bin` (name on PATH
  or absolute path), `args` (before the agent's own), `env` (`${VAR}` reads the server environment, so keys stay in
- `.env.local`), `models` (offered in the composer; first is default unless `defaultModel`), `fallback` (profile ids tried in
+ `.env.local`), `models` (offered in the composer; first is default unless `defaultModel`), `defaultEffort` (reasoning effort when a session hasn't picked one; Claude and Codex only, levels in `lib/agent-traits.ts`), `fallback` (profile ids tried in
  order when a turn hits a usage limit), `launchArgs` (interactive launches only), `hidden`, `notes`.
 - Never commit hostnames, IPs, ports, tunnel ids, passwords or keys.
 
@@ -55,7 +60,7 @@ When asked to set agent-u up on a server, you only need the ssh target and which
 
 ## Server setup (manual, what setup.sh does)
 Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web terminal), the agent CLIs you use
-(`claude`, `codex`, `opencode`, `cursor-agent`, `devin`, `kimi`), tmux (recommended) or zellij, and `cloudflared` for public access.
+(`claude`, `codex`, `opencode`, `cursor-agent`, `devin`, `kimi`, `gemini`, `agy`), tmux (recommended) or zellij, and `cloudflared` for public access.
 1. `scripts/deploy.sh` (copies code, installs, builds). First time, also create `.env.local` in `DEPLOY_DIR` from `.env.example`.
 2. Install the user units from `deploy/` into `~/.config/systemd/user/`: `agent-u.service` (app on 127.0.0.1:3311),
    `agent-u-pty.service` (web terminal backend on 127.0.0.1:3312). `systemctl --user daemon-reload && systemctl --user enable --now agent-u agent-u-pty`.
@@ -63,25 +68,46 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
 3. Public URL: never expose the ports directly. Use a Cloudflare named tunnel (quick tunnels can't stream GET SSE):
    `cloudflared tunnel create $TUNNEL_NAME`, `cloudflared tunnel route dns $TUNNEL_NAME $PUBLIC_HOSTNAME`, copy the credentials
    JSON to the server's `~/.cloudflared/`, write `~/.cloudflared/agent-u.yml` from `deploy/cloudflared.example.yml`
-   (routes `^/pty` to the terminal backend, everything else to the app), and enable `deploy/agent-u-tunnel.service`.
+   (routes exactly `/pty`, `path: ^/pty$`, to the terminal backend, everything else to the app; a looser `^/pty` also
+   forwards `/pty/../internal/...`), and enable `deploy/agent-u-tunnel.service`.
 4. Codex sandbox on Ubuntu 24.04+: install `deploy/apparmor-codex-bwrap` as `/etc/apparmor.d/codex-bwrap` (fill in the user)
    and `sudo apparmor_parser -r` it, otherwise workspace-write mode fails with bwrap uid-map/loopback errors.
 5. Agent logins happen on the server in a terminal (or the web terminal): `claude` (login), `codex login`,
-   `opencode auth login`, `cursor-agent login`, `devin` login, `kimi` then `/login`.
+   `opencode auth login`, `cursor-agent login`, `devin` login, `kimi` then `/login`, `agy` once (signs in interactively).
+   `gemini` needs `GEMINI_API_KEY` in `.env.local` (or Vertex AI / Code Assist settings): Google account sign-in moved to Antigravity.
 
 ## Security model
 - One password for everything; the site can open a shell on the server, so treat the password like an SSH key.
 - Middleware gates every page and API route on the signed `cui_session` cookie (HttpOnly, SameSite=strict, Secure behind
-  HTTPS); state-changing API calls also need a same-origin `Origin`. Login is rate limited per IP.
-- The web terminal backend (`server/pty.mjs`) re-checks the cookie and origin on the WebSocket upgrade.
+  HTTPS); state-changing API calls also need a same-origin `Origin`. Login is rate limited (`lib/server/login-limit.ts`):
+  8 attempts per 15 minutes per client and 30 failures per 10 minutes overall. Clients are told apart by
+  `cf-connecting-ip` (IPv6 by /64) only with `TRUST_PROXY_HEADERS=1`; otherwise they share one bucket.
+- Host allowlist against DNS rebinding (`lib/hosts.ts`, copied in `server/pty.mjs`): only loopback names, `PUBLIC_HOSTNAME`
+  and `ALLOWED_HOSTS` are answered; other Hosts get 421 and the WebSocket is refused. With neither variable set (servers
+  set up before this existed) any Host is accepted and a warning is logged; rerun `scripts/setup.sh` or set one.
+- The web terminal backend (`server/pty.mjs`) re-checks the Host, cookie and origin on the WebSocket upgrade. Its
+  `/internal/*` API is matched on the raw request path (so `/pty/%2e%2e/internal/...` can't reach it) and refuses
+  anything carrying `cf-ray`, `cf-connecting-ip` or `x-forwarded-for`.
+- `UI_SECRET`, `UI_PASSWORD` and `UI_PASSWORD_HASH` never reach child processes: every spawn takes its env from
+  `lib/server/child-env.ts`, profiles can't expand them, and `server/pty.mjs` drops them from its own env at startup
+  (and from the global env of a tmux server it reuses). Session cookies expiring more than 30 days out are refused.
+- The cookie HMAC covers the expiry, a session epoch (`auth.json` next to `config.json`, chmod 600) and the password, so
+  changing the password or "Sign out everywhere" (`POST /api/auth/logout` with `{"everywhere": true}`, which writes a new
+  epoch) ends every session; the terminal backend reads the same file and closes sockets whose session ended.
+- App responses carry X-Frame-Options DENY, nosniff, Referrer-Policy no-referrer, COOP same-origin and, over HTTPS,
+  HSTS (`next.config.ts`). The login redirect is built from the vetted Host, never from `x-forwarded-host`.
 - Consider Cloudflare Access (email OTP) in front of the hostname for a second factor.
 
 ## Architecture notes
 - Transcripts (`~/.claude/projects/*/*.jsonl`) are the source of truth for history; `lib/server/tail.ts` streams appends.
 - Live terminal sessions come from `~/.claude/sessions/<pid>.json` (pid + start time checked).
-- Web runs (`lib/server/runner.ts`, Claude Agent SDK) only add deltas, status, and approvals.
+- Claude sessions started or resumed from the web run Claude's own TUI in a kept `agentu-*` tmux session
+  (`lib/server/claude-tui.ts`: `--session-id`/`--resume`, first message as the last argument, folder trust answered), so they
+  outlive the browser and app restarts, open interactively, attach from a shell, and take every command (`/goal`).
+  Without tmux, or with `CLAUDE_WEB_DRIVER=sdk`, they're web runs (`lib/server/runner.ts`, Agent SDK: deltas, status, approvals).
 - One agent process per session, never a copy: `POST /api/sessions/[id]/message` routes to the live web run, else types into
   the zellij/tmux pane (`lib/server/input.ts`, checks Claude's prompt first: agent focus, unsent text, dialogs), else resumes.
+- A headless (Agent SDK) process holding a session is stopped on request (`takeover`) so the session opens in a terminal.
 - Live stream is `POST /api/sessions/[id]/events` read with fetch (SSE framing, `id:` = resume offset, 40s stall reconnect).
 - Messages sent while Claude is mid-turn land in the transcript as `attachment` records (`queued_command`).
 - Other agents: `lib/server/agents/<agent>.ts` implement `AgentAdapter` (`lib/server/agents/types.ts`) and emit the same
@@ -90,7 +116,10 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
   `lib/server/agents/routes.ts`. Codex turns use `codex app-server` (JSON-RPC, streams; `CODEX_WEB_DRIVER=exec` falls back
   to `codex exec --json`); OpenCode turns start a private `opencode serve` and `opencode run --attach` (its `/event` stream
   gives deltas); Cursor uses `cursor-agent -p --output-format stream-json --stream-partial-output`; Devin streams stdout of
-  `devin -p`. Codex approvals (Ask first, Accept edits) come from the app server and show as cards (`askUser` /
+  `devin -p`; Gemini CLI runs `gemini -p "" --output-format stream-json` (prompt on stdin, `--session-id <our uuid>` or
+  `--resume`, history folded from `~/.gemini/tmp/<project>/chats/*.jsonl`); Antigravity runs `agy -p --output-format
+  stream-json` (`--conversation` to continue; list from `~/.gemini/antigravity-cli/conversation_summaries.db`, history from
+  `brain/<id>/.system_generated/logs/transcript_full.jsonl`). Codex approvals (Ask first, Accept edits) come from the app server and show as cards (`askUser` /
  `answerTurn` in `cli-run.ts`); the other agents' print modes can't ask, so they default to Bypass in the UI.
 - Markdown: `components/claude/Markdown.tsx` renders with Streamdown (lazy-loaded; KaTeX only when a message has math;
   raw HTML is never rendered; code blocks use CodeCard). Live text uses the same renderer in streaming mode.
@@ -120,5 +149,15 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
  (`lib/attachments.ts`), so every agent and terminal can open them; the thread renders them as thumbnails.
 - Git (`lib/server/git.ts`): a checkpoint of the working tree before each web message (hidden refs under
  `refs/agent-u/cp/`, via a temporary index: HEAD, branch and staging area untouched), rewind with undo, commit/push/PR
- (gh), and optional worktree per new session (`~/.local/share/agent-u/worktrees`).
+ (gh), and optional worktree per new session (`~/.local/share/agent-u/worktrees`). Untracked files over
+ `CHECKPOINT_MAX_FILE_MB` stay out of checkpoints (named in the commit body, never removed or overwritten by a rewind);
+ more than `CHECKPOINT_MAX_TOTAL_MB` of new files, or 20k of them, skips the checkpoint. Checkpoints older than
+ `CHECKPOINT_MAX_AGE_DAYS` are pruned, at most hourly per repo.
 - UI copy: no em dashes; loading labels end with an ellipsis.
+
+## Cursor Cloud specific instructions
+- Install with `pnpm install --frozen-lockfile`, then `pnpm build`. Node 22 and pnpm 11.17.0 (`packageManager`) are on the login-shell PATH.
+- `pnpm dev` fails while compiling `instrumentation.ts`: the edge bundle follows the `web-push` import and cannot resolve Node's `http`. `pnpm start` serves the production build on 127.0.0.1:3311.
+- Boot writes gitignored `.env.local` with `UI_PASSWORD` and `UI_SECRET` when that file is missing. Read it for the login password and leave it uncommitted.
+- Boot starts `node server/pty.mjs` on 127.0.0.1:3312 and a local proxy on 127.0.0.1:3310. The proxy sends `/pty` to the terminal backend and every other path to the app, the same split as the Cloudflare tunnel. Open http://127.0.0.1:3310 so the web terminal connects.
+- `pnpm typecheck` and `pnpm test` are the checks. The web terminal needs Python 3.

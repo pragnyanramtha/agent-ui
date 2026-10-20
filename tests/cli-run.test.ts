@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/server/profiles", () => ({ activeProfile: () => null }));
@@ -82,6 +83,21 @@ describe("cli turns", () => {
     await vi.waitFor(() => expect(alive(grandchild)).toBe(false), { timeout: 3000 });
   });
 
+  it.skipIf(process.platform !== "linux")("Stop also ends process groups a child made for itself, SIGKILL for one that ignores SIGTERM", async () => {
+    const lines: string[] = [];
+    const done = ended("t:detached");
+    startTurn("t:detached", sh("setsid sh -c 'trap \"\" TERM; exec sleep 30' & echo $!; wait"), (l) => lines.push(l));
+    await vi.waitFor(() => expect(lines.length).toBe(1), { timeout: 3000 });
+    const detached = Number(lines[0]);
+    /* state and process group, read from /proc (a killed orphan can linger as a zombie until init reaps it) */
+    const proc = () => fs.readFileSync(`/proc/${detached}/stat`, "utf8").split(") ")[1].split(" ");
+    await vi.waitFor(() => expect(Number(proc()[2])).toBe(detached), { timeout: 3000 });
+    stopTurn("t:detached");
+    await done;
+    expect(proc()[0]).not.toBe("Z");
+    await vi.waitFor(() => expect(!fs.existsSync(`/proc/${detached}`) || proc()[0] === "Z").toBe(true), { timeout: 8000 });
+  }, 12_000);
+
   it("finish even when an orphaned helper keeps stdout open", async () => {
     const start = Date.now();
     const lines: string[] = [];
@@ -117,7 +133,7 @@ describe("cli turns", () => {
   });
 
   it("refuse an argument too long for the kernel with a readable error, before spawning", () => {
-    expect(() => startTurn("t:e2big", sh(`echo ${"x".repeat(200 * 1024)}`))).toThrow(/too long to hand to sh/);
+    expect(() => startTurn("t:e2big", sh(`echo ${"x".repeat(200 * 1024)}`))).toThrow(/Message too long \(200 KB\)/);
     expect(turnState("t:e2big")).toBeNull();
   });
 
