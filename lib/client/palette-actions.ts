@@ -7,7 +7,7 @@ import type { CommandId } from "@/lib/keybindings";
  * in place, like the theme picker). Screens register a builder that runs when the palette reads it, so the rows
  * always reflect the latest state without re-registering on every render. */
 
-export type PaletteIcon = "git" | "changes" | "usage" | "rename" | "pin" | "unpin" | "archive" | "download" | "handoff" | "stop" | "model" | "mode" | "effort" | "needsYou" | "edit" | "fork";
+export type PaletteIcon = "git" | "changes" | "usage" | "rename" | "pin" | "unpin" | "archive" | "download" | "handoff" | "stop" | "model" | "mode" | "effort" | "needsYou" | "edit" | "fork" | "file";
 
 export type PaletteAction = {
   id: string;
