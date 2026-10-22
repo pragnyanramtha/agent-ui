@@ -316,6 +316,9 @@ export async function agentEvents(req: NextRequest, agent: AgentId, native: stri
   return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
 }
 
+/** TUIs checked to take Ctrl+J as a line break in their prompt; the rest get newlines as spaces. */
+const CTRL_J_NEWLINE = new Set<AgentId>(["codex", "opencode", "cursor"]);
+
 /** Same routing rule as Claude: an open terminal gets the keystrokes, otherwise the CLI resumes non-interactively. */
 export async function agentMessage(agent: AgentId, native: string, body: Record<string, unknown>) {
   const a = await adapterFor(agent);
@@ -332,7 +335,7 @@ export async function agentMessage(agent: AgentId, native: string, body: Record<
     if (!target) return NextResponse.json({ error: "Can't send here. Reply in its terminal.", code: "no_pane" }, { status: 409 });
     try {
       /* the prompt check reads Claude's input box; other TUIs look different, so type directly */
-      const { queued } = await typeIntoTerminal(target, text, { checkPrompt: false });
+      const { queued } = await typeIntoTerminal(target, text, { checkPrompt: false, newlines: CTRL_J_NEWLINE.has(agent) });
       return NextResponse.json({ id: key, via: "terminal", queued });
     } catch (err) {
       if (err instanceof InputRefused) return NextResponse.json({ error: err.message, code: err.code }, { status: 409 });

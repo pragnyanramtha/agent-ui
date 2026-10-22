@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { typeIntoTerminal } from "@/lib/server/input";
+import { readPrompt, typeIntoTerminal } from "@/lib/server/input";
 
 /* A fake tmux whose pane shows Claude's prompt box with some text. Ctrl+U clears real text after `delay` ms
  * (a busy Claude redraws late); a suggestion (`ghost`) never clears. */
@@ -47,5 +47,23 @@ describe("text already in the terminal prompt", () => {
   it("text that clears at once is reported as cleared", async () => {
     pane("draft", { delay: 0 });
     expect(await typeIntoTerminal({ kind: "tmux", pane: "%1" }, "hello")).toEqual({ queued: false, cleared: "draft" });
+  });
+});
+
+describe("reading Claude's prompt box", () => {
+  const rule = "─".repeat(40);
+  const box = (...lines: string[]) => ["● done", rule, ...lines, rule, "  ? for shortcuts"].join("\n");
+
+  it("an empty box is ready", () => {
+    expect(readPrompt(box("❯ "))).toEqual({ ok: true });
+  });
+
+  it("a multi-line draft is read whole, continuation indent dropped", () => {
+    expect(readPrompt(box("❯ one", "  two", "", "  four", "  five"))).toEqual({ ok: false, code: "has_text", text: "one\ntwo\n\nfour\nfive" });
+  });
+
+  it("no closing rule is no prompt", () => {
+    expect(readPrompt(["● done", rule, "❯ one", "  two"].join("\n")).ok).toBe(false);
+    expect(readPrompt(["● done", rule, "❯ one", "  two"].join("\n"))).toMatchObject({ code: "no_prompt" });
   });
 });
