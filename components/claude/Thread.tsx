@@ -270,7 +270,7 @@ function Notice({ entry }: { entry: Extract<Entry, { kind: "notice" }> }) {
       <pre
         tabIndex={0}
         translate="no"
-        className={`max-h-64 overflow-auto overscroll-contain rounded-card bg-inset px-3 py-2.5 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]! ${entry.tone === "warn" ? "text-orange" : "text-ink-2"}`}
+        className={`max-h-64 overflow-auto overscroll-contain rounded-xl bg-inset px-3.5 py-2.5 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]! ${entry.tone === "warn" ? "text-orange" : "text-ink-2"}`}
         style={enter}
       >
         {entry.text}
@@ -280,7 +280,7 @@ function Notice({ entry }: { entry: Extract<Entry, { kind: "notice" }> }) {
   if (entry.text.length > 120) {
     return (
       <p
-        className={`rounded-card px-3 py-2 text-[12.5px] leading-relaxed shadow-hairline [overflow-wrap:anywhere] ${entry.tone === "warn" ? "bg-orange-tint text-ink-2" : "bg-inset text-ink-2"}`}
+        className={`rounded-xl px-3.5 py-2.5 text-[12.5px] leading-relaxed shadow-hairline [overflow-wrap:anywhere] ${entry.tone === "warn" ? "bg-orange-tint text-ink-2" : "bg-inset text-ink-2"}`}
         style={enter}
       >
         {entry.text}
