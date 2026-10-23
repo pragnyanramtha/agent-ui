@@ -651,7 +651,7 @@ export function CommandPalette({
           /* clicks on the chrome keep focus in the field instead of dropping it to the page */
           if (!(e.target as HTMLElement).closest("input, button")) e.preventDefault();
         }}
-        className="safe-top relative flex max-h-[min(100dvh,640px)] w-full flex-col overflow-hidden rounded-b-[16px] bg-surface shadow-overlay motion-safe:animate-[fade-up_220ms_cubic-bezier(0.23,1,0.32,1)_both] sm:max-h-[min(72vh,560px)] sm:max-w-[600px] sm:rounded-[14px] sm:motion-safe:animate-[pop-in_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
+        className="safe-top relative flex max-h-[min(100dvh,640px)] w-full flex-col overflow-hidden rounded-b-[20px] bg-surface shadow-overlay sm:rounded-[20px] motion-safe:animate-[fade-up_220ms_cubic-bezier(0.23,1,0.32,1)_both] sm:max-h-[min(72vh,560px)] sm:max-w-[600px] sm:motion-safe:animate-[pop-in_180ms_cubic-bezier(0.23,1,0.32,1)_both]"
       >
         <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-line pr-2 pl-4 sm:h-[52px]">
           <Search width={17} height={17} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
@@ -706,7 +706,7 @@ export function CommandPalette({
                       {it.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base font-medium sm:text-sm">{it.label}</span>
+                      <span className="block truncate text-base sm:text-sm">{it.label}</span>
                       {it.hint && <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-ink-3">{it.hint}</span>}
                     </span>
                     {it.current && <Check width={15} height={15} strokeWidth={2} className="shrink-0 text-accent-ink" aria-label="In use" />}

@@ -17,7 +17,7 @@ import { OPEN_PALETTE_EVENT } from "@/lib/client/events";
 import { Pulse } from "./Pulse";
 import { AccountMenu } from "./AccountMenu";
 import { copyText } from "./CodeCard";
-import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
+import { dangerBtn, primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 import { Kbd } from "@/components/atoms/Kbd";
 import { OPEN_SETTINGS_SECTION_EVENT, useSetting } from "@/lib/client/settings";
 import { comboFor, useBindings } from "@/lib/client/shortcuts";
@@ -480,7 +480,7 @@ function DeleteDialog({ s, onClose, onDeleted }: { s: SessionSummary; onClose: (
           <button type="button" onClick={close} disabled={busy} className={secondaryBtn}>
             Cancel
           </button>
-          <button type="button" data-autofocus={running ? undefined : true} onClick={() => void go()} disabled={running || busy} className={`${primaryBtn} bg-red text-white`}>
+          <button type="button" data-autofocus={running ? undefined : true} onClick={() => void go()} disabled={running || busy} className={dangerBtn}>
             {busy ? "Deleting…" : "Delete"}
           </button>
         </>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { field, primaryBtn, secondaryBtn, Sheet } from "./Sheet";
+import { dangerBtn, field, primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 
 type Options = { title: string; body?: string; confirm: string; danger?: boolean };
 type Request = Options & { input?: string; resolve: (v: string | boolean | null) => void };
@@ -61,7 +61,7 @@ export function AskHost() {
             data-autofocus
             onClick={ok}
             disabled={prompt && !value.trim()}
-            className={req.danger ? `${primaryBtn} bg-red text-white` : primaryBtn}
+            className={req.danger ? dangerBtn : primaryBtn}
           >
             {req.confirm}
           </button>

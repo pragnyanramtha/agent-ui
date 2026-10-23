@@ -26,8 +26,8 @@ export const buttonVariants = cva(
       size: {
         /* compact toolbar pill: fixed height, lighter weight */
         xs: "h-7 rounded-full px-2.5 text-xs font-normal leading-none gap-1",
-        /* canonical action pill: 27px tall, roomy sides */
-        sm: "h-[27px] px-3 text-sm leading-none rounded-full gap-1.5",
+        /* canonical action pill: 32px tall, roomy sides */
+        sm: "h-8 px-3.5 text-sm leading-none rounded-full gap-1.5",
         md: "px-4 py-[9px] text-sm leading-none rounded-full gap-2",
       },
     },
