@@ -1112,6 +1112,12 @@ label {
 
 /* Tooltips for icon buttons: pointer devices only, a beat late, never on touch. */
 @media (hover: hover) and (pointer: fine) {
+  /* the tip is placed from its host: without a positioned host it would hang off the page (an invisible tip below
+   * the tab bar's + made the document 29px taller, so focusing anything scrolled the whole app). Position
+   * utilities sit in a later layer, so .absolute / .fixed hosts keep theirs. */
+  [data-tip] {
+    position: relative;
+  }
   [data-tip]::after {
     position: absolute;
     z-index: 60;

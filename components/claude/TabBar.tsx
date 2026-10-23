@@ -228,7 +228,7 @@ export function TabBar({
         data-tip="New session  Alt T"
         data-tip-pos="bottom"
         onClick={onNew}
-        className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink"
+        className="relative ml-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 transition-colors duration-100 hover:bg-hover hover:text-ink"
       >
         <Plus width={17} height={17} strokeWidth={1.8} aria-hidden />
       </button>
