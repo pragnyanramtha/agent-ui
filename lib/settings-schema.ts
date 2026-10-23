@@ -444,7 +444,7 @@ export const SETTINGS = {
     section: "appearance",
     group: "Layout",
     label: "Translucent sidebar",
-    description: "A soft wash of the accent shows through the sidebar, and the phone drawer blurs the page behind it.",
+    description: "A soft wash of the accent shows through the sidebar, menus turn frosted, and the phone drawer blurs the page behind it.",
     keywords: ["vibrancy", "glass", "blur", "transparent", "frosted"],
     scope: "synced",
     default: false,

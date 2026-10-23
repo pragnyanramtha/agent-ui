@@ -1177,8 +1177,9 @@ label {
   }
 }
 
-/* Menus and popovers: frosted glass over whatever they open on. Every role="menu" popover gets it (the composer's
- * menus through their shell), so components don't each restyle; .menu-glass is there for anything else. */
+/* Menus and popovers: one solid raised card over whatever they open on. Every role="menu" popover gets it (the
+ * composer's menus through their shell), so components don't each restyle; .menu-glass is there for anything else.
+ * Frosted glass is kept for Settings > Appearance > Translucent sidebar, where the rest of the shell goes glassy too. */
 :root {
   --glass-opacity: 82%;
   --glass-blur: 16px;
@@ -1186,18 +1187,27 @@ label {
 .menu-glass,
 .composer-menu,
 [role="menu"]:not(.composer-menu [role="menu"]) {
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--ink) 10%, transparent),
+    0 16px 40px -18px oklch(0 0 0 / 0.45);
+}
+.dark :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
+  background: color-mix(in oklch, var(--surface) 92%, white);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.08),
+    0 16px 40px -18px oklch(0 0 0 / 0.7);
+}
+html[data-translucent] :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
   background: color-mix(in oklch, var(--surface) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--ink) 10%, transparent),
-    0 16px 40px -18px oklch(0 0 0 / 0.55);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .menu-glass,
-  .composer-menu,
-  [role="menu"]:not(.composer-menu [role="menu"]) {
+  html[data-translucent] :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
     background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 
