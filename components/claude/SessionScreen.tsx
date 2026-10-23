@@ -608,7 +608,7 @@ export function SessionScreen({
             )}
           </div>
           {status}
-          <div role="group" aria-label="Panels" className={`mx-1 flex h-8 shrink-0 items-center gap-0.5 rounded-lg p-0.5 shadow-hairline pointer-coarse:h-11 max-sm:mx-0 max-sm:p-0 max-sm:shadow-none ${changes.length || showTerminal ? "" : "max-sm:hidden"}`}>
+          <div role="group" aria-label="Panels" className={`mx-1 flex h-8 shrink-0 items-center gap-0.5 pointer-coarse:h-11 max-sm:mx-0 ${changes.length || showTerminal ? "" : "max-sm:hidden"}`}>
             {changes.length > 0 && (
               <button
                 type="button"

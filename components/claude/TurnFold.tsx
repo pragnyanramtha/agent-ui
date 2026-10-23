@@ -80,7 +80,7 @@ export function TurnFold({
   }, []);
 
   return (
-    <div ref={ref} data-fold data-open={open || undefined} className="border-b border-line/60 pt-1 pb-2">
+    <div ref={ref} data-fold data-open={open || undefined} className="pt-1 pb-1">
       <button
         type="button"
         aria-expanded={open}
@@ -148,7 +148,7 @@ function TurnFiles({ files, cwd }: { files: TurnFile[]; cwd?: string }) {
   );
 }
 
-const GHOST = "tap relative inline-flex h-8 shrink-0 items-center rounded-control px-2 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink disabled:opacity-50 pointer-coarse:h-10";
+const GHOST = "tap relative inline-flex h-8 shrink-0 items-center rounded-full px-3 text-[12.5px] font-medium text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink disabled:opacity-50 pointer-coarse:h-10";
 
 /** After a finished turn's answer: "3 files changed +42 −7", with View diff and Undo. */
 export const TurnChanges = memo(function TurnChanges({
@@ -179,7 +179,7 @@ export const TurnChanges = memo(function TurnChanges({
     }
   };
   return (
-    <div className="flex min-h-10 min-w-0 items-center gap-3 rounded-card bg-surface py-1 pr-1 pl-3 text-sm shadow-hairline">
+    <div className="flex min-h-11 min-w-0 items-center gap-3 rounded-2xl py-1.5 pr-1.5 pl-4 text-sm shadow-hairline">
       <span className="min-w-0 truncate text-ink-2">
         {files.length} {files.length === 1 ? "file" : "files"} changed
       </span>

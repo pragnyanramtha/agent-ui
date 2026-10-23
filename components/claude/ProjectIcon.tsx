@@ -2,10 +2,9 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Folder } from "iconoir-react";
-import { monogram, monogramColors } from "@/lib/project-identity";
 
 /* A project folder's mark in the sidebar: the repository's favicon when it has one (found on the server, read through
- * /api/files/raw), else two letters on a tint from its name. Lookups are batched and kept for the page's life. */
+ * /api/files/raw), else a plain folder. Lookups are batched and kept for the page's life. */
 
 const icons = new Map<string, string | null>();
 const asked = new Set<string>();
@@ -116,16 +115,6 @@ export function ProjectIcon({ name, icon, size = 14, className = "" }: { name: s
       />
     );
   }
-  const text = monogram(name);
-  if (!text) return <Folder width={size} height={size} strokeWidth={1.8} aria-hidden className={`shrink-0 ${className}`} />;
-  return (
-    <span
-      aria-hidden
-      translate="no"
-      className={`inline-flex shrink-0 items-center justify-center rounded-[4px] font-semibold leading-none tracking-[-0.02em] select-none ${className}`}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.5), ...monogramColors(name) }}
-    >
-      {text}
-    </span>
-  );
+  /* no favicon: a plain folder. Colored letter tiles read as decoration, and every folder looked like a badge */
+  return <Folder width={size} height={size} strokeWidth={1.7} aria-hidden data-project={name} className={`shrink-0 ${className}`} />;
 }

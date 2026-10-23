@@ -223,7 +223,7 @@ const UserBubble = memo(function UserBubble({
     <div className={`flex flex-col items-end ${actions ? ACTIONS_PAD : ""}`} style={enter}>
       <SentFiles paths={paths} />
       <div
-        className={`flex max-w-[80%] min-w-0 flex-col gap-1.5 rounded-window bg-field px-3.5 py-2.5 text-md leading-relaxed text-ink sm:px-4 sm:py-3 sm:text-base ${pending ? "opacity-60" : ""}`}
+        className={`user-bubble flex max-w-[85%] min-w-0 flex-col gap-1.5 rounded-[22px] bg-field px-4 py-2.5 text-[16px] leading-relaxed text-ink sm:max-w-[75%] sm:text-md ${pending ? "opacity-60" : ""}`}
         aria-busy={pending || undefined}
       >
         {images ? (
@@ -333,10 +333,8 @@ const BlockList = memo(function BlockList({ blocks, start, dividers, runs, resul
       return (
         <div key={b.key} data-block data-prompt={b.key} className={`${ACTIONS_GAP} ${i ? "mt-4" : ""}`} style={style}>
           {divider && (
-            <div className="mb-4 flex items-center gap-3 text-[11.5px] font-medium text-ink-3" role="separator" aria-label={divider}>
-              <span className="h-px flex-1 bg-line" />
+            <div className="mt-2 mb-5 flex justify-center text-xs text-ink-3" role="separator" aria-label={divider}>
               <time dateTime={b.entry.ts}>{divider}</time>
-              <span className="h-px flex-1 bg-line" />
             </div>
           )}
           <Boundary resetKey={b.entry} entry={b.entry}>
@@ -537,7 +535,7 @@ export function Thread({
         if (Math.abs(again) >= 2) el.scrollTop += again;
       });
     } else el.scrollTo({ top: el.scrollTop + d, behavior: "smooth" });
-    const bubble = node.querySelector<HTMLElement>(".rounded-window");
+    const bubble = node.querySelector<HTMLElement>(".user-bubble");
     if (bubble && !reducedMotion()) bubble.animate([{ boxShadow: "0 0 0 2px var(--accent)" }, { boxShadow: "0 0 0 2px transparent" }], { duration: 1200, easing: "ease-out" });
     return true;
   }, []);

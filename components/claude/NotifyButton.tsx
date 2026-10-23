@@ -12,8 +12,8 @@ const HINT: Partial<Record<PushStatus, string>> = {
   unsupported: "This browser can't show notifications.",
 };
 
-/** Turns push notifications (finished, needs you, failed) on and off for this browser. */
-export function NotifyButton() {
+/** Push notifications (finished, needs you, failed) for this browser: the status (null while checking) and a toggle. */
+export function usePush() {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -43,8 +43,13 @@ export function NotifyButton() {
     }
   }, [busy, status]);
 
+  return { status, on: status === "on", busy, toggle };
+}
+
+/** Turns push notifications on and off for this browser. */
+export function NotifyButton() {
+  const { status, on, toggle } = usePush();
   if (status === null) return null;
-  const on = status === "on";
   return (
     <IconButton label={on ? "Turn off notifications" : "Turn on notifications"} tipPos="bottom" pressed={on} onClick={() => void toggle()}>
       {on ? <Bell width={17} height={17} strokeWidth={1.8} aria-hidden /> : <BellOff width={17} height={17} strokeWidth={1.8} aria-hidden />}

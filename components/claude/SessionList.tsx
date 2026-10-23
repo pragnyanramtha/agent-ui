@@ -2,10 +2,9 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Alarm, Archive, Calendar, ChatBubbleEmpty, Check, Clock, CloudXmark, EditPencil, Folder, HalfMoon, Hashtag, Link, LogOut, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, StatsReport, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
+import { Alarm, Archive, Calendar, ChatBubbleEmpty, Check, Clock, CloudXmark, EditPencil, Folder, HalfMoon, Hashtag, Link, Mail, MailIn, MailOpen, MoreHoriz, NavArrowLeft, NavArrowRight, Pin, PinSlash, Search, Settings, SidebarCollapse, SidebarExpand, StatsReport, SunLight, Terminal, Trash, Xmark } from "iconoir-react";
 import { AGENT_LABEL, TRANSCRIPT_DELETABLE, type AgentId, type SessionSummary } from "@/lib/types";
 import { shortPath } from "@/lib/client/api";
-import { signOut } from "@/lib/client/push";
 import { deleteSession, patchSession, reloadSessions, type SessionChange } from "@/lib/client/useSessions";
 import { noMatchCopy, sessionsErrorCopy, sidebarEmpty, sidebarEmptyCopy } from "@/lib/empty-states";
 import { EmptyState } from "@/components/primitives/EmptyState";
@@ -16,8 +15,7 @@ import { snoozePresets, wakeLabel } from "@/lib/client/snooze";
 import { toast, type ToastInput } from "@/lib/client/toast";
 import { OPEN_PALETTE_EVENT } from "@/lib/client/events";
 import { Pulse } from "./Pulse";
-import { ThemeToggle } from "./ThemeToggle";
-import { NotifyButton } from "./NotifyButton";
+import { AccountMenu } from "./AccountMenu";
 import { copyText } from "./CodeCard";
 import { primaryBtn, secondaryBtn, Sheet } from "./Sheet";
 import { Kbd } from "@/components/atoms/Kbd";
@@ -1253,7 +1251,6 @@ export const SessionList = memo(function SessionList({
       }
     />
   );
-  const navBtn = "relative flex h-8 min-w-0 flex-auto items-center justify-center gap-1.5 rounded-lg px-1.5 text-sm text-ink-2 transition-colors duration-150 hover:bg-sidebar-hover hover:text-ink aria-[current=page]:bg-sidebar-active aria-[current=page]:text-ink pointer-coarse:h-11";
   const emptyKind = sessions === null ? null : sidebarEmpty({ shown: shown.length, awake: awake.length, filtered: filter !== "all" });
   const empty = emptyKind && (
     <EmptyState
@@ -1282,47 +1279,39 @@ export const SessionList = memo(function SessionList({
         )}
       </div>
 
-      <div className="flex shrink-0 flex-col gap-1 px-2 pb-1">
-        <button
-          type="button"
-          onClick={onNew}
-          className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-sm font-medium text-ink shadow-hairline transition-colors duration-150 hover:bg-sidebar-hover pointer-coarse:h-11"
-        >
-          <EditPencil width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-2" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-left">New session</span>
-          {newKey && <Kbd chord={newKey} />}
+      <div className="flex shrink-0 flex-col gap-px px-2 pb-2">
+        <button type="button" onClick={onNew} className="side-row group/nav" aria-keyshortcuts={newKey}>
+          <EditPencil width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">New session</span>
+          {newKey && <Kbd chord={newKey} className="opacity-0 transition-opacity duration-150 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100" />}
         </button>
-        <button
-          type="button"
-          onClick={palette}
-          className="flex h-8 items-center gap-2 rounded-lg bg-field px-2.5 text-sm text-ink-3 transition-colors duration-150 hover:text-ink-2 pointer-coarse:h-11"
-        >
-          <Search width={15} height={15} strokeWidth={1.9} className="shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-left">Search</span>
-          {searchKey && <Kbd chord={searchKey} />}
+        <button type="button" onClick={palette} className="side-row group/nav" aria-keyshortcuts={searchKey}>
+          <Search width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+          <span className="min-w-0 flex-1 truncate">Search</span>
+          {searchKey && <Kbd chord={searchKey} className="opacity-0 transition-opacity duration-150 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100" />}
         </button>
         {onView && (
-          <div className="flex gap-1">
+          <>
             <button
               type="button"
               onClick={() => onView("@inbox")}
               aria-current={activeView === "@inbox" ? "page" : undefined}
               aria-label={inbox ? `Inbox, ${inbox} waiting` : "Inbox"}
-              className={navBtn}
+              className="side-row"
             >
-              <MailIn width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
-              <span className="truncate">Inbox</span>
-              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-2xs leading-[16px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
+              <MailIn width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Inbox</span>
+              {inbox > 0 && <span className="shrink-0 rounded-full bg-orange-tint px-1.5 text-2xs leading-[18px] font-medium text-orange-ink tabular-nums">{inbox}</span>}
             </button>
-            <button type="button" onClick={() => onView("@agents")} aria-current={activeView === "@agents" ? "page" : undefined} aria-label="Agents and terminals" data-tip="Agents and terminals" className={navBtn}>
-              <Terminal width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
-              <span className="truncate">Agents</span>
+            <button type="button" onClick={() => onView("@agents")} aria-current={activeView === "@agents" ? "page" : undefined} className="side-row">
+              <Terminal width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Agents and terminals</span>
             </button>
-            <button type="button" onClick={() => onView("@files")} aria-current={activeView === "@files" ? "page" : undefined} className={navBtn}>
-              <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
-              <span className="truncate">Files</span>
+            <button type="button" onClick={() => onView("@files")} aria-current={activeView === "@files" ? "page" : undefined} className="side-row">
+              <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">Files</span>
             </button>
-          </div>
+          </>
         )}
       </div>
 
@@ -1535,28 +1524,8 @@ export const SessionList = memo(function SessionList({
       {menu && <RowMenu key={menu.id} s={byId.get(menu.id) ?? menu.s} at={menu.at} unread={Boolean(finished[menu.id])} onClose={closeMenu} onAction={onAction} />}
       <SessionHoverCard list={listRef} byId={byId} finished={finished} />
 
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <ThemeToggle />
-        <span className="flex items-center gap-1">
-          <NotifyButton />
-          {onView && (
-            <IconButton label="Usage" tip="Usage and cost" tipPos="bottom-end" onClick={() => onView("@usage")} pressed={activeView === "@usage"}>
-              <StatsReport width={17} height={17} strokeWidth={1.8} aria-hidden />
-            </IconButton>
-          )}
-          {onView && (
-            <IconButton label="Settings" tipPos="bottom-end" onClick={() => onView("@settings")} pressed={activeView === "@settings"}>
-              <Settings width={17} height={17} strokeWidth={1.8} aria-hidden />
-            </IconButton>
-          )}
-          <IconButton
-            label="Sign out"
-            tipPos="bottom-end"
-            onClick={() => void signOut()}
-          >
-            <LogOut width={17} height={17} strokeWidth={1.8} aria-hidden />
-          </IconButton>
-        </span>
+      <div className="shrink-0 px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <AccountMenu onView={onView} activeView={activeView} />
       </div>
     </nav>
   );

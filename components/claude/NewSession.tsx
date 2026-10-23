@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Check, Clock, Menu } from "iconoir-react";
+import { Check, Menu } from "iconoir-react";
 import { AGENT_LABEL, type AgentId, type PermissionMode, type SessionSummary } from "@/lib/types";
 import { api, ApiError, timeAgo } from "@/lib/client/api";
 import { profileModels, useAgentModels, profilesFor, useProfiles } from "@/lib/client/useProfiles";
@@ -105,6 +105,7 @@ export function NewSession({
     localStorage.setItem("cui:newAgent", a);
   };
   const name = AGENT_LABEL[d.agent];
+  const folderName = cwd.trim().replace(/\/+$/, "").split("/").pop() || "";
 
   useEffect(() => {
     setNow(Date.now());
@@ -201,8 +202,14 @@ export function NewSession({
         <div className="mx-auto flex min-h-full w-full max-w-(--thread-w) flex-col px-3 pb-3 sm:justify-center sm:px-8 sm:pt-8 sm:pb-[14vh]">
           {/* phones: the question sits in the middle, the composer at the bottom (where the reply composer lives) */}
           <div className="order-1 flex flex-1 flex-col justify-center py-8 sm:flex-none sm:py-0">
-            <h1 className="home-reveal text-center text-[24px] leading-8 font-normal tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9" style={reveal(stage >= 1)}>
-              New session
+            <h1 className="home-reveal text-center text-[24px] leading-8 font-medium tracking-[-0.025em] text-balance text-ink sm:text-[30px] sm:leading-10" style={reveal(stage >= 1)}>
+              {folderName ? (
+                <>
+                  What&apos;s next in <span translate="no">{folderName}</span>?
+                </>
+              ) : (
+                "What should we work on?"
+              )}
             </h1>
           </div>
 
@@ -270,7 +277,8 @@ export function NewSession({
           </div>
 
           {rows.length > 0 && (
-            <nav aria-label="Recent sessions" className="home-reveal order-2 mb-3 sm:order-3 sm:mt-5 sm:mb-0" style={reveal(stage >= 3)}>
+            <nav aria-label="Recent sessions" className="home-reveal order-2 mb-3 sm:order-3 sm:mt-8 sm:mb-0" style={reveal(stage >= 3)}>
+              <h2 className="px-4 pb-1.5 text-xs font-medium text-ink-3">Recent</h2>
               <ul className="flex flex-col">
                 {rows.map((s) => {
                   const live = isLive(s);
@@ -281,13 +289,15 @@ export function NewSession({
                         type="button"
                         onClick={() => onOpen(s.id)}
                         title={s.cwd ? `${s.title}\n${s.cwd}` : s.title}
-                        className="group flex min-h-11 w-full min-w-0 items-center gap-3 rounded-[10px] px-4 text-left transition-colors duration-150 hover:bg-hover focus-visible:bg-hover sm:min-h-10"
+                        className="group flex min-h-11 w-full min-w-0 items-center gap-3 rounded-xl px-4 text-left transition-colors duration-150 hover:bg-hover focus-visible:bg-hover sm:min-h-10"
                       >
-                        <span className="flex w-4 shrink-0 items-center justify-center text-ink-3" aria-hidden>
-                          {live ? <Pulse busy={isBusy(s)} cellClass={waiting ? "bg-orange" : "bg-ink"} /> : <Clock width={15} height={15} strokeWidth={1.8} />}
-                        </span>
+                        {live && (
+                          <span className="flex w-4 shrink-0 items-center justify-center" aria-hidden>
+                            <Pulse busy={isBusy(s)} cellClass={waiting ? "bg-orange" : "bg-ink"} />
+                          </span>
+                        )}
                         <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                          <span className="min-w-0 truncate text-base text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
+                          <span className="min-w-0 truncate text-md text-ink-2 transition-colors duration-150 group-hover:text-ink">{s.title}</span>
                           <span className="hidden min-w-0 max-w-[40%] shrink-0 truncate text-sm text-ink-3 min-[420px]:inline" translate="no">
                             {[s.project, s.agent !== "claude" ? AGENT_LABEL[s.agent] : null].filter(Boolean).join(" · ")}
                           </span>
