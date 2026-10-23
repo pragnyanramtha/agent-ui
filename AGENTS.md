@@ -107,6 +107,8 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
   Without tmux, or with `CLAUDE_WEB_DRIVER=sdk`, they're web runs (`lib/server/runner.ts`, Agent SDK: deltas, status, approvals).
 - One agent process per session, never a copy: `POST /api/sessions/[id]/message` routes to the live web run, else types into
   the zellij/tmux pane (`lib/server/input.ts`, checks Claude's prompt first: agent focus, unsent text, dialogs), else resumes.
+  Line breaks are typed as Ctrl+J (a newline in Claude's, Codex's, OpenCode's and Cursor's prompts; other TUIs get spaces).
+  Not bracketed paste: Claude wraps pasted text in `<pasted_content>` tags, so the model would read the message as data.
 - A headless (Agent SDK) process holding a session is stopped on request (`takeover`) so the session opens in a terminal.
 - Live stream is `POST /api/sessions/[id]/events` read with fetch (SSE framing, `id:` = resume offset, 40s stall reconnect).
 - Messages sent while Claude is mid-turn land in the transcript as `attachment` records (`queued_command`).
@@ -154,6 +156,12 @@ Requirements on the server: Node 22+ (24 recommended), pnpm, python3 (web termin
  more than `CHECKPOINT_MAX_TOTAL_MB` of new files, or 20k of them, skips the checkpoint. Checkpoints older than
  `CHECKPOINT_MAX_AGE_DAYS` are pruned, at most hourly per repo.
 - UI copy: no em dashes; loading labels end with an ellipsis.
+- UI kit: `components/ui` holds shadcn/ui (radix-nova) components copied in and owned here: iconoir icons, `cn` from
+  `lib/utils`, and their `accent` (a hover fill) renamed to our `hover` because our `accent` is the brand color.
+  `app/shadcn.css` vendors shadcn's Tailwind helpers; `app/globals.css` maps shadcn's token names onto ours, so palettes
+  and accents reach them. Default look is ChatGPT-calm: charcoal `#212121` page on a `#181818` sidebar (white on
+  `#f9f9f9` in light), ink-colored primary buttons unless an accent is picked, solid menus (glass only with Translucent
+  sidebar), no colored letter badges or decorative dots.
 
 ## Cursor Cloud specific instructions
 - Install with `pnpm install --frozen-lockfile`, then `pnpm build`. Node 22 and pnpm 11.17.0 (`packageManager`) are on the login-shell PATH.

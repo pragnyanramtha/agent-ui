@@ -332,7 +332,7 @@ export default function ApprovalCard({
 
   return (
     <div ref={rootRef} className={`w-full ${className}`}>
-      <div className="relative overflow-hidden rounded-card bg-surface shadow-card" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
+      <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
         <button
           type="button"
           aria-label="Dismiss"

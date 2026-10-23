@@ -223,7 +223,7 @@ const UserBubble = memo(function UserBubble({
     <div className={`flex flex-col items-end ${actions ? ACTIONS_PAD : ""}`} style={enter}>
       <SentFiles paths={paths} />
       <div
-        className={`flex max-w-[80%] min-w-0 flex-col gap-1.5 rounded-window bg-field px-3.5 py-2.5 text-md leading-relaxed text-ink sm:px-4 sm:py-3 sm:text-base ${pending ? "opacity-60" : ""}`}
+        className={`user-bubble flex max-w-[85%] min-w-0 flex-col gap-1.5 rounded-[22px] bg-field px-4 py-2.5 text-[16px] leading-relaxed text-ink sm:max-w-[75%] sm:text-md ${pending ? "opacity-60" : ""}`}
         aria-busy={pending || undefined}
       >
         {images ? (
@@ -270,7 +270,7 @@ function Notice({ entry }: { entry: Extract<Entry, { kind: "notice" }> }) {
       <pre
         tabIndex={0}
         translate="no"
-        className={`max-h-64 overflow-auto overscroll-contain rounded-card bg-inset px-3 py-2.5 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]! ${entry.tone === "warn" ? "text-orange" : "text-ink-2"}`}
+        className={`max-h-64 overflow-auto overscroll-contain rounded-xl bg-inset px-3.5 py-2.5 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap shadow-hairline [overflow-wrap:anywhere] focus-visible:[outline-offset:-2px]! ${entry.tone === "warn" ? "text-orange" : "text-ink-2"}`}
         style={enter}
       >
         {entry.text}
@@ -280,7 +280,7 @@ function Notice({ entry }: { entry: Extract<Entry, { kind: "notice" }> }) {
   if (entry.text.length > 120) {
     return (
       <p
-        className={`rounded-card px-3 py-2 text-[12.5px] leading-relaxed shadow-hairline [overflow-wrap:anywhere] ${entry.tone === "warn" ? "bg-orange-tint text-ink-2" : "bg-inset text-ink-2"}`}
+        className={`rounded-xl px-3.5 py-2.5 text-[12.5px] leading-relaxed shadow-hairline [overflow-wrap:anywhere] ${entry.tone === "warn" ? "bg-orange-tint text-ink-2" : "bg-inset text-ink-2"}`}
         style={enter}
       >
         {entry.text}
@@ -333,10 +333,8 @@ const BlockList = memo(function BlockList({ blocks, start, dividers, runs, resul
       return (
         <div key={b.key} data-block data-prompt={b.key} className={`${ACTIONS_GAP} ${i ? "mt-4" : ""}`} style={style}>
           {divider && (
-            <div className="mb-4 flex items-center gap-3 text-[11.5px] font-medium text-ink-3" role="separator" aria-label={divider}>
-              <span className="h-px flex-1 bg-line" />
+            <div className="mt-2 mb-5 flex justify-center text-xs text-ink-3" role="separator" aria-label={divider}>
               <time dateTime={b.entry.ts}>{divider}</time>
-              <span className="h-px flex-1 bg-line" />
             </div>
           )}
           <Boundary resetKey={b.entry} entry={b.entry}>
@@ -537,7 +535,7 @@ export function Thread({
         if (Math.abs(again) >= 2) el.scrollTop += again;
       });
     } else el.scrollTo({ top: el.scrollTop + d, behavior: "smooth" });
-    const bubble = node.querySelector<HTMLElement>(".rounded-window");
+    const bubble = node.querySelector<HTMLElement>(".user-bubble");
     if (bubble && !reducedMotion()) bubble.animate([{ boxShadow: "0 0 0 2px var(--accent)" }, { boxShadow: "0 0 0 2px transparent" }], { duration: 1200, easing: "ease-out" });
     return true;
   }, []);

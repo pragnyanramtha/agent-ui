@@ -76,7 +76,7 @@ export function DataSection() {
           </SmallButton>
         </Row>
         {result && (
-          <div role="status" className="px-3.5 py-3 text-sm">
+          <div role="status" className="py-3 text-sm">
             {!result.ok ? (
               <p className="text-red-ink">{result.error}</p>
             ) : undone ? (
@@ -91,7 +91,7 @@ export function DataSection() {
                   </p>
                   <SmallButton onClick={() => undoImport(result.previous)}>Undo</SmallButton>
                 </div>
-                <ul className="flex flex-col divide-y divide-line rounded-control bg-inset px-2.5 shadow-hairline">
+                <ul className="flex flex-col divide-y divide-line rounded-lg bg-field/60 px-3">
                   {result.changes.map((c) => (
                     <li key={c.key} className="flex flex-wrap items-baseline gap-x-2 py-1.5">
                       <span className="min-w-0 flex-1 text-ink">{c.label}</span>

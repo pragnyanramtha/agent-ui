@@ -63,7 +63,7 @@ function PermissionCard({ ask, respond, keys, onNote, noting }: { ask: Permissio
   }, [keys]);
 
   return (
-    <div ref={rootRef} className="w-full overflow-hidden rounded-card bg-surface shadow-card" role="group" aria-label="Approval needed" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
+    <div ref={rootRef} className="w-full overflow-hidden rounded-2xl bg-surface shadow-card" role="group" aria-label="Approval needed" style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <div className="primitive-card-pad flex flex-col gap-2.5">
         <div>
           <p className="text-base font-medium text-ink">{ask.title}</p>
@@ -102,17 +102,17 @@ function PermissionCard({ ask, respond, keys, onNote, noting }: { ask: Permissio
           {summary.verb === ask.toolName ? ask.toolName : `${ask.toolName} · ${summary.chip}`}
         </span>
         <span className="flex items-center gap-1.5 sm:ml-auto sm:shrink-0">
-          <Button variant="secondary" size="sm" className="h-10 min-w-0 flex-1 sm:h-[27px] sm:flex-none" disabled={busy !== null} onClick={() => act("deny")}>
+          <Button variant="secondary" size="sm" className="h-10 min-w-0 flex-1 sm:h-8 sm:flex-none" disabled={busy !== null} onClick={() => act("deny")}>
             {busy === "deny" ? "Denying…" : "Deny"}
             {keys && <KeyCap>Esc</KeyCap>}
           </Button>
           {ask.canAlwaysAllow && (
-            <Button variant="ghost" size="sm" className="h-10 min-w-0 flex-[1.4] whitespace-nowrap sm:h-[27px] sm:flex-none" disabled={busy !== null} onClick={() => act("always")}>
+            <Button variant="ghost" size="sm" className="h-10 min-w-0 flex-[1.4] whitespace-nowrap sm:h-8 sm:flex-none" disabled={busy !== null} onClick={() => act("always")}>
               {busy === "always" ? "Allowing…" : "Always allow"}
               {keys && <KeyCap>A</KeyCap>}
             </Button>
           )}
-          <Button variant="accent" size="sm" className="h-10 min-w-0 flex-1 sm:h-[27px] sm:flex-none" disabled={busy !== null} onClick={() => act("allow")}>
+          <Button variant="accent" size="sm" className="h-10 min-w-0 flex-1 sm:h-8 sm:flex-none" disabled={busy !== null} onClick={() => act("allow")}>
             {busy === "allow" ? "Allowing…" : "Allow"}
             {keys && <KeyCap onFill>↵</KeyCap>}
           </Button>

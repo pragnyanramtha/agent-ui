@@ -67,7 +67,7 @@ function MenuShell({
   const origin = `${placement === "up" ? "bottom" : "top"} ${right !== undefined ? "right" : "left"}`;
   return (
     <div
-      className={`composer-menu no-scrollbar absolute z-30 overflow-y-auto overscroll-contain rounded-[10px] bg-surface p-1 shadow-raised ${
+      className={`composer-menu no-scrollbar absolute z-30 overflow-y-auto overscroll-contain rounded-2xl bg-surface p-1.5 shadow-overlay ${
         placement === "up" ? "bottom-full mb-2" : "top-full mt-2"
       } ${full ? "inset-x-0" : "max-w-full"}`}
       style={{ left: full || right !== undefined ? undefined : left ?? 0, right, width, maxHeight, transformOrigin: origin }}
@@ -100,14 +100,14 @@ function MenuLabel({ children }: { children: React.ReactNode }) {
 }
 
 const menuRowBase =
-  "flex w-full min-w-0 items-center gap-2.5 rounded-[8px] px-2.5 text-left text-sm text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent";
+  "flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm text-ink transition-colors duration-75 outline-none hover:bg-hover focus-visible:bg-hover disabled:cursor-default disabled:hover:bg-transparent";
 const menuRow = `${menuRowBase} h-10 sm:h-8`;
 
 const ghost = "tap relative flex shrink-0 items-center justify-center rounded-full text-ink-2 transition-[background-color,color] duration-150 hover:bg-hover hover:text-ink";
 
 /* footer chips: 32px with a mouse, 44px on touch */
 const chip =
-  "tap relative flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm transition-[background-color,color] duration-150 pointer-coarse:h-11 pointer-coarse:px-2.5";
+  "tap relative flex h-8 min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-sm transition-[background-color,color] duration-150 pointer-coarse:h-11 pointer-coarse:px-3";
 const chipOff = "text-ink-2 hover:bg-hover hover:text-ink";
 const chipOn = "bg-hover text-ink";
 
@@ -1142,12 +1142,12 @@ export function Composer({
           spellCheck={spellCheck}
           autoCorrect={phoneAutocorrect ? undefined : "off"}
           autoCapitalize={phoneAutocorrect ? undefined : "none"}
-          className={`composer-input block min-h-[44px] w-full min-w-0 resize-none bg-transparent px-4 pb-1 text-[16px] leading-6 text-ink outline-none [overflow-wrap:anywhere] sm:text-base sm:pointer-coarse:text-[16px] ${
+          className={`composer-input block min-h-[44px] w-full min-w-0 resize-none bg-transparent px-5 pb-1 text-[16px] leading-6 text-ink outline-none [overflow-wrap:anywhere] sm:text-base sm:pointer-coarse:text-[16px] ${
             busy ? "placeholder:text-ink-2 composer-busy" : "placeholder:text-ink-3"
           }`}
         />
 
-        <div className="composer-footer flex min-w-0 items-center gap-1 px-2">
+        <div className="composer-footer flex min-w-0 items-center gap-1 px-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             <button
               ref={plusRef}
@@ -1158,7 +1158,7 @@ export function Composer({
               aria-label="Add files, folder or command, or stash the prompt"
               title="Add"
               onClick={() => toggleMenu("plus")}
-              className={`${ghost} size-8 rounded-lg pointer-coarse:size-11 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
+              className={`${ghost} size-8 pointer-coarse:size-11 ${openMenu === "plus" ? "bg-hover text-ink" : ""}`}
             >
               <Plus width={18} height={18} strokeWidth={1.8} />
             </button>
@@ -1240,7 +1240,7 @@ export function Composer({
                 title="Stop (Esc)"
                 className={
                   stopFirst
-                    ? "tap relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.92] pointer-coarse:size-9"
+                    ? "tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.92]"
                     : `${ghost} mr-2 size-8 shadow-btn active:scale-[0.94] pointer-coarse:size-9`
                 }
               >
@@ -1254,9 +1254,9 @@ export function Composer({
                 title={files.uploading ? "Uploading…" : files.failed ? "Fix the failed upload first" : `${interrupts ? "Stop and send" : "Send"} (${enterSends(sendShortcut, touch) ? "Enter" : comboFor("send")})`}
                 disabled={!canSend}
                 onClick={() => void send()}
-                className="composer-send tap relative flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,opacity,transform] duration-200 enabled:hover:bg-primary-hover enabled:active:scale-[0.92] disabled:opacity-35 pointer-coarse:size-9"
+                className="composer-send tap relative flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-[background-color,color,transform] duration-200 enabled:hover:bg-primary-hover enabled:active:scale-[0.92] disabled:bg-hover-2 disabled:text-ink-3"
               >
-                {sending ? <span aria-hidden className="composer-spinner size-4 rounded-full border-2 border-current border-r-transparent" /> : <ArrowUp width={16} height={16} strokeWidth={2} />}
+                {sending ? <span aria-hidden className="composer-spinner size-4 rounded-full border-2 border-current border-r-transparent" /> : <ArrowUp width={18} height={18} strokeWidth={2.2} />}
               </button>
             )}
           </div>

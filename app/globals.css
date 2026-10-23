@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+/* Radix state variants, shimmer and scroll-fade utilities for components/ui (shadcn/ui, vendored) */
+@import "./shadcn.css";
+@import "./screens.css";
 /* shadow-plugin (flornkm): smooth, layered shadow stacks. The unprefixed
  * entry maps them onto Tailwind's --shadow-xs…2xl scale; our semantic tokens
  * below build on those values so the whole app picks up the smooth shadows. */
@@ -46,26 +50,27 @@
  * ────────────────────────────────────────────────────────── */
 
 :root {
-  /* surfaces: neutral zinc, no blue tint */
-  --page: oklch(0.995 0 0);
-  --canvas: oklch(0.967 0.001 286);
-  --surface: oklch(1 0 0);
-  --inset: oklch(0.98 0.001 286);
-  --hover: oklch(0.967 0.001 286);
-  --hover-2: oklch(0.94 0.002 286);
+  /* surfaces: plain neutrals, a white reading page on a faintly grey sidebar */
+  --page: #ffffff;
+  --canvas: #f7f7f7;
+  --surface: #ffffff;
+  --inset: #f7f7f7;
+  --hover: #f3f3f3;
+  --hover-2: #ebebeb;
 
   /* ink ramp */
-  --ink: oklch(0.274 0.006 286);
-  --ink-2: oklch(0.442 0.017 286);
+  --ink: #0d0d0d;
+  --ink-2: #4f4f4f;
   /* 4.5:1 on the page for the small meta text it carries */
-  --ink-3: oklch(0.552 0.016 286);
+  --ink-3: #6b6b6b;
 
   /* borders: solid and crisp, not alpha */
-  --line: oklch(0.92 0.004 286);
-  --line-strong: oklch(0.871 0.006 286);
-  --line-soft: oklch(0.955 0.002 286);
+  --line: #ebebeb;
+  --line-strong: #dedede;
+  --line-soft: #f3f3f3;
   --grid-line: color-mix(in srgb, var(--line) 78%, transparent);
-  --field: oklch(0.967 0.001 286);
+  /* the user's bubble and filled inputs */
+  --field: #f3f3f3;
   --stripe: oklch(0.405 0 0 / 0.075);
   --stripe-bg: oklch(0.97 0 0);
 
@@ -76,10 +81,11 @@
   /* filled accent buttons: deep enough for white labels at AA in both themes */
   --accent-solid: oklch(0.57 0.2 256);
   --accent-solid-hover: oklch(0.52 0.19 256);
-  /* primary buttons (send, confirm) and the label on them; a custom accent swaps all three */
-  --primary: var(--accent-solid);
-  --primary-hover: var(--accent-solid-hover);
-  --primary-foreground: oklch(1 0 0);
+  /* primary buttons (send, confirm) and the label on them: ink on page, like a pen mark. A chosen accent
+   * color swaps all three ([data-accent] below, lib/theme.ts accentVars) */
+  --primary: var(--ink);
+  --primary-hover: #333333;
+  --primary-foreground: var(--page);
   /* focus rings: the brighter accent, so they read on any page */
   --ring: var(--accent);
 
@@ -112,24 +118,28 @@
 }
 
 .dark {
-  /* near-black neutrals; hovers and hairlines are white at low alpha so they sit on any surface */
-  --page: oklch(0.145 0 0);
-  --canvas: oklch(0.13 0 0);
-  --surface: oklch(0.18 0 0);
-  --inset: oklch(0.165 0 0);
-  --hover: oklch(1 0 0 / 0.045);
-  --hover-2: oklch(1 0 0 / 0.07);
+  /* soft charcoal, not black: the reading page a step above the sidebar, raised surfaces a step above that */
+  --page: #212121;
+  --canvas: #1b1b1b;
+  --surface: #2a2a2a;
+  --inset: #1a1a1a;
+  --hover: oklch(1 0 0 / 0.06);
+  --hover-2: oklch(1 0 0 / 0.09);
 
-  --ink: oklch(0.96 0 0);
-  --ink-2: oklch(0.72 0 0);
-  --ink-3: oklch(0.6 0 0);
+  --ink: #ececec;
+  --ink-2: #b4b4b4;
+  --ink-3: #9b9b9b;
 
-  --line: oklch(1 0 0 / 0.07);
-  --line-strong: oklch(1 0 0 / 0.11);
-  --line-soft: oklch(1 0 0 / 0.045);
-  --field: oklch(0.19 0 0);
+  --line: oklch(1 0 0 / 0.08);
+  --line-strong: oklch(1 0 0 / 0.12);
+  --line-soft: oklch(1 0 0 / 0.05);
+  --field: #303030;
   --stripe: oklch(1 0 0 / 0.055);
-  --stripe-bg: oklch(0.17 0 0);
+  --stripe-bg: #262626;
+
+  --primary: var(--ink);
+  --primary-hover: #ffffff;
+  --primary-foreground: #171717;
 
   --accent: oklch(0.7 0.15 255);
   --accent-ink: oklch(0.788 0.113 248.33);
@@ -142,7 +152,8 @@
   --red: oklch(0.666 0.18 21.433);
   --red-tint: oklch(0.666 0.18 21.433 / 0.14);
   --orange-ink: var(--orange);
-  --red-ink: var(--red);
+  /* a touch lighter than --red so removed lines and errors stay 4.5:1 on the raised charcoal surfaces */
+  --red-ink: oklch(0.72 0.16 21.433);
 
   --tooltip-bg: oklch(0.2 0 0);
   --tooltip-fg: oklch(0.96 0 0);
@@ -219,6 +230,62 @@
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-link: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* shadcn/ui's token names (components/ui) mapped onto ours, so every palette, accent and custom theme reaches
+ * them too. Their "accent" (a hover fill) is renamed to hover in those files: ours is the brand color. */
+:root {
+  --background: var(--page);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --secondary: var(--field);
+  --secondary-foreground: var(--ink);
+  --muted: var(--field);
+  --muted-foreground: var(--ink-3);
+  --destructive: var(--red);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --radius: calc(12px * var(--radius-scale, 1));
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--sidebar-active);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--ring);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 /* type scale: five steps for interface text (text-2xs ... text-md). Prose sizes itself in em; phone inputs stay at
@@ -601,8 +668,8 @@ body {
  * Sized for reading on a phone first; tightened on wider screens. Streamdown's
  * own shadcn styling is replaced element by element, so everything lives here. */
 .prose-claude {
-  font-size: var(--text-md);
-  line-height: 1.625;
+  font-size: 16px;
+  line-height: 1.7;
   /* body text a step under full ink, so long answers don't glare; headings, bold and code stay at --ink */
   color: color-mix(in oklch, var(--ink) 88%, var(--page));
   overflow-wrap: anywhere;
@@ -610,7 +677,7 @@ body {
 }
 @media (min-width: 640px) {
   .prose-claude {
-    font-size: var(--text-base);
+    font-size: var(--text-md);
   }
 }
 .prose-claude.is-compact {
@@ -618,7 +685,7 @@ body {
   line-height: 1.6;
 }
 .prose-claude > * + * {
-  margin-top: 0.75em;
+  margin-top: 0.85em;
 }
 .prose-claude :is(li, blockquote) > * + * {
   margin-top: 0.5em;
@@ -688,10 +755,9 @@ body {
 .prose-claude del { color: var(--ink-3); }
 .prose-claude code.md-code {
   margin-inline: 0.05em;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: var(--inset);
-  padding: 0.1em 0.3em;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--ink) 7%, transparent);
+  padding: 0.12em 0.34em;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: 0.85em;
@@ -880,9 +946,9 @@ label {
  * ══════════════════════════════════════════════════════════ */
 
 :root {
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-hover: oklch(0.955 0.002 286);
-  --sidebar-active: oklch(1 0 0);
+  --sidebar: #f9f9f9;
+  --sidebar-hover: #efefef;
+  --sidebar-active: #e9e9e9;
   --agent-codex: oklch(0.6 0.14 160);
   --agent-opencode: oklch(0.6 0.17 254);
   --agent-cursor: oklch(0.62 0.11 205);
@@ -892,9 +958,9 @@ label {
   --agent-antigravity: oklch(0.6 0.13 180);
 }
 .dark {
-  --sidebar: oklch(0.115 0 0);
+  --sidebar: #181818;
   --sidebar-hover: oklch(1 0 0 / 0.05);
-  --sidebar-active: oklch(1 0 0 / 0.09);
+  --sidebar-active: oklch(1 0 0 / 0.08);
   --agent-codex: oklch(0.74 0.14 160);
   --agent-opencode: oklch(0.72 0.14 254);
   --agent-cursor: oklch(0.76 0.1 205);
@@ -940,10 +1006,6 @@ label {
   }
   .side-row[aria-current="page"] {
     background: var(--sidebar-active);
-  }
-  /* the default light sidebar marks the current row with a white card, which needs an edge */
-  :root:not(.dark):not([data-palette]) .side-row[aria-current="page"] {
-    box-shadow: 0 0 0 1px var(--line);
   }
   .side-row:focus-visible {
     outline-offset: -2px;
@@ -1005,9 +1067,8 @@ label {
     align-items: center;
     justify-content: center;
     padding: 0 4px;
-    border-radius: calc(4px * var(--radius-scale, 1));
-    background: var(--field);
-    box-shadow: inset 0 0 0 1px var(--line);
+    border-radius: calc(5px * var(--radius-scale, 1));
+    background: var(--hover-2);
     color: var(--ink-3);
     font: 500 var(--text-2xs) / 1 var(--font-sans);
     font-variant-numeric: tabular-nums;
@@ -1052,13 +1113,19 @@ label {
 
 /* Tooltips for icon buttons: pointer devices only, a beat late, never on touch. */
 @media (hover: hover) and (pointer: fine) {
+  /* the tip is placed from its host: without a positioned host it would hang off the page (an invisible tip below
+   * the tab bar's + made the document 29px taller, so focusing anything scrolled the whole app). Position
+   * utilities sit in a later layer, so .absolute / .fixed hosts keep theirs. */
+  [data-tip] {
+    position: relative;
+  }
   [data-tip]::after {
     position: absolute;
     z-index: 60;
     max-width: 260px;
     overflow: hidden;
-    padding: 4px 8px;
-    border-radius: var(--radius-chip);
+    padding: 5px 9px;
+    border-radius: calc(8px * var(--radius-scale, 1));
     background: var(--tooltip-bg);
     box-shadow: 0 0 0 1px var(--tooltip-border), 0 4px 12px -4px oklch(0 0 0 / 0.35);
     color: var(--tooltip-fg);
@@ -1111,8 +1178,9 @@ label {
   }
 }
 
-/* Menus and popovers: frosted glass over whatever they open on. Every role="menu" popover gets it (the composer's
- * menus through their shell), so components don't each restyle; .menu-glass is there for anything else. */
+/* Menus and popovers: one solid raised card over whatever they open on. Every role="menu" popover gets it (the
+ * composer's menus through their shell), so components don't each restyle; .menu-glass is there for anything else.
+ * Frosted glass is kept for Settings > Appearance > Translucent sidebar, where the rest of the shell goes glassy too. */
 :root {
   --glass-opacity: 82%;
   --glass-blur: 16px;
@@ -1120,18 +1188,27 @@ label {
 .menu-glass,
 .composer-menu,
 [role="menu"]:not(.composer-menu [role="menu"]) {
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--ink) 10%, transparent),
+    0 16px 40px -18px oklch(0 0 0 / 0.45);
+}
+.dark :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
+  background: color-mix(in oklch, var(--surface) 92%, white);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.08),
+    0 16px 40px -18px oklch(0 0 0 / 0.7);
+}
+html[data-translucent] :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
   background: color-mix(in oklch, var(--surface) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
   backdrop-filter: blur(var(--glass-blur)) saturate(1.14);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--ink) 10%, transparent),
-    0 16px 40px -18px oklch(0 0 0 / 0.55);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .menu-glass,
-  .composer-menu,
-  [role="menu"]:not(.composer-menu [role="menu"]) {
+  html[data-translucent] :is(.menu-glass, .composer-menu, [role="menu"]:not(.composer-menu [role="menu"])) {
     background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 
@@ -1185,18 +1262,21 @@ label {
 /* ── composer pill and folder picker ───────────────────── */
 
 /* A two-row card: the text, then a footer of controls. A soft lift in light mode, a hairline in dark. */
+/* the composer: one soft card, rounder than anything around it. Focus deepens its edge; no colored glow */
 .composer-pill {
-  border-radius: calc(20px * var(--radius-scale, 1));
+  border-radius: calc(26px * var(--radius-scale, 1));
   background: var(--surface);
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.08),
-    0 12px 28px -18px oklch(0 0 0 / 0.4);
+    0 0 0 1px var(--line-strong),
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 8px 24px -12px oklch(0 0 0 / 0.12);
   transition: box-shadow 200ms var(--ease-out-strong);
 }
 .composer-pill:focus-within {
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 30%, oklch(0 0 0 / 0.08)),
-    0 12px 28px -18px oklch(0 0 0 / 0.4);
+    0 0 0 1px color-mix(in oklch, var(--ink) 22%, transparent),
+    0 1px 2px oklch(0 0 0 / 0.04),
+    0 10px 28px -12px oklch(0 0 0 / 0.16);
 }
 .composer-pill[data-invalid] {
   box-shadow:
@@ -1204,11 +1284,18 @@ label {
     0 6px 20px -6px oklch(0 0 0 / 0.08);
 }
 .dark .composer-pill {
-  background: var(--surface);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
+  background: #2f2f2f;
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.07),
+    0 8px 28px -10px oklch(0 0 0 / 0.5);
 }
 .dark .composer-pill:focus-within {
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 30%, oklch(1 0 0 / 0.1));
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.14),
+    0 8px 28px -10px oklch(0 0 0 / 0.5);
+}
+.dark[data-palette] .composer-pill {
+  background: var(--surface);
 }
 .dark .composer-pill[data-invalid] {
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--red) 55%, transparent);
@@ -1931,6 +2018,10 @@ html[data-code-font="system"] body {
   --accent-tint: oklch(0.96 calc(0.025 * var(--ac, 1)) var(--ah, 256));
   --accent-solid: oklch(0.52 calc(0.19 * var(--ac, 1)) var(--ah, 256));
   --accent-solid-hover: oklch(0.47 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+  /* a picked accent colors the primary buttons too (the palette's own is ink) */
+  --primary: var(--accent-solid);
+  --primary-hover: var(--accent-solid-hover);
+  --primary-foreground: oklch(1 0 0);
 }
 :root.dark[data-accent] {
   --accent: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256));
@@ -1938,6 +2029,9 @@ html[data-code-font="system"] body {
   --accent-tint: oklch(0.72 calc(0.14 * var(--ac, 1)) var(--ah, 256) / 0.14);
   --accent-solid: oklch(0.52 calc(0.19 * var(--ac, 1)) var(--ah, 256));
   --accent-solid-hover: oklch(0.57 calc(0.18 * var(--ac, 1)) var(--ah, 256));
+  --primary: var(--accent-solid);
+  --primary-hover: var(--accent-solid-hover);
+  --primary-foreground: oklch(1 0 0);
 }
 /* neutral reads as ink, not as a gray version of blue */
 :root[data-accent="neutral"] {

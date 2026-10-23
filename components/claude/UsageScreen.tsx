@@ -10,7 +10,6 @@ import { AGENT_CHART_TOKEN, OTHER_TOKEN, SERIES_TOKENS, tokenVar } from "@/lib/c
 import { EmptyState } from "@/components/primitives/EmptyState";
 import { Segmented } from "./settings/controls";
 import { Select } from "./Select";
-import { AgentMark } from "./SessionList";
 
 type By = "agent" | "model";
 type Filters = { agent: string; profile: string; project: string };
@@ -104,7 +103,7 @@ export function UsageScreen({ onMenu, extra, onOpen }: { onMenu: () => void; ext
         </div>
       </header>
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-5 px-3 pt-2 pb-16 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-10 px-4 pt-2 pb-20 sm:px-6 md:pt-6">
           {report === null && !error && <p role="status" className="py-10 text-center text-sm text-ink-3">Loading usage…</p>}
           {error && (
             <EmptyState
@@ -197,7 +196,7 @@ function Body({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+      <div className="grid grid-cols-1 divide-y divide-line rounded-xl border border-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <Total label="Today" sum={report.totals.today} />
         <Total label="Last 7 days" sum={report.totals.week} />
         <Total label="Last 30 days" sum={report.totals.month} />
@@ -205,14 +204,14 @@ function Body({
 
       <Chart daily={report.daily} by={by} setBy={setBy} />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-2 lg:gap-8">
         <Card title="Top sessions" aside={`Last ${days} days`}>
           {report.sessions.length ? (
             <table className="w-full table-fixed text-sm">
               <caption className="sr-only">Sessions that used the most in the last {days} days</caption>
               <thead className="text-left text-xs text-ink-3">
                 <tr>
-                  <th scope="col" className="pb-1.5 font-medium">Session</th>
+                  <th scope="col" className="pb-2 font-normal">Session</th>
                   <th scope="col" className="w-20 pb-1.5 text-right font-medium">Tokens</th>
                   <th scope="col" className="w-20 pb-1.5 text-right font-medium">Cost</th>
                 </tr>
@@ -220,19 +219,18 @@ function Body({
               <tbody>
                 {report.sessions.map((s) => (
                   <tr key={s.key} className="border-t border-line">
-                    <td className="py-1.5 pr-2">
+                    <td className="py-2.5 pr-2">
                       <button type="button" onClick={() => onOpen(s.key)} className="group flex w-full min-w-0 flex-col rounded-[6px] text-left">
                         <span className="flex min-w-0 items-center gap-1.5">
-                          <AgentMark agent={s.agent} />
                           <span className="truncate font-medium text-ink group-hover:underline">{s.title}</span>
                         </span>
                         <span className="truncate text-xs text-ink-3">
-                          {s.project} · {timeAgo(s.last)}
+                          {AGENT_LABEL[s.agent]} · {s.project} · {timeAgo(s.last)}
                         </span>
                       </button>
                     </td>
-                    <td className="py-1.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(s.sum))}</td>
-                    <td className="py-1.5 text-right text-ink tabular-nums">{s.sum.usd > 0 ? fmtUsd(s.sum.usd) : <span className="text-ink-3">No price</span>}</td>
+                    <td className="py-2.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(s.sum))}</td>
+                    <td className="py-2.5 text-right text-ink tabular-nums">{s.sum.usd > 0 ? fmtUsd(s.sum.usd) : <span className="text-ink-3">No price</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -247,7 +245,7 @@ function Body({
               <caption className="sr-only">Projects that used the most in the last {days} days</caption>
               <thead className="text-left text-xs text-ink-3">
                 <tr>
-                  <th scope="col" className="pb-1.5 font-medium">Project</th>
+                  <th scope="col" className="pb-2 font-normal">Project</th>
                   <th scope="col" className="w-20 pb-1.5 text-right font-medium">Tokens</th>
                   <th scope="col" className="w-20 pb-1.5 text-right font-medium">Cost</th>
                 </tr>
@@ -255,7 +253,7 @@ function Body({
               <tbody>
                 {report.projects.map((p) => (
                   <tr key={p.cwd || "none"} className="border-t border-line">
-                    <td className="py-1.5 pr-2">
+                    <td className="py-2.5 pr-2">
                       {p.cwd ? (
                         <button
                           type="button"
@@ -274,8 +272,8 @@ function Body({
                         </span>
                       )}
                     </td>
-                    <td className="py-1.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(p.sum))}</td>
-                    <td className="py-1.5 text-right text-ink tabular-nums">{p.sum.usd > 0 ? fmtUsd(p.sum.usd) : <span className="text-ink-3">No price</span>}</td>
+                    <td className="py-2.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(p.sum))}</td>
+                    <td className="py-2.5 text-right text-ink tabular-nums">{p.sum.usd > 0 ? fmtUsd(p.sum.usd) : <span className="text-ink-3">No price</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -292,8 +290,8 @@ function Body({
             <caption className="sr-only">Usage by model in the last {days} days</caption>
             <thead className="text-left text-xs text-ink-3">
               <tr>
-                <th scope="col" className="pb-1.5 font-medium">Model</th>
-                <th scope="col" className="pb-1.5 font-medium max-sm:hidden">Price</th>
+                <th scope="col" className="pb-2 font-normal">Model</th>
+                <th scope="col" className="pb-2 font-normal max-sm:hidden">Price</th>
                 <th scope="col" className="w-20 pb-1.5 text-right font-medium">Tokens</th>
                 <th scope="col" className="w-20 pb-1.5 text-right font-medium">Cost</th>
               </tr>
@@ -301,12 +299,12 @@ function Body({
             <tbody>
               {report.models.map((m) => (
                 <tr key={m.model} className="border-t border-line">
-                  <td className="truncate py-1.5 pr-2 font-mono text-xs text-ink" translate="no">
+                  <td className="truncate py-2.5 pr-2 font-mono text-xs text-ink" translate="no">
                     {m.model}
                   </td>
-                  <td className="py-1.5 pr-2 text-xs text-ink-3 max-sm:hidden">{m.price ?? "Unknown, tokens only"}</td>
-                  <td className="py-1.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(m.sum))}</td>
-                  <td className="py-1.5 text-right text-ink tabular-nums">{m.price ? fmtUsd(m.sum.usd) : <span className="text-ink-3">No price</span>}</td>
+                  <td className="py-2.5 pr-2 text-xs text-ink-3 max-sm:hidden">{m.price ?? "Unknown, tokens only"}</td>
+                  <td className="py-2.5 text-right text-ink-2 tabular-nums">{fmtTokens(tokSum(m.sum))}</td>
+                  <td className="py-2.5 text-right text-ink tabular-nums">{m.price ? fmtUsd(m.sum.usd) : <span className="text-ink-3">No price</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -324,10 +322,10 @@ function Body({
 
 function Card({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section aria-label={title} className="min-w-0 rounded-[14px] bg-surface px-3.5 py-3 shadow-hairline sm:px-4">
-      <div className="flex items-baseline gap-2 pb-2">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        {aside && <span className="ml-auto text-xs text-ink-3">{aside}</span>}
+    <section aria-label={title} className="min-w-0">
+      <div className="flex min-h-8 items-center gap-2 pb-3">
+        <h2 className="text-md font-semibold tracking-[-0.01em] text-ink">{title}</h2>
+        {aside && <span className="ml-auto text-sm text-ink-3">{aside}</span>}
       </div>
       {children}
     </section>
@@ -338,13 +336,13 @@ function Total({ label, sum }: { label: string; sum: Sum }) {
   const tokens = tokSum(sum);
   /* one row on a phone (label and tokens left, the figure right), a card above that */
   return (
-    <section aria-label={label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-[14px] bg-surface px-3.5 py-2.5 shadow-hairline sm:block sm:px-4 sm:py-3">
-      <div className="flex min-w-0 items-baseline gap-2">
-        <h2 className="text-sm font-medium text-ink-2">{label}</h2>
-        {sum.usd > 0 && <span className="rounded-full bg-hover px-1.5 text-2xs leading-[18px] font-medium text-ink-2 sm:ml-auto">Estimated</span>}
-      </div>
-      <p className="row-span-2 text-right text-[20px] leading-tight font-semibold tracking-[-0.01em] text-ink tabular-nums sm:mt-1 sm:text-left sm:text-[24px]">{money(sum)}</p>
-      <p className="mt-0.5 truncate text-xs text-ink-3 tabular-nums">
+    <section aria-label={label} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-3 sm:block sm:px-5 sm:py-4">
+      <h2 className="text-sm text-ink-2">
+        {label}
+        {sum.usd > 0 && <span className="sr-only">, estimated</span>}
+      </h2>
+      <p className="row-span-2 text-right text-[20px] leading-tight font-semibold tracking-[-0.02em] text-ink tabular-nums sm:mt-1.5 sm:text-left sm:text-[28px]">{money(sum)}</p>
+      <p className="mt-0.5 truncate text-xs text-ink-3 tabular-nums sm:mt-1">
         {fmtTokens(tokens)} tokens · {plural(sum.calls, "call")}
         {sum.unpriced > 0 && sum.usd > 0 ? ` · ${fmtTokens(sum.unpriced)} without a price` : ""}
       </p>
@@ -461,7 +459,7 @@ function Chart({ daily, by, setBy }: { daily: DayRow[]; by: By; setBy: (b: By) =
             {stacks[hover].map((v, j) =>
               v > 0 ? (
                 <p key={j} className="flex items-center gap-1.5 tabular-nums">
-                  <span className="size-2 shrink-0 rounded-full" style={{ background: colors[j] }} />
+                  <span className="size-2.5 shrink-0 rounded-[3px]" style={{ background: colors[j] }} />
                   <span className="min-w-0 flex-1 truncate">{names[j]}</span>
                   <span>{fmt(v)}</span>
                 </p>
@@ -474,7 +472,7 @@ function Chart({ daily, by, setBy }: { daily: DayRow[]; by: By; setBy: (b: By) =
         <ul className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1" aria-label="Legend">
           {names.map((n, j) => (
             <li key={n} className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
-              <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: colors[j] }} />
+              <span aria-hidden className="size-2.5 shrink-0 rounded-[3px]" style={{ background: colors[j] }} />
               <span className="truncate" translate={by === "model" ? "no" : undefined}>
                 {n}
               </span>
@@ -490,7 +488,7 @@ function Chart({ daily, by, setBy }: { daily: DayRow[]; by: By; setBy: (b: By) =
           <caption className="sr-only">{summary}</caption>
           <thead className="text-left text-xs text-ink-3">
             <tr>
-              <th scope="col" className="pb-1.5 font-medium">Day</th>
+              <th scope="col" className="pb-2 font-normal">Day</th>
               {names.map((n) => (
                 <th key={n} scope="col" className="pb-1.5 text-right font-medium max-sm:hidden">
                   {n}

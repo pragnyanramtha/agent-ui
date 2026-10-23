@@ -7,7 +7,7 @@ import { PALETTE_BASES, PALETTES, parseValue, settingDef } from "@/lib/settings-
 import { MAX_THEME_LENGTH, parseCustomTheme, themeTemplate } from "@/lib/theme";
 import { SmallButton } from "./controls";
 
-const FIELD = "field-ring rounded-control border border-line bg-field text-ink outline-none";
+const FIELD = "field-ring rounded-lg border border-transparent bg-field text-ink outline-none";
 
 /** The label color a custom accent gets on filled buttons (white or near-black, whichever reads). */
 export function labelOn(color: string): string {
@@ -24,7 +24,7 @@ export function ColorField({ k, id }: { k: "accentColor"; id?: string }) {
   const bad = !parseValue(def, draft).ok;
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <input type="color" aria-label={`${def.label} picker`} value={value} onChange={(e) => set(e.target.value)} className="tap relative h-8 w-10 cursor-pointer rounded-control border border-line bg-field p-0.5" />
+      <input type="color" aria-label={`${def.label} picker`} value={value} onChange={(e) => set(e.target.value)} className="tap relative h-8 w-10 cursor-pointer rounded-lg border border-transparent bg-field p-0.5" />
       <input
         id={id}
         type="text"

@@ -52,8 +52,9 @@ export function ContextRing({ usage, costUsd = null, cost = null }: { usage: Con
         aria-expanded={open}
         className="tap relative flex h-9 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-ink-3 tabular-nums transition-colors duration-150 hover:bg-hover hover:text-ink-2 sm:h-7"
       >
+        {/* a filled disc behind the arc, so a low reading looks like a gauge and never like a spinner */}
         <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden className="-rotate-90">
-          <circle cx="9" cy="9" r={r} fill="none" stroke="var(--line-strong)" strokeWidth="2" />
+          <circle cx="9" cy="9" r={r} fill="color-mix(in oklch, var(--ink) 6%, transparent)" stroke="color-mix(in oklch, var(--ink) 16%, transparent)" strokeWidth="2" />
           <circle
             cx="9"
             cy="9"
@@ -66,13 +67,13 @@ export function ContextRing({ usage, costUsd = null, cost = null }: { usage: Con
             className="transition-[stroke-dasharray] duration-500"
           />
         </svg>
-        <span className="hidden sm:inline">{Math.round(pct * 100)}%</span>
+        <span>{Math.round(pct * 100)}%</span>
       </button>
       {open && (
         <div
           role="dialog"
           aria-label="Context usage"
-          className="absolute right-0 bottom-full z-30 mb-2 w-64 rounded-[12px] bg-surface p-3 text-sm shadow-raised"
+          className="absolute right-0 bottom-full z-30 mb-2 w-64 rounded-xl bg-popover p-3.5 text-sm shadow-overlay"
           style={{ animation: "pop-in 160ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom right" }}
         >
           <div className="flex items-baseline justify-between">

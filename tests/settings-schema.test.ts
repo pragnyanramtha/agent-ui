@@ -267,7 +267,7 @@ describe("search", () => {
 describe("appearance on <html>", () => {
   it("sets nothing for defaults", () => {
     const s = domState(DEFAULTS, false);
-    expect(s).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#0a0a0a" });
+    expect(s).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#212121" });
   });
 
   it("maps values to attributes and variables", () => {
@@ -313,7 +313,7 @@ describe("appearance on <html>", () => {
     expect(named.vars["--primary"]).toBeUndefined();
     expect(named.vars["--page"]).toBe("#101010");
     /* a broken theme falls back to the default palette instead of half applying */
-    expect(domState({ ...DEFAULTS, palette: "custom", customTheme: "{" }, true)).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#0a0a0a" });
+    expect(domState({ ...DEFAULTS, palette: "custom", customTheme: "{" }, true)).toEqual({ dark: true, attrs: {}, vars: {}, themeColor: "#212121" });
   });
 
   it("refuses an invalid custom theme from the server or an import", () => {
@@ -352,7 +352,7 @@ describe("pre-paint script", () => {
   }
 
   it("applies the defaults when nothing is stored", () => {
-    expect(run({})).toEqual({ attrs: {}, vars: {}, dark: true, theme: "#0a0a0a" });
+    expect(run({})).toEqual({ attrs: {}, vars: {}, dark: true, theme: "#212121" });
   });
 
   it("reads the old theme key, device keys and the synced cache", () => {
@@ -391,7 +391,7 @@ describe("pre-paint script", () => {
   });
 
   it("ignores garbage and survives storage that throws", () => {
-    expect(run({ "bui-theme": "light", "cui:set:uiScale": "500", "cui:set:codeSize": "x", [SYNCED_CACHE_KEY]: '{"palette":"evil\\"><script>"}' })).toEqual({ attrs: {}, vars: {}, dark: false, theme: "#fdfdfd" });
+    expect(run({ "bui-theme": "light", "cui:set:uiScale": "500", "cui:set:codeSize": "x", [SYNCED_CACHE_KEY]: '{"palette":"evil\\"><script>"}' })).toEqual({ attrs: {}, vars: {}, dark: false, theme: "#ffffff" });
     expect(run({ [SYNCED_CACHE_KEY]: "{broken" }).attrs).toEqual({});
     expect(run({}, false, true).dark).toBe(true);
   });

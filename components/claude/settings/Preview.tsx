@@ -51,7 +51,7 @@ function MiniSidebar() {
 export function Preview() {
   const [timestamps] = useSetting("showTimestamps");
   return (
-    <div aria-label="Preview" role="img" className="pointer-events-none flex overflow-hidden rounded-card border border-line bg-page select-none">
+    <div aria-label="Preview" role="img" className="pointer-events-none flex overflow-hidden rounded-xl border border-line bg-page select-none">
       <MiniSidebar />
       <div className="flex min-w-0 flex-1 flex-col gap-(--thread-gap) px-4 pt-4 pb-3 sm:px-5" inert>
         <div className={ACTIONS_GAP}>

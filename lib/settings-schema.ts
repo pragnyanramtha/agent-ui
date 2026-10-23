@@ -166,8 +166,8 @@ export const PALETTES = [
   {
     id: "default",
     label: "Default",
-    light: { page: "#fdfdfd", sidebar: "#fafafa", surface: "#ffffff", line: "#e4e4e7", ink: "#27272a", ink3: "#71717b", accent: "#2f74e0" },
-    dark: { page: "#0a0a0a", sidebar: "#050505", surface: "#121212", line: "#1c1c1c", ink: "#f2f2f2", ink3: "#808080", accent: "#5fa0f7" },
+    light: { page: "#ffffff", sidebar: "#f9f9f9", surface: "#ffffff", line: "#ebebeb", ink: "#0d0d0d", ink3: "#6b6b6b", accent: "#2f74e0" },
+    dark: { page: "#212121", sidebar: "#181818", surface: "#2a2a2a", line: "#333333", ink: "#ececec", ink3: "#9b9b9b", accent: "#5fa0f7" },
   },
   {
     id: "slate",
@@ -444,7 +444,7 @@ export const SETTINGS = {
     section: "appearance",
     group: "Layout",
     label: "Translucent sidebar",
-    description: "A soft wash of the accent shows through the sidebar, and the phone drawer blurs the page behind it.",
+    description: "A soft wash of the accent shows through the sidebar, menus turn frosted, and the phone drawer blurs the page behind it.",
     keywords: ["vibrancy", "glass", "blur", "transparent", "frosted"],
     scope: "synced",
     default: false,
@@ -954,7 +954,7 @@ export const SETTINGS = {
     description: "A strip along the right edge with a mark for each of your prompts. Click one to jump there.",
     keywords: ["minimap", "scrollbar", "jump", "prompts", "outline", "overview"],
     scope: "device",
-    default: true,
+    default: false,
   }),
   autoScroll: choice({
     section: "conversation",

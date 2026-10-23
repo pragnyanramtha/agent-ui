@@ -37,10 +37,10 @@ export function Sheet({ title, onClose, children, footer, wide }: { title: strin
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`folder-sheet safe-bottom relative flex max-h-[86dvh] w-full flex-col overflow-hidden rounded-t-[18px] bg-surface shadow-overlay sm:max-h-[80vh] sm:rounded-[14px] ${wide ? "sm:max-w-[760px]" : "sm:max-w-[520px]"}`}
+        className={`folder-sheet safe-bottom relative flex max-h-[86dvh] w-full flex-col overflow-hidden rounded-t-[22px] bg-surface shadow-overlay sm:max-h-[80vh] sm:rounded-[20px] ${wide ? "sm:max-w-[760px]" : "sm:max-w-[520px]"}`}
       >
         <div aria-hidden className="mx-auto mt-2 h-1 w-9 shrink-0 rounded-full bg-line-strong sm:hidden" />
-        <div className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
+        <div className="flex h-14 shrink-0 items-center gap-2 pr-2.5 pl-5">
           <h2 id={headingId} className="min-w-0 flex-1 truncate text-base font-semibold text-ink">
             {title}
           </h2>
@@ -53,19 +53,20 @@ export function Sheet({ title, onClose, children, footer, wide }: { title: strin
           tabIndex={scrolls ? 0 : undefined}
           role={scrolls ? "group" : undefined}
           aria-labelledby={scrolls ? headingId : undefined}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 focus-visible:[outline-offset:-2px]"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 focus-visible:[outline-offset:-2px]"
         >
           {children}
         </div>
-        {footer && <div className="flex shrink-0 items-center justify-end gap-2 border-t border-line px-4 py-3">{footer}</div>}
+        {footer && <div className="flex shrink-0 items-center justify-end gap-2 px-5 pt-1 pb-4">{footer}</div>}
       </div>
     </div>,
     document.body,
   );
 }
 
-export const fieldBase = "w-full rounded-[9px] bg-inset px-3 text-[16px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus:ring-2 focus:ring-accent/30 sm:text-sm";
+export const fieldBase = "w-full rounded-xl bg-transparent px-3 text-[16px] text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] outline-none transition-shadow duration-150 placeholder:text-ink-3 focus:shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--ink)_40%,transparent)] sm:text-sm";
 export const field = `${fieldBase} h-10 sm:h-9`;
 export const area = `${fieldBase} py-2 leading-relaxed`;
-export const primaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full bg-ink px-4 text-sm font-medium text-page transition-opacity duration-150 hover:opacity-90 disabled:opacity-50";
-export const secondaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full px-3.5 text-sm font-medium text-ink shadow-btn transition-colors duration-150 hover:bg-hover disabled:opacity-50";
+export const primaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition-[background-color,transform] duration-150 hover:bg-primary-hover active:scale-[0.98] disabled:opacity-50";
+export const secondaryBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full px-4 text-sm font-medium text-ink shadow-[inset_0_0_0_1px_var(--line-strong)] transition-[background-color,transform] duration-150 hover:bg-hover active:scale-[0.98] disabled:opacity-50";
+export const dangerBtn = "tap relative inline-flex h-9 items-center justify-center rounded-full bg-red px-4 text-sm font-medium text-white transition-[filter,transform] duration-150 hover:brightness-110 active:scale-[0.98] disabled:opacity-50";

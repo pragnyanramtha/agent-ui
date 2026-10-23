@@ -9,9 +9,12 @@ import { answerAsk, failureText } from "@/lib/client/send";
 import { AGENT_LABEL, type PendingAsk, type SessionSummary } from "@/lib/types";
 import type { Finished } from "@/lib/client/useFinished";
 import { runFailed } from "@/lib/status";
-import { EmptyState } from "@/components/primitives/EmptyState";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 
-const btn = "tap relative inline-flex h-9 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-40 sm:h-8";
+const btn = "tap relative inline-flex h-8 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-40 pointer-coarse:h-10";
+const outline = `${btn} border border-line-strong text-ink hover:bg-hover`;
+const ghost = `${btn} px-3 text-ink-2 hover:bg-hover hover:text-ink`;
 
 export const inboxCount = (sessions: SessionSummary[] | null, finished: Finished) =>
   (sessions ?? []).filter((s) => s.web?.pending.length || runFailed(s.web)).length + Object.keys(finished).length;
@@ -57,25 +60,38 @@ export function InboxScreen({
         </div>
       </header>
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[820px] flex-col gap-7 px-3 pt-2 pb-16 sm:px-6">
-          {sessions === null && <p className="py-10 text-center text-sm text-ink-3">Loading the inbox…</p>}
+        <div className={`mx-auto flex w-full max-w-[760px] flex-col gap-10 px-4 pt-2 pb-20 sm:px-6 md:pt-6 ${empty ? "min-h-full" : ""}`}>
+          {sessions === null && (
+            <div role="status" aria-label="Loading the inbox…" className="flex flex-col gap-5 pt-2">
+              <Skeleton className="h-4 w-24" />
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-64 max-w-full" />
+                  <Skeleton className="h-3 w-40" />
+                </div>
+              ))}
+            </div>
+          )}
           {empty && (
-            <EmptyState
-              className="py-16"
-              icon={<MailOpen width={18} height={18} strokeWidth={1.8} />}
-              title="Nothing needs you"
-              body="Approvals, failed turns and turns that finish while you're away show up here."
-            />
+            <Empty className="pb-[12vh]" style={{ animation: "fade-in 200ms ease both" }}>
+              <EmptyHeader>
+                <EmptyMedia variant="icon" className="size-10 rounded-xl bg-field text-ink-2">
+                  <MailOpen width={18} height={18} strokeWidth={1.8} />
+                </EmptyMedia>
+                <EmptyTitle className="text-md text-ink">Nothing needs you</EmptyTitle>
+                <EmptyDescription className="text-ink-3">Approvals, failed turns and turns that finish while you&apos;re away show up here.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
 
           {needs.length > 0 && (
             <Group title="Needs you" count={needs.length}>
               {needs.map((s) => (
-                <Card key={s.id} s={s} onOpen={onOpen}>
+                <Item key={s.id} s={s} onOpen={onOpen}>
                   {s.web!.pending.map((ask) => (
                     <Ask key={ask.requestId} session={s.id} ask={ask} onOpen={() => onOpen(s.id)} onDone={onRefresh} />
                   ))}
-                </Card>
+                </Item>
               ))}
             </Group>
           )}
@@ -83,9 +99,9 @@ export function InboxScreen({
           {failed.length > 0 && (
             <Group title="Failed" count={failed.length}>
               {failed.map((s) => (
-                <Card key={s.id} s={s} onOpen={onOpen}>
+                <Item key={s.id} s={s} onOpen={onOpen}>
                   <p className="text-sm leading-snug text-red-ink [overflow-wrap:anywhere]">{s.web?.error ?? "The turn failed."}</p>
-                </Card>
+                </Item>
               ))}
             </Group>
           )}
@@ -95,13 +111,13 @@ export function InboxScreen({
               title="Finished"
               count={done.length}
               aside={
-                <button type="button" onClick={() => onDismiss(null)} className="text-sm font-medium text-ink-2 hover:text-ink">
+                <button type="button" onClick={() => onDismiss(null)} className={`${ghost} -mr-3`}>
                   Clear all
                 </button>
               }
             >
               {done.map((s) => (
-                <Card key={s.id} s={s} onOpen={onOpen} when={finished[s.id]} onDismiss={() => onDismiss(s.id)} />
+                <Item key={s.id} s={s} onOpen={onOpen} when={finished[s.id]} onDismiss={() => onDismiss(s.id)} />
               ))}
             </Group>
           )}
@@ -114,38 +130,38 @@ export function InboxScreen({
 function Group({ title, count, aside, children }: { title: string; count: number; aside?: ReactNode; children: ReactNode }) {
   return (
     <section aria-label={title}>
-      <div className="flex items-center gap-2 pb-2">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
-        <span className="text-xs text-ink-3 tabular-nums">{count}</span>
+      <div className="flex min-h-8 items-center gap-2 pb-2">
+        <h2 className="text-md font-semibold tracking-[-0.01em] text-ink">{title}</h2>
+        <span className="text-sm text-ink-3 tabular-nums">{count}</span>
         <span className="ml-auto">{aside}</span>
       </div>
-      <ul className="flex flex-col gap-2">{children}</ul>
+      <ul className="flex flex-col divide-y divide-line border-y border-line">{children}</ul>
     </section>
   );
 }
 
-function Card({ s, onOpen, when, onDismiss, children }: { s: SessionSummary; onOpen: (id: string) => void; when?: number; onDismiss?: () => void; children?: ReactNode }) {
+function Item({ s, onOpen, when, onDismiss, children }: { s: SessionSummary; onOpen: (id: string) => void; when?: number; onDismiss?: () => void; children?: ReactNode }) {
   const [fmt] = useSetting("timeFormat");
   return (
-    <li className="rounded-[14px] bg-surface px-3.5 py-3 shadow-hairline">
+    <li className="py-3">
       <div className="flex min-w-0 items-center gap-2">
-        <button type="button" onClick={() => onOpen(s.id)} className="min-w-0 flex-1 text-left">
-          <span className="block truncate text-base font-medium text-ink">{s.title || "Session"}</span>
-          <span className="block truncate text-xs text-ink-3">
+        <button type="button" onClick={() => onOpen(s.id)} className="group min-w-0 flex-1 text-left">
+          <span className="block truncate text-base font-medium text-ink group-hover:underline group-hover:decoration-ink-3 group-hover:underline-offset-4">{s.title || "Session"}</span>
+          <span className="mt-0.5 block truncate text-sm text-ink-3">
             {AGENT_LABEL[s.agent]} · {s.project || "No folder"}
             {when ? <span title={fullDateTime(when, fmt)}> · {timeAgo(when)}</span> : ""}
           </span>
         </button>
         {onDismiss && (
-          <button type="button" onClick={onDismiss} className={`${btn} px-2.5 text-ink-3 hover:text-ink`}>
+          <button type="button" onClick={onDismiss} className={ghost}>
             Dismiss
           </button>
         )}
-        <button type="button" onClick={() => onOpen(s.id)} className={`${btn} text-ink-2 shadow-btn hover:bg-hover hover:text-ink`}>
+        <button type="button" onClick={() => onOpen(s.id)} className={outline}>
           Open
         </button>
       </div>
-      {children && <div className="mt-2.5 flex flex-col gap-2">{children}</div>}
+      {children && <div className="mt-3 flex flex-col gap-2">{children}</div>}
     </li>
   );
 }
@@ -155,9 +171,9 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
   const [error, setError] = useState<string | null>(null);
   if (ask.kind === "question") {
     return (
-      <div className="rounded-[10px] bg-inset px-3 py-2 shadow-hairline">
-        <p className="text-sm text-ink">{ask.questions[0]?.question ?? "Question"}</p>
-        <button type="button" onClick={onOpen} className="mt-1.5 text-sm font-medium text-accent-ink hover:underline">
+      <div className="rounded-xl bg-field/60 px-3.5 py-3">
+        <p className="text-base text-ink">{ask.questions[0]?.question ?? "Question"}</p>
+        <button type="button" onClick={onOpen} className={`${outline} mt-2.5`}>
           Answer in the session
         </button>
       </div>
@@ -176,23 +192,23 @@ function Ask({ session, ask, onOpen, onDone }: { session: string; ask: PendingAs
     }
   };
   return (
-    <div className="rounded-[10px] bg-inset px-3 py-2 shadow-hairline">
-      <p className="text-sm font-medium text-ink [overflow-wrap:anywhere]">{ask.title || ask.toolName}</p>
+    <div className="rounded-xl bg-field/60 px-3.5 py-3">
+      <p className="text-base font-medium text-ink [overflow-wrap:anywhere]">{ask.title || ask.toolName}</p>
       {ask.description && <p className="mt-0.5 text-sm text-ink-2 [overflow-wrap:anywhere]">{ask.description}</p>}
       {command && !ask.title.includes(command) && (
-        <pre className="mt-1.5 max-h-32 overflow-auto rounded-[8px] bg-surface px-2.5 py-1.5 font-mono text-xs whitespace-pre-wrap text-ink-2 shadow-hairline [overflow-wrap:anywhere]">{command}</pre>
+        <pre className="mt-2 max-h-32 overflow-auto rounded-lg bg-page px-3 py-2 font-mono text-xs whitespace-pre-wrap text-ink-2 [overflow-wrap:anywhere]">{command}</pre>
       )}
-      {error && <p className="mt-1.5 text-xs text-red-ink">{error}</p>}
-      <div className="mt-2 flex flex-wrap gap-2">
-        <button type="button" disabled={busy !== null} onClick={() => void answer("allow")} className={`${btn} bg-ink text-surface`}>
+      {error && <p className="mt-2 text-sm text-red-ink">{error}</p>}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" disabled={busy !== null} onClick={() => void answer("allow")} className={`${btn} bg-primary text-primary-foreground hover:bg-primary-hover`}>
           {busy === "allow" ? "Allowing…" : "Allow"}
         </button>
         {ask.canAlwaysAllow && (
-          <button type="button" disabled={busy !== null} onClick={() => void answer("always")} className={`${btn} text-ink-2 shadow-btn hover:bg-hover hover:text-ink`}>
+          <button type="button" disabled={busy !== null} onClick={() => void answer("always")} className={outline}>
             {busy === "always" ? "Allowing…" : "Always allow"}
           </button>
         )}
-        <button type="button" disabled={busy !== null} onClick={() => void answer("deny")} className={`${btn} text-red-ink hover:bg-red-tint`}>
+        <button type="button" disabled={busy !== null} onClick={() => void answer("deny")} className={`${btn} px-3 text-red-ink hover:bg-red-tint`}>
           {busy === "deny" ? "Denying…" : "Deny"}
         </button>
       </div>

@@ -33,7 +33,7 @@ function Caps({ chord, mac }: { chord: string; mac: boolean }) {
   return (
     <span className="inline-flex items-center gap-0.5">
       {chordParts(chord, mac).map((k, i) => (
-        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-[5px] border border-line bg-field px-1.5 font-sans text-xs leading-none text-ink-2 tabular-nums">
+        <kbd key={i} className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-md bg-field px-1.5 font-sans text-xs leading-none text-ink-2 tabular-nums">
           {k}
         </kbd>
       ))}
@@ -81,9 +81,9 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord, send 
   const note = (id === "send" ? sendNote(send) : cmd.fixed) ?? warn ?? (others.length ? `Same keys as ${others.join(", ")}.` : null);
   const tone = !cmd.fixed && (warn || others.length) ? "text-orange-ink" : "text-ink-3";
   return (
-    <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1.5 px-3.5 py-2">
+    <div className="flex min-h-14 flex-wrap items-center gap-x-6 gap-y-1.5 py-2.5">
       <div className="min-w-[min(100%,12rem)] flex-1">
-        <div className="text-sm text-ink">{cmd.label}</div>
+        <div className="text-base text-ink">{cmd.label}</div>
         {note && (
           <div className={`mt-0.5 text-xs leading-relaxed ${tone}`} role={warn ? "status" : undefined}>
             {note}
@@ -105,7 +105,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord, send 
             onBlur={() => recording && onRecord(false)}
             aria-label={recording ? `Press the new keys for ${cmd.label}` : `Change shortcut for ${cmd.label}: ${keys.length ? keys.map((k) => chordLabel(k, mac)).join(" or ") : "none"}`}
             aria-pressed={recording}
-            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-control border px-2 text-2xs text-ink-3 transition-colors ${
+            className={`tap relative flex h-8 min-w-24 items-center justify-end gap-1.5 rounded-lg border px-2 text-2xs text-ink-3 transition-colors ${
               recording ? "border-accent bg-accent-tint text-accent-ink" : "border-transparent hover:border-line hover:bg-hover"
             }`}
           >
@@ -133,7 +133,7 @@ function ShortcutRow({ cmd, bindings, mac, conflicts, recording, onRecord, send 
             disabled={!custom}
             aria-label={`Reset ${cmd.label} to ${cmd.keys.map((k) => chordLabel(k, mac)).join(" or ")}`}
             title="Reset to default"
-            className="tap relative flex size-8 items-center justify-center rounded-control text-ink-3 hover:bg-hover hover:text-ink disabled:invisible"
+            className="tap relative flex size-8 items-center justify-center rounded-lg text-ink-3 hover:bg-hover hover:text-ink disabled:invisible"
           >
             <Undo width={14} height={14} strokeWidth={1.9} />
           </button>
@@ -166,7 +166,7 @@ export function KeyboardSection() {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="field-ring relative flex h-9 min-w-[min(100%,16rem)] flex-1 items-center gap-2 rounded-control border border-line bg-field px-2.5 md:h-8">
+        <div className="field-ring relative flex h-9 min-w-[min(100%,16rem)] flex-1 items-center gap-2 rounded-lg border border-transparent bg-field px-2.5 md:h-8">
           <Search width={14} height={14} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
           <input
             type="search"
@@ -214,7 +214,7 @@ export function KeyboardSection() {
           actions={[{ label: "Clear search", onClick: () => setQuery("") }]}
         />
       )}
-      <p className="px-1 text-xs leading-relaxed text-ink-3">
+      <p className="text-sm leading-relaxed text-ink-3">
         Click a shortcut, then press the new keys. Esc cancels, Backspace removes it.
         {comboFor("shortcuts", mac, { bindings }) && ` Press ${comboFor("shortcuts", mac, { bindings })} outside a text field to see them anywhere.`}
       </p>

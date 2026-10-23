@@ -25,15 +25,15 @@ function SectionHeader({ id }: { id: SectionId }) {
     toast({ key: "reset-section", tone: "success", title: `${info.label} settings reset`, action: { label: "Undo", run: () => setSettings(before) } });
   };
   return (
-    <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-1">
+    <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
       <div className="min-w-0 flex-1">
-        <h2 className="text-[17px] font-semibold max-md:sr-only tracking-[-0.015em] text-ink">{info.label}</h2>
-        <p className="mt-0.5 text-sm text-ink-3">{info.description}</p>
+        <h2 className="text-[20px] leading-tight font-semibold tracking-[-0.015em] text-ink max-md:sr-only">{info.label}</h2>
+        <p className="text-sm text-ink-3 md:mt-1">{info.description}</p>
       </div>
-      {own.length > 0 && (
-        <SmallButton disabled={atDefault} onClick={reset}>
+      {own.length > 0 && !atDefault && (
+        <button type="button" onClick={reset} className="tap relative -mr-2 h-8 shrink-0 rounded-full px-3 text-sm text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink md:-mt-0.5">
           Reset to defaults
-        </SmallButton>
+        </button>
       )}
     </div>
   );
@@ -41,8 +41,8 @@ function SectionHeader({ id }: { id: SectionId }) {
 
 function SearchField({ value, onChange, inputRef }: { value: string; onChange: (v: string) => void; inputRef: React.RefObject<HTMLInputElement | null> }) {
   return (
-    <div className="field-ring relative flex h-9 items-center gap-2 rounded-control border border-line bg-field px-2.5 md:h-8">
-      <Search width={14} height={14} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
+    <div className="relative flex h-10 items-center gap-2 rounded-lg bg-field px-3 transition-shadow duration-150 focus-within:shadow-[0_0_0_2px_color-mix(in_oklch,var(--ring)_45%,transparent)] md:h-9">
+      <Search width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-3" aria-hidden />
       <input
         ref={inputRef}
         type="search"
@@ -54,7 +54,7 @@ function SearchField({ value, onChange, inputRef }: { value: string; onChange: (
         className="min-w-0 flex-1 bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3 md:text-sm md:pointer-coarse:text-[16px] [&::-webkit-search-cancel-button]:hidden"
       />
       {value && (
-        <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1 flex size-6 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink">
+        <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="tap relative -mr-1.5 flex size-6 items-center justify-center rounded-full text-ink-3 hover:bg-hover hover:text-ink">
           <Xmark width={14} height={14} strokeWidth={2} />
         </button>
       )}
@@ -75,17 +75,21 @@ function Results({ query, onOpen, onClear }: { query: string; onOpen: (id: Secti
     );
   return (
     <>
+      <p role="status" className="text-sm text-ink-3">
+        {hits.length === 1 ? "1 section" : `${hits.length} sections`} match &ldquo;{query.trim()}&rdquo;
+      </p>
       {hits.map((h) => {
         const info = sectionInfo(h.section);
         return (
           <section key={h.section} className="flex flex-col">
-            <div className="flex items-center px-1 pb-2">
-              <h3 className="flex-1 text-xs font-medium text-ink-3">{info.label}</h3>
-              <button type="button" onClick={() => onOpen(h.section)} className="tap relative text-xs font-medium text-accent-ink hover:underline">
+            <div className="flex items-center gap-2 pb-1">
+              <h3 className="flex-1 text-sm font-medium text-ink-2">{info.label}</h3>
+              <button type="button" onClick={() => onOpen(h.section)} className="tap relative -mr-2 inline-flex h-7 items-center gap-0.5 rounded-full px-2.5 text-sm text-ink-2 hover:bg-hover hover:text-ink">
                 Open {info.label}
+                <NavArrowRight width={14} height={14} strokeWidth={1.9} aria-hidden />
               </button>
             </div>
-            <div className="divide-y divide-line rounded-card border border-line bg-surface">
+            <div className="flex flex-col divide-y divide-line">
               {h.settings.map((k) => (
                 <SettingField key={k} k={k} />
               ))}
@@ -167,6 +171,7 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
 
   const searching = query.trim().length > 0;
   const info = sectionInfo(section);
+  const page = paged && !searching;
 
   return (
     <section className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -175,64 +180,70 @@ export function SettingsScreen({ onMenu, extra, onAgents }: { onMenu: () => void
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          {paged && !searching && (
+          {page && (
             <button type="button" onClick={() => setPaged(false)} aria-label="All settings" className="icon-btn md:hidden">
               <NavArrowLeft width={19} height={19} strokeWidth={1.9} />
             </button>
           )}
           <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">
-            <span className={paged && !searching ? "hidden md:inline" : ""}>Settings</span>
-            {paged && !searching && <span className="md:hidden">{info.label}</span>}
+            <span className={page ? "hidden md:inline" : ""}>Settings</span>
+            {page && <span className="md:hidden">{info.label}</span>}
           </h1>
           {extra}
         </div>
       </header>
 
-      <div className="safe-x min-h-0 flex-1 overflow-y-auto overscroll-contain md:flex md:overflow-hidden">
-        <nav aria-label="Settings sections" className={`shrink-0 flex-col gap-3 px-3 pt-2 pb-4 md:flex md:w-60 md:overflow-y-auto md:border-r md:border-line md:px-2.5 md:pb-6 ${paged && !searching ? "hidden" : "flex"}`}>
-          <SearchField value={query} onChange={setQuery} inputRef={searchRef} />
-          <ul className={`flex-col gap-px md:flex ${searching ? "hidden" : "flex"} max-md:divide-y max-md:divide-line max-md:rounded-card max-md:border max-md:border-line max-md:bg-surface`}>
-            {SECTIONS.map((s) => {
-              const Icon = SECTION_ICONS[s.id];
-              const current = s.id === section;
-              return (
-                <li key={s.id}>
-                  <button
-                    type="button"
-                    onClick={() => open(s.id)}
-                    aria-current={current ? "page" : undefined}
-                    className={`tap relative flex w-full items-center gap-3 text-left text-ink max-md:min-h-13 max-md:px-3.5 max-md:py-2.5 md:h-8 md:gap-2.5 md:rounded-control md:px-2.5 md:text-sm ${
-                      current ? "md:bg-sidebar-active md:font-medium" : "md:text-ink-2 md:hover:bg-hover md:hover:text-ink"
-                    }`}
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-field text-ink-2 md:size-4 md:bg-transparent md:text-current">
-                      <Icon width={15} height={15} strokeWidth={1.8} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-base md:text-sm">{s.label}</span>
-                      <span className="block truncate text-xs text-ink-3 md:hidden">{s.description}</span>
-                    </span>
-                    <NavArrowRight width={15} height={15} strokeWidth={1.9} className="shrink-0 text-ink-3 md:hidden" aria-hidden />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+      <div ref={contentRef} className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto flex w-full max-w-[1040px] gap-12 px-3 pb-20 sm:px-6 md:pt-6 lg:px-8">
+          <nav
+            aria-label="Settings sections"
+            className={`w-full shrink-0 flex-col gap-3 pt-1 md:sticky md:top-0 md:flex md:max-h-[calc(100dvh-7rem)] md:w-52 md:self-start md:overflow-y-auto md:pt-0 no-scrollbar ${page ? "hidden" : "flex"}`}
+          >
+            <SearchField value={query} onChange={setQuery} inputRef={searchRef} />
+            <ul className={`flex-col gap-0.5 md:flex ${searching ? "hidden" : "flex"}`}>
+              {SECTIONS.map((s) => {
+                const Icon = SECTION_ICONS[s.id];
+                const current = s.id === section;
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => open(s.id)}
+                      aria-current={current ? "page" : undefined}
+                      className={`tap relative flex w-full items-center gap-3 rounded-lg text-left text-ink transition-colors duration-150 max-md:min-h-14 max-md:px-2 max-md:py-2 max-md:hover:bg-hover md:h-9 md:gap-2.5 md:px-2.5 md:text-sm ${
+                        current ? "md:bg-hover-2 md:font-medium" : "md:text-ink-2 md:hover:bg-hover md:hover:text-ink"
+                      }`}
+                    >
+                      <span className="flex shrink-0 text-ink-2 [&>svg]:size-[17px] md:[&>svg]:size-4" aria-hidden>
+                        <Icon width={17} height={17} strokeWidth={1.8} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-md md:text-sm">{s.label}</span>
+                        <span className="block truncate text-sm text-ink-3 md:hidden">{s.description}</span>
+                      </span>
+                      <NavArrowRight width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-3 md:hidden" aria-hidden />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
 
-        <div ref={contentRef} className={`safe-bottom min-w-0 md:block md:flex-1 md:overflow-y-auto md:overscroll-contain ${paged || searching ? "block" : "hidden"}`}>
-          <div className="mx-auto flex w-full max-w-[720px] flex-col gap-6 px-3 pt-2 pb-16 sm:px-6 md:pt-6">
-            {searching ? (
-              <Results query={query} onOpen={open} onClear={() => setQuery("")} />
-            ) : (
-              <>
-                <SectionHeader id={section} />
-                <SectionBody id={section} onAgents={onAgents} />
-              </>
-            )}
+          <div className={`min-w-0 flex-1 md:block ${paged || searching ? "block" : "hidden"}`}>
+            <div className={`flex w-full flex-col gap-8 pt-1 md:gap-10 md:pt-0 ${section === "projects" && !searching ? "max-w-[860px]" : "max-w-[680px]"}`}>
+              {searching ? (
+                <Results query={query} onOpen={open} onClear={() => setQuery("")} />
+              ) : (
+                <>
+                  <SectionHeader id={section} />
+                  <SectionBody id={section} onAgents={onAgents} />
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
     </section>
   );
 }
+

@@ -9,3 +9,4 @@ next-env.d.ts
 .env*
 !.env.example
 /agent-u.config.json
+.claude/worktrees/

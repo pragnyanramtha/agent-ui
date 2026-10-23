@@ -49,6 +49,8 @@ export async function paneScreen(target: InputTarget, ansi = false) {
 const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g;
 const RULE = /^─{12,}/;
 const PLACEHOLDER = /^(Try ".*"|Message @[\w.-]+…?)$/;
+/** a box taller than this is something else framed by rules */
+const MAX_PROMPT_LINES = 60;
 
 export type PromptState =
   | { ok: true }
@@ -58,24 +60,28 @@ export type PromptState =
 
 /**
  * Finds Claude Code's input box: the last line starting with "❯" that sits
- * between two horizontal rules. The upper rule carries "@name" when the
- * terminal is focused on another agent; typed text is not dim, placeholders are.
+ * between two horizontal rules (a multi-line message fills the lines between).
+ * The upper rule carries "@name" when the terminal is focused on another agent;
+ * typed text is not dim, placeholders are.
  */
 export function readPrompt(ansiScreen: string): PromptState {
   const raw = ansiScreen.split("\n");
   const plain = raw.map((l) => l.replace(ANSI, ""));
   for (let i = plain.length - 1; i > 0; i--) {
     if (!plain[i].trimStart().startsWith("❯")) continue;
-    if (!RULE.test(plain[i - 1].trim()) || !plain.slice(i + 1, i + 4).some((l) => RULE.test(l.trim()))) continue;
+    if (!RULE.test(plain[i - 1].trim())) continue;
+    const end = plain.findIndex((l, j) => j > i && RULE.test(l.trim()));
+    if (end < 0 || end - i > MAX_PROMPT_LINES) continue;
     const agent = /@([\w.-]+)\s*─*\s*$/.exec(plain[i - 1].trim())?.[1];
     if (agent) return { ok: false, code: "agent_focus", agent };
-    const typed = raw[i]
-      .split(/(?=\u001b\[)/)
-      .filter((part) => !/\u001b\[[0-9;]*\b2m/.test(part))
-      .join("")
-      .replace(ANSI, "")
-      .replace(/^\s*❯\s?/, "")
-      .trim();
+    const undimmed = (l: string) =>
+      l
+        .split(/(?=\u001b\[)/)
+        .filter((part) => !/\u001b\[[0-9;]*\b2m/.test(part))
+        .join("")
+        .replace(ANSI, "");
+    const lines = raw.slice(i, end).map((l, j) => (j ? undimmed(l).replace(/^ {2}/, "") : undimmed(l).replace(/^\s*❯\s?/, "")));
+    const typed = lines.join("\n").trim();
     /* Claude's idle suggestion ('Try "…"') isn't always styled dim in the dump; it's never real input */
     return typed && !PLACEHOLDER.test(typed) ? { ok: false, code: "has_text", text: typed } : { ok: true };
   }
@@ -90,20 +96,33 @@ const CLEAR_CHECKS_MS = [200, 300, 500];
 /* tmux refuses a send-keys over about 16 KB ("command too long"), so long text goes in pieces of at most 8 KB */
 const CHUNK = 2000;
 
-/** One line of plain text: newlines would submit, tabs autocomplete and escapes interrupt, so none get through. */
-export const typeable = (text: string) =>
-  text
-    .replace(/[\r\n]+/g, " ")
+/**
+ * Plain text a terminal won't act on: tabs autocomplete and escapes interrupt, so neither gets through.
+ * Newlines would submit, so they become spaces unless `newlines` (the agent takes Ctrl+J as a line break).
+ */
+export const typeable = (text: string, { newlines = false } = {}) => {
+  const plain = text
+    .replace(/\r\n?/g, "\n")
     .replace(/\t/g, "  ")
-    .replace(/[\u0000-\u001f\u007f]/g, "");
+    .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "");
+  return newlines ? plain : plain.replace(/\n+/g, " ");
+};
 
-async function keys(target: InputTarget, line: string) {
-  /* by code point, so an emoji is never split across two pieces */
-  const chars = Array.from(line);
-  const parts = Array.from({ length: Math.ceil(chars.length / CHUNK) }, (_, i) => chars.slice(i * CHUNK, (i + 1) * CHUNK).join(""));
-  for (const part of parts) {
-    if (target.kind === "zellij") await run("zellij", ["--session", target.session, "action", "write-chars", "-p", target.pane, "--", part]);
-    else await run("tmux", ["send-keys", "-t", target.pane, "-l", "--", part]);
+async function keys(target: InputTarget, text: string) {
+  const lines = text.split("\n");
+  for (const [n, line] of lines.entries()) {
+    /* Ctrl+J: a line break in the prompt (Enter would submit) */
+    if (n) {
+      if (target.kind === "zellij") await run("zellij", ["--session", target.session, "action", "write", "-p", target.pane, "10"]);
+      else await run("tmux", ["send-keys", "-t", target.pane, "C-j"]);
+    }
+    /* by code point, so an emoji is never split across two pieces */
+    const chars = Array.from(line);
+    const parts = Array.from({ length: Math.ceil(chars.length / CHUNK) }, (_, i) => chars.slice(i * CHUNK, (i + 1) * CHUNK).join(""));
+    for (const part of parts) {
+      if (target.kind === "zellij") await run("zellij", ["--session", target.session, "action", "write-chars", "-p", target.pane, "--", part]);
+      else await run("tmux", ["send-keys", "-t", target.pane, "-l", "--", part]);
+    }
   }
   if (target.kind === "zellij") await run("zellij", ["--session", target.session, "action", "write", "-p", target.pane, "13"]);
   else await run("tmux", ["send-keys", "-t", target.pane, "Enter"]);
@@ -137,15 +156,16 @@ export function withPane<T>(target: InputTarget, fn: () => Promise<T>): Promise<
 /**
  * Types the text and presses Return, after checking the prompt is focused and
  * empty. Reports whether it looks queued (Claude busy) rather than taken.
- * Newlines become spaces: a real Enter submits in Claude's prompt.
+ * Line breaks go in as Ctrl+J (`newlines`, on with the prompt check: Claude takes it);
+ * for a TUI that might submit on it they become spaces.
  */
-export function typeIntoTerminal(target: InputTarget, text: string, opts: { checkPrompt?: boolean } = {}) {
+export function typeIntoTerminal(target: InputTarget, text: string, opts: { checkPrompt?: boolean; newlines?: boolean } = {}) {
   return withPane(target, () => typeLocked(target, text, opts));
 }
 
-async function typeLocked(target: InputTarget, text: string, { checkPrompt = true } = {}) {
+async function typeLocked(target: InputTarget, text: string, { checkPrompt = true, newlines = checkPrompt }: { checkPrompt?: boolean; newlines?: boolean } = {}) {
   if (!checkPrompt) {
-    await keys(target, typeable(text));
+    await keys(target, typeable(text, { newlines }));
     return { queued: false, cleared: null as string | null };
   }
   let before = readPrompt(await paneScreen(target, true));
@@ -153,7 +173,8 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
    * so clear the box (Ctrl+U, per line) and report what was there in case it was real. */
   let cleared: string | null = null;
   let ghost = false;
-  for (let i = 0; i < 4 && !before.ok && before.code === "has_text"; i++) {
+  /* Ctrl+U clears one line of a multi-line draft at a time */
+  for (let i = 0; i < 16 && !before.ok && before.code === "has_text"; i++) {
     const shown = before.text;
     await clearLine(target);
     /* a busy Claude can take a moment to redraw, so unchanged text is read again before it counts as unchanged */
@@ -176,7 +197,7 @@ async function typeLocked(target: InputTarget, text: string, { checkPrompt = tru
     throw new InputRefused("A dialog is open in the terminal. Answer it first.", before.code);
   }
   try {
-    await keys(target, typeable(text));
+    await keys(target, typeable(text, { newlines }));
   } catch (err) {
     /* the prompt was already emptied: say what was in it, or it's lost without a word */
     if (cleared && err instanceof Error) err.message = `${err.message}. Cleared unsent text: "${cleared.slice(0, 80)}".`;

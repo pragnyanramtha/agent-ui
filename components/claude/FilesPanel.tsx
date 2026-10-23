@@ -149,7 +149,7 @@ function Browser({ root, dir, onDir, onOpen }: { root: string; dir: string; onDi
                   className="flex h-9 w-full min-w-0 items-center gap-2 rounded-[8px] px-2 text-left text-sm text-ink-2 transition-colors duration-100 hover:bg-hover hover:text-ink disabled:opacity-50 pointer-coarse:h-11"
                 >
                   {it.type === "dir" ? (
-                    <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0 text-accent-ink" aria-hidden />
+                    <Folder width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden />
                   ) : (
                     <Page width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
                   )}

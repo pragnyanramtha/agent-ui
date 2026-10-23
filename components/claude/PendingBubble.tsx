@@ -61,8 +61,8 @@ export function PendingBubble({
     <div className="flex flex-col items-end gap-1" style={{ animation: "fade-up 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
       <SentFiles paths={paths} />
       <div
-        className={`max-w-[80%] min-w-0 rounded-2xl border border-dashed px-3.5 py-2.5 text-md leading-relaxed whitespace-pre-wrap text-ink [overflow-wrap:anywhere] sm:px-4 sm:py-3 sm:text-base ${
-          pending.state === "failed" ? "border-red/40 bg-red-tint" : "border-line-strong bg-field/60"
+        className={`max-w-[85%] min-w-0 rounded-[22px] px-4 py-2.5 text-[16px] leading-relaxed whitespace-pre-wrap text-ink transition-opacity duration-200 [overflow-wrap:anywhere] sm:max-w-[75%] sm:text-md ${
+          pending.state === "failed" ? "bg-red-tint shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--red)_35%,transparent)]" : pending.state === "sending" ? "bg-field opacity-70" : "bg-field"
         }`}
         aria-busy={pending.state === "sending" || undefined}
       >

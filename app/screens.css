@@ -1,0 +1,12 @@
+/* Secondary screens (Settings, Agents and terminals, Files, Inbox, Usage, sign in): the few rules Tailwind
+ * utilities can't say on their own. */
+
+/* the chosen option of a segmented control: a raised chip on the soft track */
+.seg-on {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), 0 1px 2px oklch(0 0 0 / 0.06);
+}
+.dark .seg-on {
+  background: color-mix(in oklch, var(--field), var(--ink) 11%);
+  box-shadow: none;
+}
