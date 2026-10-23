@@ -10,6 +10,8 @@ import { CodeCard, copyText } from "./CodeCard";
 import { Markdown } from "./Markdown";
 import { folderErrorCopy, type EmptyCopy } from "@/lib/empty-states";
 import { EmptyState } from "@/components/primitives/EmptyState";
+import { Skeleton } from "@/components/ui/skeleton";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /* Files on the server: browse, preview artifacts (images, media, markdown, HTML, code), edit text,
  * and move files both ways. Works the same on a phone: the preview takes the screen there. */
@@ -36,8 +38,6 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
   const [hidden, setHidden] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [drag, setDrag] = useState(false);
-  const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [menuUp, setMenuUp] = useState(false);
   const [typed, setTyped] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const reqRef = useRef(0);
@@ -78,15 +78,6 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
     void open(start || localStorage.getItem(PATH_KEY) || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start, startKey]);
-
-  useEffect(() => {
-    if (!menuFor) return;
-    const away = (e: PointerEvent) => {
-      if (!(e.target as Element).closest?.("[role=menu], [aria-expanded=true]")) setMenuFor(null);
-    };
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [menuFor]);
 
   useEffect(() => {
     scrollRef.current?.querySelector("[data-selected]")?.scrollIntoView({ block: "center" });
@@ -151,7 +142,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
   const now = Date.now();
   const list = (
     <div
-      className={`relative flex min-h-0 min-w-0 flex-col ${file ? "max-md:hidden md:w-[min(40%,440px)] md:flex-none" : "flex-1"}`}
+      className={`relative flex min-h-0 min-w-0 flex-col ${file ? "max-md:hidden md:w-[min(40%,440px)] md:flex-none md:pt-3" : "mx-auto w-full max-w-[960px] flex-1 md:pt-3"}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -164,7 +155,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         if (e.dataTransfer.files.length) void upload(e.dataTransfer.files);
       }}
     >
-      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1 sm:px-4">
+      <div className="flex shrink-0 items-center gap-0.5 px-3 pb-2 sm:px-4">
         <button type="button" onClick={() => listing?.parent && void open(listing.parent)} disabled={!listing?.parent} aria-label="Up one folder" data-tip="Up" className={iconBtn}>
           <NavArrowUp width={17} height={17} strokeWidth={1.8} />
         </button>
@@ -188,7 +179,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
               autoCapitalize="off"
               autoCorrect="off"
               translate="no"
-              className="h-8 w-full rounded-[8px] bg-inset px-2.5 font-mono text-[16px] text-ink shadow-hairline outline-none sm:text-sm"
+              className="h-8 w-full rounded-lg bg-field px-2.5 font-mono text-[16px] text-ink outline-none focus-visible:shadow-[0_0_0_2px_color-mix(in_oklch,var(--ring)_45%,transparent)] sm:text-sm"
             />
           </form>
         ) : (
@@ -196,12 +187,12 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
             {crumbs.map((c, i) => (
               <span key={c.path} className="flex items-center">
                 {i > 1 && <span className="px-0.5 text-ink-3">/</span>}
-                <button type="button" onClick={() => void open(c.path)} className={`tap relative min-h-6 min-w-6 rounded-[6px] px-1 py-0.5 hover:bg-hover ${i === crumbs.length - 1 ? "text-ink" : "text-ink-3"}`} translate="no">
+                <button type="button" onClick={() => void open(c.path)} className={`tap relative min-h-6 min-w-6 rounded-md px-1 py-0.5 hover:bg-hover ${i === crumbs.length - 1 ? "text-ink" : "text-ink-3"}`} translate="no">
                   {c.name}
                 </button>
               </span>
             ))}
-            <button type="button" onClick={() => setTyped(dir)} className="tap relative ml-1 inline-flex min-h-6 items-center rounded-[6px] px-1.5 py-0.5 text-ink-3 hover:bg-hover" aria-label="Type a path">
+            <button type="button" onClick={() => setTyped(dir)} className="tap relative ml-1 inline-flex min-h-6 items-center rounded-md px-1.5 py-0.5 text-ink-3 hover:bg-hover" aria-label="Type a path">
               <EditPencil width={13} height={13} strokeWidth={1.8} />
             </button>
           </nav>
@@ -225,9 +216,9 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         <button type="button" onClick={refresh} aria-label="Refresh" data-tip="Refresh" className={iconBtn}>
           <Refresh width={16} height={16} strokeWidth={1.8} className={loading ? "animate-spin" : ""} />
         </button>
-        <button type="button" onClick={() => inputRef.current?.click()} disabled={!dir} className="tap relative ml-1 inline-flex h-8 items-center gap-1.5 rounded-full bg-ink px-3 text-sm font-medium text-page disabled:opacity-50">
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={!dir} className="tap relative ml-1.5 inline-flex h-8 items-center gap-1.5 rounded-full bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary-hover disabled:opacity-50 pointer-coarse:h-10 max-sm:w-10 max-sm:justify-center max-sm:px-0">
           <Upload width={15} height={15} strokeWidth={1.9} />
-          <span>Upload</span>
+          <span className="max-sm:sr-only">Upload</span>
         </button>
         <input
           ref={inputRef}
@@ -242,7 +233,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       </div>
 
       {uploads.length > 0 && (
-        <ul className="mx-2 mb-1 flex flex-col gap-1 rounded-[10px] bg-inset p-2 sm:mx-4">
+        <ul className="mx-2 mb-2 flex flex-col gap-1.5 rounded-xl bg-field/60 px-3 py-2.5 sm:mx-4">
           {uploads.map((u) => (
             <li key={u.id} className="flex items-center gap-2 text-sm">
               <span className="min-w-0 flex-1 truncate text-ink" translate="no">
@@ -262,7 +253,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
       )}
 
       {error && (
-        <p role="alert" className="mx-2 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink sm:mx-4">
+        <p role="alert" className="mx-2 mb-2 rounded-lg bg-red-tint px-3 py-2 text-sm text-red-ink sm:mx-4">
           {error}
         </p>
       )}
@@ -279,7 +270,14 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
             ]}
           />
         ) : listing === null ? (
-          <p className="px-3 py-6 text-sm text-ink-3">Loading files…</p>
+          <div role="status" aria-label="Loading files…" className="flex flex-col gap-1 px-2.5 pt-1">
+            {[56, 40, 64, 48, 36, 52].map((w, i) => (
+              <div key={i} className="flex h-9 items-center gap-3">
+                <Skeleton className="size-4 rounded" />
+                <Skeleton className="h-3.5" style={{ width: `${w}%` }} />
+              </div>
+            ))}
+          </div>
         ) : listing.entries.length === 0 ? (
           <EmptyState
             icon={<Folder width={18} height={18} strokeWidth={1.8} />}
@@ -297,9 +295,9 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
                 <button
                   type="button"
                   onClick={() => (it.type === "dir" ? void open(it.path) : void open(it.path))}
-                  className={`flex min-h-11 w-full min-w-0 items-center gap-3 rounded-[9px] px-2.5 pr-11 text-left hover:bg-hover sm:min-h-9 ${file?.path === it.path ? "bg-hover" : ""}`}
+                  className={`flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg px-2.5 pr-11 text-left transition-colors duration-100 hover:bg-hover sm:min-h-9 ${file?.path === it.path ? "bg-hover-2" : ""}`}
                 >
-                  {it.type === "dir" ? <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-accent-ink" aria-hidden /> : <Page width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />}
+                  {it.type === "dir" ? <Folder width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-2" aria-hidden /> : <Page width={16} height={16} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />}
                   <span className={`min-w-0 flex-1 truncate text-sm ${it.type === "broken" ? "text-ink-3 line-through" : "text-ink"}`} translate="no">
                     {it.name}
                     {it.link && <span className="text-ink-3"> ↗</span>}
@@ -307,40 +305,40 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
                   <span className="hidden shrink-0 text-xs text-ink-3 tabular-nums min-[420px]:inline">{it.type === "file" ? formatBytes(it.size) : ""}</span>
                   <span className="w-10 shrink-0 text-right text-xs text-ink-3 tabular-nums">{it.mtime ? timeAgo(it.mtime, now) : ""}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setMenuUp(window.innerHeight - e.currentTarget.getBoundingClientRect().bottom < 200);
-                    setMenuFor((m) => (m === it.path ? null : it.path));
-                  }}
-                  aria-label={`Actions for ${it.name}`}
-                  aria-expanded={menuFor === it.path}
-                  className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-[8px] text-ink-3 opacity-100 hover:bg-hover hover:text-ink sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
-                >
-                  <MoreHoriz width={16} height={16} />
-                </button>
-                {menuFor === it.path && (
-                  <div role="menu" className={`absolute right-1 z-30 w-48 ${menuUp ? "bottom-full" : "top-full"} rounded-[12px] bg-surface p-1 shadow-overlay`} onMouseLeave={() => setMenuFor(null)}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={`Actions for ${it.name}`}
+                      className="absolute top-1/2 right-1 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-ink-3 opacity-100 hover:bg-hover hover:text-ink data-[state=open]:bg-hover data-[state=open]:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 pointer-coarse:size-10"
+                    >
+                      <MoreHoriz width={16} height={16} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={4} className="min-w-48">
                     {it.type === "file" && (
-                      <a role="menuitem" href={raw(it.path, true)} download={it.name} className="menu-item" onClick={() => setMenuFor(null)}>
-                        <Download width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
-                        Download
-                      </a>
+                      <DropdownMenuItem asChild>
+                        <a href={raw(it.path, true)} download={it.name}>
+                          <Download strokeWidth={1.8} aria-hidden />
+                          Download
+                        </a>
+                      </DropdownMenuItem>
                     )}
-                    <button type="button" role="menuitem" className="menu-item" onClick={() => (setMenuFor(null), void copyText(it.path))}>
-                      <Copy width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                    <DropdownMenuItem onSelect={() => void copyText(it.path)}>
+                      <Copy strokeWidth={1.8} aria-hidden />
                       Copy path
-                    </button>
-                    <button type="button" role="menuitem" className="menu-item" onClick={() => (setMenuFor(null), rename(it))}>
-                      <EditPencil width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void rename(it)}>
+                      <EditPencil strokeWidth={1.8} aria-hidden />
                       Rename
-                    </button>
-                    <button type="button" role="menuitem" className="menu-item text-red-ink" onClick={() => (setMenuFor(null), remove(it))}>
-                      <Trash width={15} height={15} strokeWidth={1.8} className="shrink-0" aria-hidden />
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" onSelect={() => void remove(it)}>
+                      <Trash strokeWidth={1.8} aria-hidden />
                       Delete
-                    </button>
-                  </div>
-                )}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </li>
             ))}
           </ul>
@@ -348,7 +346,7 @@ export function FilesScreen({ onMenu, extra, start, startKey }: { onMenu: () => 
         {listing?.truncated && <p className="px-3 py-2 text-xs text-ink-3">Showing the first 2000 entries.</p>}
       </div>
       {drag && (
-        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-[14px] border-2 border-dashed border-accent bg-page/80 text-base font-medium text-ink">
+        <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-xl border-2 border-dashed border-line-strong bg-page/85 text-base font-medium text-ink">
           Drop to upload to {shortPath(dir)}
         </div>
       )}
@@ -426,13 +424,13 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
   };
 
   const body = (() => {
-    if (kind === "image") return <img src={`${raw(file.path)}&v=${file.mtime}`} alt={name} className="mx-auto max-h-full max-w-full rounded-[8px] object-contain shadow-hairline" />;
-    if (kind === "video") return <video src={raw(file.path)} controls playsInline className="mx-auto max-h-full max-w-full rounded-[8px]" />;
+    if (kind === "image") return <img src={`${raw(file.path)}&v=${file.mtime}`} alt={name} className="mx-auto max-h-full max-w-full rounded-lg object-contain" />;
+    if (kind === "video") return <video src={raw(file.path)} controls playsInline className="mx-auto max-h-full max-w-full rounded-lg" />;
     if (kind === "audio") return <audio src={raw(file.path)} controls className="w-full" />;
     if (kind === "pdf")
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <a href={raw(file.path)} target="_blank" rel="noopener" className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-page">
+          <a href={raw(file.path)} target="_blank" rel="noopener" className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover">
             <OpenNewWindow width={15} height={15} /> Open PDF
           </a>
         </div>
@@ -441,7 +439,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
       return (
         <div className="flex flex-col items-center gap-3 py-10 text-center">
           <p className="text-sm text-ink-3">No preview available.</p>
-          <a href={raw(file.path, true)} download={name} className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-ink px-4 text-sm font-medium text-page">
+          <a href={raw(file.path, true)} download={name} className="tap relative inline-flex h-9 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover">
             <Download width={15} height={15} /> Download {formatBytes(file.size)}
           </a>
         </div>
@@ -456,11 +454,11 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          className="h-full min-h-[50vh] w-full resize-none rounded-[10px] bg-inset p-3 font-mono text-[16px] leading-relaxed text-ink shadow-hairline outline-none sm:text-sm"
+          className="h-full min-h-[50vh] w-full resize-none rounded-xl bg-field/50 p-3 font-mono text-[16px] leading-relaxed text-ink outline-none sm:text-sm"
         />
       );
     if (kind === "html" && !source)
-      return <iframe title={name} sandbox="allow-scripts" srcDoc={withPreviewCsp(text.text)} className="h-full min-h-[60vh] w-full rounded-[10px] bg-white shadow-hairline" />;
+      return <iframe title={name} sandbox="allow-scripts" srcDoc={withPreviewCsp(text.text)} className="h-full min-h-[60vh] w-full rounded-xl border border-line bg-white" />;
     if (kind === "markdown" && !source)
       return (
         <div className="px-1">
@@ -474,7 +472,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-1 sm:px-3">
+      <div className="flex shrink-0 items-center gap-0.5 px-2 pb-2 sm:px-3 md:pt-3">
         <button type="button" onClick={onClose} aria-label="Back" className="icon-btn md:hidden">
           <NavArrowLeft width={18} height={18} strokeWidth={1.8} />
         </button>
@@ -502,7 +500,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
               <button type="button" onClick={() => setEditing(null)} className="h-8 rounded-full px-2.5 text-sm font-medium text-ink-2 hover:bg-hover">
                 Cancel
               </button>
-              <button type="button" onClick={() => void save()} disabled={saving} className="h-8 rounded-full bg-ink px-3 text-sm font-medium text-page disabled:opacity-60">
+              <button type="button" onClick={() => void save()} disabled={saving} className="h-8 rounded-full bg-primary px-3.5 text-sm font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-60">
                 {saving ? "Saving…" : "Save"}
               </button>
             </>
@@ -523,7 +521,7 @@ function Preview({ file, onClose, onRename, onDelete, onSaved }: { file: FileInf
           <Xmark width={17} height={17} strokeWidth={1.8} />
         </button>
       </div>
-      {saveError && <p className="mx-3 mb-1 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{saveError}</p>}
+      {saveError && <p className="mx-3 mb-2 rounded-lg bg-red-tint px-3 py-2 text-sm text-red-ink">{saveError}</p>}
       <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 pb-6 sm:px-3">{body}</div>
     </div>
   );

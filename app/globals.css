@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 /* Radix state variants, shimmer and scroll-fade utilities for components/ui (shadcn/ui, vendored) */
 @import "./shadcn.css";
+@import "./screens.css";
 /* shadow-plugin (flornkm): smooth, layered shadow stacks. The unprefixed
  * entry maps them onto Tailwind's --shadow-xs…2xl scale; our semantic tokens
  * below build on those values so the whole app picks up the smooth shadows. */

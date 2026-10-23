@@ -14,7 +14,7 @@ function Value({ children }: { children: ReactNode }) {
 
 function Link({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="tap relative inline-flex h-8 items-center gap-1.5 rounded-control px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
+    <a href={href} target="_blank" rel="noreferrer" className="tap relative inline-flex h-8 items-center gap-1.5 rounded-full border border-line-strong px-3.5 text-sm font-medium text-ink transition-colors duration-150 hover:bg-hover pointer-coarse:h-9">
       {children}
       <OpenNewWindow width={13} height={13} strokeWidth={1.9} aria-hidden />
     </a>

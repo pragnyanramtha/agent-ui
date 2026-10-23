@@ -2,7 +2,8 @@
 
 import { confirmAsk, promptAsk } from "./Ask";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check as CheckIcon, Copy, Menu, Plus, Terminal, Trash } from "iconoir-react";
+import { Check as CheckIcon, CheckCircle, Copy, HelpCircle, Menu, Plus, Terminal, Trash, WarningTriangle, XmarkCircle } from "iconoir-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AGENT_IDS, AGENT_LABEL, type AgentId, type ProfileInfo, type ServerTerminal } from "@/lib/types";
 import { effortOptions } from "@/lib/agent-traits";
 import { api, ApiError, shortPath, timeAgo } from "@/lib/client/api";
@@ -31,12 +32,12 @@ export function AgentsScreen({ onMenu, extra, onOpenSession, projects }: { onMen
           <button type="button" onClick={onMenu} aria-label="Open sessions" aria-haspopup="dialog" data-drawer-opener className="icon-btn lg:hidden">
             <Menu width={19} height={19} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">Agents</h1>
+          <h1 className="min-w-0 flex-1 truncate px-1.5 text-md font-medium tracking-[-0.01em] text-ink sm:text-base">Agents and terminals</h1>
           {extra}
         </div>
       </header>
       <div className="safe-x safe-bottom min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[820px] flex-col gap-8 px-3 pt-2 pb-16 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[760px] flex-col gap-12 px-4 pt-2 pb-20 sm:px-6 md:pt-6">
           <Launcher projects={projects} />
           <Terminals onOpenSession={onOpenSession} />
           <Profiles />
@@ -47,14 +48,24 @@ export function AgentsScreen({ onMenu, extra, onOpenSession, projects }: { onMen
   );
 }
 
-function H({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+function H({ children, aside, note }: { children: ReactNode; aside?: ReactNode; note?: ReactNode }) {
   return (
-    <div className="flex items-center gap-2 pb-2">
-      <h2 className="min-w-0 flex-1 text-sm font-semibold text-ink">{children}</h2>
-      {aside}
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-2.5 pb-3">
+      <div className="min-w-[min(100%,18rem)] flex-1">
+        <h2 className="text-md font-semibold tracking-[-0.01em] text-ink">{children}</h2>
+        {note && <div className="mt-0.5 text-sm text-ink-3">{note}</div>}
+      </div>
+      {aside && <div className="flex shrink-0 items-center">{aside}</div>}
     </div>
   );
 }
+
+/* pill buttons: outlined for the row's main action, bare for the quieter ones */
+const pill = "tap relative inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors duration-150 disabled:opacity-50 pointer-coarse:h-10";
+const outlineBtn = `${pill} border border-line-strong text-ink hover:bg-hover`;
+const ghostBtn = `${pill} px-3 text-ink-2 hover:bg-hover hover:text-ink`;
+const errorBox = "rounded-lg bg-red-tint px-3 py-2 text-sm text-red-ink";
+const list = "flex flex-col divide-y divide-line border-y border-line";
 
 /* ── start one ─────────────────────────────────────────────── */
 
@@ -102,11 +113,11 @@ function Launcher({ projects }: { projects: string[] }) {
 
   return (
     <section aria-labelledby="launch-h">
-      <H>
+      <H note={none ? undefined : "Runs the agent's own terminal on the server. It keeps running after you close the tab."}>
         <span id="launch-h">Start an agent</span>
       </H>
       {none ? (
-        <div className="rounded-[12px] bg-surface shadow-hairline">
+        <div className="rounded-xl border border-line">
           <EmptyState
             className="py-8"
             icon={<Terminal width={18} height={18} strokeWidth={1.8} />}
@@ -118,9 +129,9 @@ function Launcher({ projects }: { projects: string[] }) {
           />
         </div>
       ) : (
-        <div className="flex flex-col gap-2 rounded-[12px] bg-surface p-3 shadow-hairline sm:flex-row sm:items-end">
-          <label className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-xs font-medium text-ink-3">Agent</span>
+        <div className="flex flex-col gap-3 rounded-xl border border-line p-3 sm:flex-row sm:items-end sm:gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="text-sm text-ink-2">Agent</span>
             <Select
               label="Agent"
               value={chosen?.id ?? ""}
@@ -128,14 +139,14 @@ function Launcher({ projects }: { projects: string[] }) {
               options={AGENT_IDS.flatMap((a) => usable.filter((p) => p.agent === a)).map((p) => ({ value: p.id, label: p.label, hint: p.installed ? undefined : "Not installed", disabled: !p.installed }))}
             />
           </label>
-          <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
-            <span className="text-xs font-medium text-ink-3">Folder</span>
+          <label className="flex min-w-0 flex-[1.4] flex-col gap-1.5">
+            <span className="text-sm text-ink-2">Folder</span>
             <button type="button" onClick={() => setPicker(true)} className={`${field} truncate text-left`} translate="no">
               {cwd ? shortPath(cwd) : <span className="text-ink-3">Choose a folder</span>}
             </button>
           </label>
-          <label className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-xs font-medium text-ink-3">Model</span>
+          <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="text-sm text-ink-2">Model</span>
             <input value={model} onChange={(e) => setModel(e.target.value)} list="launch-models" placeholder={chosen?.defaultModel ?? "Default"} className={field} autoComplete="off" spellCheck={false} />
             <datalist id="launch-models">{chosen?.models.map((m) => <option key={m} value={m} />)}</datalist>
           </label>
@@ -150,8 +161,7 @@ function Launcher({ projects }: { projects: string[] }) {
           </div>
         </div>
       )}
-      {!none && <p className="px-1 pt-1.5 text-xs text-ink-3">Keeps running after you close the tab.</p>}
-      {error && <p className="mt-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
+      {error && <p className={`mt-2 ${errorBox}`}>{error}</p>}
       <FolderPicker open={picker} value={cwd} recent={projects} onPick={setCwd} onClose={() => setPicker(false)} />
     </section>
   );
@@ -184,36 +194,46 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
   const now = Date.now();
   return (
     <section aria-labelledby="terms-h">
-      <H aside={data && !data.tmux ? <span className="text-xs text-ink-3">Install tmux so these survive restarts</span> : null}>
+      <H note={data && !data.tmux ? "Install tmux so these survive restarts." : "Agents and shells kept on the server."}>
         <span id="terms-h">Running</span>
       </H>
-      {data?.error && data.terminals.length > 0 && <p className="rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{data.error}</p>}
+      {data?.error && data.terminals.length > 0 && <p className={`mb-2 ${errorBox}`}>{data.error}</p>}
       {data === null ? (
-        <p className="px-1 text-sm text-ink-3">Loading terminals…</p>
+        <div role="status" aria-label="Loading terminals…" className={list}>
+          {[0, 1].map((i) => (
+            <div key={i} className="flex items-center gap-3 py-3">
+              <Skeleton className="size-4 rounded-full" />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-3.5 w-40" />
+                <Skeleton className="h-3 w-64 max-w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : data.error && !data.terminals.length ? (
-        <EmptyState size="inline" tone="error" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Can't list terminals" body={data.error} actions={[{ label: "Try again", onClick: () => void load() }]} />
+        <EmptyState size="inline" tone="error" className="rounded-xl border border-line px-3 py-3" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Can't list terminals" body={data.error} actions={[{ label: "Try again", onClick: () => void load() }]} />
       ) : data.terminals.length === 0 ? (
-        <EmptyState size="inline" className="px-1" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
+        <EmptyState size="inline" className="rounded-xl border border-dashed border-line px-3 py-3" icon={<Terminal width={15} height={15} strokeWidth={1.8} />} title="Nothing running" body="Agents you start above keep running here after you close the tab." />
       ) : (
-        <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
+        <ul className={list}>
           {data.terminals.map((t) => (
-            <li key={t.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
-              <span className={`size-2 shrink-0 rounded-full ${t.exited ? "bg-line-strong" : "animate-pulse bg-green"}`} aria-hidden />
+            <li key={t.id} className="flex min-h-14 items-center gap-3 py-2.5">
+              <Terminal width={16} height={16} strokeWidth={1.8} className={`shrink-0 ${t.exited ? "text-ink-3" : "text-green"}`} aria-hidden />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm text-ink">{t.label}</span>
-                <span className="truncate text-xs text-ink-3" translate="no">
-                  {[t.cwd && shortPath(t.cwd), t.exited ? `Exited (${t.exited.code})` : t.clients ? `${t.clients} watching` : "Running", t.createdAt ? timeAgo(t.createdAt, now) : ""].filter(Boolean).join(" · ")}
+                <span className="truncate text-base text-ink">{t.label}</span>
+                <span className="truncate text-sm text-ink-3" translate="no">
+                  {[t.exited ? `Exited (${t.exited.code})` : t.clients ? `${t.clients} watching` : "Running", t.cwd && shortPath(t.cwd), t.createdAt ? timeAgo(t.createdAt, now) : ""].filter(Boolean).join(" · ")}
                 </span>
               </div>
               {t.session && (
-                <button type="button" onClick={() => onOpenSession(t.session!)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-sm font-medium text-ink-2 hover:bg-hover max-sm:hidden">
+                <button type="button" onClick={() => onOpenSession(t.session!)} className={`${ghostBtn} max-sm:hidden`}>
                   Session
                 </button>
               )}
-              <button type="button" onClick={() => openServerTerminal(t, t.label)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => openServerTerminal(t, t.label)} className={outlineBtn}>
                 Open
               </button>
-              <button type="button" onClick={() => void stop(t)} aria-label={t.exited ? `Remove ${t.label}` : `Stop ${t.label}`} className="icon-btn shrink-0 text-ink-3 pointer-coarse:size-10">
+              <button type="button" onClick={() => void stop(t)} aria-label={t.exited ? `Remove ${t.label}` : `Stop ${t.label}`} className="icon-btn shrink-0 text-ink-3">
                 <Trash width={15} height={15} strokeWidth={1.8} />
               </button>
             </li>
@@ -226,7 +246,8 @@ function Terminals({ onOpenSession }: { onOpenSession: (id: string) => void }) {
 
 /* ── health check ──────────────────────────────────────────── */
 
-const DOT: Record<HealthStatus, string> = { ok: "bg-green", warn: "bg-orange", fail: "bg-red", unknown: "bg-line-strong" };
+const STATUS_ICON: Record<HealthStatus, typeof CheckCircle> = { ok: CheckCircle, warn: WarningTriangle, fail: XmarkCircle, unknown: HelpCircle };
+const STATUS_TONE: Record<HealthStatus, string> = { ok: "text-green", warn: "text-orange", fail: "text-red", unknown: "text-ink-3" };
 const SAYS: Record<HealthStatus, string> = { ok: "OK", warn: "Warning", fail: "Problem", unknown: "Unknown" };
 
 function HealthCheck() {
@@ -258,20 +279,18 @@ function HealthCheck() {
   return (
     <section aria-labelledby="health-h">
       <H
+        note={<span aria-live="polite">{summary ? `${summary} · ${clockTime(report!.at, fmt)}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}</span>}
         aside={
-          <button type="button" onClick={() => void check()} disabled={busy} className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover disabled:opacity-60">
+          <button type="button" onClick={() => void check()} disabled={busy} className={outlineBtn}>
             {busy ? "Checking…" : report ? "Check again" : "Run check"}
           </button>
         }
       >
         <span id="health-h">Health check</span>
       </H>
-      <p className="px-1 pb-2 text-xs text-ink-3" aria-live="polite">
-        {summary ? `${summary} · ${clockTime(report!.at, fmt)}` : "If a turn fails, this shows which agent, sign-in or service is the cause."}
-      </p>
-      {error && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
+      {error && <p className={`mb-2 ${errorBox}`}>{error}</p>}
       {report && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-6">
           <HealthList rows={agents} footer={absent.length ? `Not installed: ${absent.map((r) => r.label).join(", ")}` : undefined} />
           <HealthList rows={system} />
         </div>
@@ -283,23 +302,26 @@ function HealthCheck() {
 function HealthList({ rows, footer }: { rows: HealthRow[]; footer?: string }) {
   if (!rows.length && !footer) return null;
   return (
-    <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
-      {rows.map((r) => (
-        <li key={r.id} className="flex min-h-12 gap-3 px-3 py-2.5">
-          <span className={`mt-[7px] size-2 shrink-0 rounded-full ${DOT[r.status]}`} aria-hidden />
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-sm text-ink">
-              <span className="sr-only">{SAYS[r.status]}: </span>
-              {r.label}
-            </span>
-            <span className="text-xs break-words text-ink-3" translate="no">
-              {r.detail}
-            </span>
-            {r.fix && <FixCommand command={r.fix} />}
-          </div>
-        </li>
-      ))}
-      {footer && <li className="px-3 py-2.5 text-xs text-ink-3">{footer}</li>}
+    <ul className={list}>
+      {rows.map((r) => {
+        const Icon = STATUS_ICON[r.status];
+        return (
+          <li key={r.id} className="flex min-h-14 gap-3 py-3">
+            <Icon width={16} height={16} strokeWidth={1.8} className={`mt-0.5 shrink-0 ${STATUS_TONE[r.status]}`} aria-hidden />
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="text-base text-ink">
+                <span className="sr-only">{SAYS[r.status]}: </span>
+                {r.label}
+              </span>
+              <span className="text-sm break-words text-ink-3" translate="no">
+                {r.detail}
+              </span>
+              {r.fix && <FixCommand command={r.fix} />}
+            </div>
+          </li>
+        );
+      })}
+      {footer && <li className="py-3 text-sm text-ink-3">{footer}</li>}
     </ul>
   );
 }
@@ -316,7 +338,7 @@ function FixCommand({ command }: { command: string }) {
       timer.current = setTimeout(() => setCopied(false), 1500);
     });
   return (
-    <div className="mt-1 flex min-w-0 items-center gap-1 rounded-[8px] bg-inset py-0.5 pr-0.5 pl-2.5">
+    <div className="mt-1.5 flex min-w-0 items-center gap-1 rounded-lg bg-field/60 py-0.5 pr-0.5 pl-3">
       <code className="no-scrollbar min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap text-ink-2" translate="no">
         {command}
       </code>
@@ -324,7 +346,7 @@ function FixCommand({ command }: { command: string }) {
         type="button"
         onClick={() => void copy()}
         aria-label={copied ? "Copied" : `Copy ${command}`}
-        className={`flex h-8 shrink-0 items-center gap-1 rounded-[6px] px-2 text-xs font-medium hover:bg-hover ${copied ? "text-green" : "text-ink-3 hover:text-ink"}`}
+        className={`tap relative flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-hover ${copied ? "text-green" : "text-ink-3 hover:text-ink"}`}
       >
         {copied ? <CheckIcon width={13} height={13} strokeWidth={2.2} /> : <Copy width={13} height={13} strokeWidth={1.8} />}
         {copied ? "Copied" : "Copy"}
@@ -419,46 +441,58 @@ function Profiles() {
           <button
             type="button"
             onClick={() => setEdit({ isNew: true, draft: { id: "", label: "", agent: "codex", bin: "", args: "", env: "", models: "", defaultModel: "", defaultEffort: "", fallback: "", launchArgs: "", notes: "", hidden: false } })}
-            className="inline-flex h-8 items-center gap-1 rounded-full px-2.5 pointer-coarse:h-10 pointer-coarse:px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover"
+            className={outlineBtn}
           >
             <Plus width={14} height={14} strokeWidth={2} /> Add profile
           </button>
         }
+        note={
+          <>
+            Accounts, proxies and wrappers per agent. Stored in{" "}
+            <code className="font-mono text-xs" translate="no">
+              {shortPath(configPath)}
+            </code>
+            .
+          </>
+        }
       >
         <span id="profiles-h">Profiles</span>
       </H>
-      <p className="px-1 pb-2 text-xs text-ink-3">
-        Accounts, proxies and wrappers per agent. Stored in{" "}
-        <code className="font-mono" translate="no">
-          {shortPath(configPath)}
-        </code>
-        .
-      </p>
-      {error && !edit && <p className="mb-2 rounded-[10px] bg-red-tint px-3 py-2 text-sm text-red-ink">{error}</p>}
+      {error && !edit && <p className={`mb-2 ${errorBox}`}>{error}</p>}
       {profiles === null ? (
-        <p className="px-1 text-sm text-ink-3">Loading profiles…</p>
+        <div role="status" aria-label="Loading profiles…" className={list}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 py-3">
+              <Skeleton className="size-4 rounded-full" />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-56 max-w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
-        <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-[12px] bg-surface shadow-hairline">
+        <ul className={list}>
           {AGENT_IDS.flatMap((a) => profiles.filter((p) => p.agent === a)).map((p) => (
-            <li key={p.id} className="flex min-h-12 items-center gap-3 px-3 py-2">
-              <AgentIcon agent={p.agent} size={16} className={p.installed ? "" : "opacity-30"} />
+            <li key={p.id} className="flex min-h-14 items-center gap-3 py-2.5">
+              <AgentIcon agent={p.agent} size={16} tone={false} className={`shrink-0 ${p.installed ? "text-ink-2" : "text-ink-3 opacity-50"}`} />
               <div className="flex min-w-0 flex-1 flex-col">
-                <span className={`truncate text-sm ${p.hidden ? "text-ink-3" : "text-ink"}`}>
+                <span className={`truncate text-base ${p.hidden || !p.installed ? "text-ink-3" : "text-ink"}`}>
                   {p.label}
                   <span className="text-ink-3"> · {p.id === p.agent ? "Built-in" : AGENT_LABEL[p.agent]}</span>
                 </span>
-                <span className="truncate font-mono text-xs text-ink-3" translate="no">
+                <span className="truncate font-mono text-xs leading-5 text-ink-3" translate="no">
                   {p.installed ? shortPath(p.binPath ?? p.bin ?? p.agent) : `${p.bin || p.agent} not found`}
                   {p.models.length ? ` · ${p.models.join(", ")}` : ""}
                   {p.fallback.length ? ` · then ${p.fallback.join(", ")}` : ""}
                 </span>
               </div>
               {p.custom && (
-                <button type="button" onClick={() => reset(p)} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-2.5 text-sm font-medium text-ink-3 hover:bg-hover hover:text-ink">
+                <button type="button" onClick={() => reset(p)} className={ghostBtn}>
                   {p.builtin ? "Reset" : "Delete"}
                 </button>
               )}
-              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className="h-8 shrink-0 rounded-full pointer-coarse:h-10 px-3 text-sm font-medium text-ink shadow-btn hover:bg-hover">
+              <button type="button" onClick={() => setEdit({ isNew: false, draft: toDraft(p), from: p.id })} className={outlineBtn}>
                 Edit
               </button>
             </li>

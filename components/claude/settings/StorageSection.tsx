@@ -151,18 +151,18 @@ function CleanNow({ data, onDone }: { data: StorageReport | null; onDone: () => 
         )}
       </Row>
       {error && (
-        <p role="alert" className="px-3.5 py-2.5 text-sm text-red-ink">
+        <p role="alert" className="py-2.5 text-sm text-red-ink">
           {error}
         </p>
       )}
       {plan && (
-        <div className="flex flex-col gap-2.5 px-3.5 py-3" role="region" aria-label="Cleanup preview">
+        <div className="flex flex-col gap-2.5 py-3" role="region" aria-label="Cleanup preview">
           {plan.items.length ? (
             <>
               <p className="text-sm text-ink">
                 {plural(plan.items.length, "item")} would go, freeing {formatBytes(plan.bytes)}:
               </p>
-              <ul className="max-h-64 divide-y divide-line overflow-y-auto rounded-control bg-inset text-xs shadow-hairline">
+              <ul className="max-h-64 divide-y divide-line overflow-y-auto rounded-lg bg-field/60 text-xs">
                 {plan.items.map((i) => (
                   <li key={i.path} className="flex min-w-0 items-center gap-3 px-2.5 py-1.5">
                     <span className="min-w-0 flex-1">
@@ -221,7 +221,7 @@ export function StorageSection() {
     <>
       <Usage data={data} loading={loading} onRefresh={() => void load(true)} />
       {error && (
-        <p role="alert" className="px-1 text-sm text-red-ink">
+        <p role="alert" className="text-sm text-red-ink">
           Couldn&apos;t measure storage: {error}
         </p>
       )}

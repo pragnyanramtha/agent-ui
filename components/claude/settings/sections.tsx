@@ -153,8 +153,6 @@ function Notifications() {
       <RegistryCards section="notifications" />
       <Card title="Push" footer="Push stays quiet while an agent-u window is in front.">
         <PushRow />
-      </Card>
-      <Card>
         <TestRow />
       </Card>
     </>
@@ -178,7 +176,7 @@ function Git() {
   return (
     <>
       <RegistryCards section="git" />
-      <p className="px-1 text-xs leading-relaxed text-ink-3">
+      <p className="-mt-4 text-sm leading-relaxed text-ink-3">
         A checkpoint of your files is saved before each message you send here, so a turn can be rewound. Commit, push and pull requests are in each session&apos;s Git panel.
       </p>
     </>

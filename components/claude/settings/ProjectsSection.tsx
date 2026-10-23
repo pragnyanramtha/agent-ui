@@ -19,7 +19,7 @@ import { Card, Row, Segmented, Select, SmallButton, useMediaQuery } from "./cont
  * new sessions there start with and the actions of the session header's Run menu. Wide screens show the list beside
  * the open project; phones open each one as a page. Changes save as they're made. */
 
-const INPUT = "field-ring h-8 w-full rounded-control border border-line bg-field px-2.5 text-base text-ink outline-none placeholder:text-ink-3 md:text-sm";
+const INPUT = "field-ring h-8 w-full rounded-lg border border-transparent bg-field px-2.5 text-base text-ink outline-none placeholder:text-ink-3 md:text-sm";
 
 const errorText = (err: unknown) => (err instanceof ApiError ? err.message : "Couldn't reach the server.");
 
@@ -128,7 +128,7 @@ function ProjectList({
   return (
     <section className={`flex min-w-0 flex-col gap-2 ${wide ? "sticky top-0" : ""}`} aria-label="Projects">
       <div className="flex items-center gap-2">
-        <div className="field-ring relative flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-line bg-field px-2.5 md:h-8">
+        <div className="field-ring relative flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent bg-field px-2.5 md:h-8">
           <Search width={14} height={14} strokeWidth={2} className="shrink-0 text-ink-3" aria-hidden />
           <input
             type="search"
@@ -140,21 +140,21 @@ function ProjectList({
             className="min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-3 md:text-sm [&::-webkit-search-cancel-button]:hidden"
           />
         </div>
-        <button type="button" onClick={onAdd} aria-label="Add a folder" data-tip="Add a folder" data-tip-pos="bottom" className="tap relative flex size-9 shrink-0 items-center justify-center rounded-control text-ink-2 shadow-btn hover:bg-hover hover:text-ink md:size-8">
+        <button type="button" onClick={onAdd} aria-label="Add a folder" data-tip="Add a folder" data-tip-pos="bottom" className="tap relative flex size-9 shrink-0 items-center justify-center rounded-full border border-line-strong text-ink-2 hover:bg-hover hover:text-ink md:size-8">
           <Plus width={16} height={16} strokeWidth={1.9} />
         </button>
       </div>
       {failed ? (
-        <div className="flex flex-col items-start gap-2 px-1 py-4 text-sm text-ink-3">
+        <div className="flex flex-col items-start gap-2 py-4 text-sm text-ink-3">
           <p>Couldn&apos;t load projects. {failed}</p>
           <SmallButton onClick={onRetry}>Try again</SmallButton>
         </div>
       ) : list === null ? (
-        <p className="px-1 py-6 text-sm text-ink-3">Loading projects…</p>
+        <p className="py-6 text-sm text-ink-3">Loading projects…</p>
       ) : !shown.length ? (
-        <p className="px-1 py-6 text-sm text-ink-3">{query.trim() ? <>No projects match &ldquo;{query.trim()}&rdquo;.</> : "No projects yet. Sessions you start show their folders here."}</p>
+        <p className="py-6 text-sm text-ink-3">{query.trim() ? <>No projects match &ldquo;{query.trim()}&rdquo;.</> : "No projects yet. Sessions you start show their folders here."}</p>
       ) : (
-        <ul className={wide ? "flex flex-col gap-px" : "divide-y divide-line rounded-card border border-line bg-surface"}>
+        <ul className={wide ? "flex flex-col gap-0.5" : "-mx-2 flex flex-col"}>
           {shown.map((p) => {
             const current = p.path === open;
             const actions = p.config?.actions.length ?? 0;
@@ -166,12 +166,11 @@ function ProjectList({
                   onClick={() => onOpen(p.path)}
                   aria-current={current ? "page" : undefined}
                   title={p.path}
-                  className={`tap relative flex w-full min-w-0 items-center gap-2.5 text-left ${wide ? `rounded-control px-2.5 py-1.5 ${current ? "bg-sidebar-active" : "hover:bg-hover"}` : "min-h-13 px-3.5 py-2.5"}`}
+                  className={`tap relative flex w-full min-w-0 items-center gap-2.5 text-left ${wide ? `rounded-lg px-2.5 py-1.5 ${current ? "bg-hover-2" : "hover:bg-hover"}` : "min-h-14 rounded-lg px-2 py-2.5 hover:bg-hover"}`}
                 >
                   <span className="min-w-0 flex-1">
                     <span className={`flex items-center gap-1.5 truncate text-ink ${wide ? "text-sm" : "text-base"} ${current ? "font-medium" : ""}`}>
                       <span className="truncate">{p.name}</span>
-                      {p.config && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="Set up" />}
                     </span>
                     <span className="block truncate text-xs text-ink-3" translate="no">
                       {meta || shortPath(p.path)}
@@ -249,7 +248,7 @@ function ProjectDetail({ entry, onSaved, onBack }: { entry: ProjectEntry; onSave
 
   return (
     <>
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 px-1">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         {onBack && (
           <button type="button" onClick={onBack} aria-label="All projects" className="icon-btn -ml-2 shrink-0">
             <NavArrowLeft width={19} height={19} strokeWidth={1.9} />
@@ -374,7 +373,7 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
   };
 
   const editor = editing && (
-    <div className="flex flex-col gap-2.5 px-3.5 py-3">
+    <div className="flex flex-col gap-2.5 py-3">
       <div className="grid gap-2.5 sm:grid-cols-[10rem_minmax(0,1fr)]">
         <label className="flex flex-col gap-1 text-xs text-ink-3">
           Name
@@ -412,8 +411,8 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
 
   return (
     <section className="flex flex-col">
-      <div className="flex flex-wrap items-end gap-2 px-1 pb-2">
-        <h3 className="flex-1 basis-full whitespace-nowrap text-xs font-medium text-ink-3 sm:basis-0">Run actions</h3>
+      <div className="flex flex-wrap items-end gap-2 pb-2">
+        <h3 className="flex-1 basis-full whitespace-nowrap text-sm font-medium text-ink-2 sm:basis-0">Run actions</h3>
         <SmallButton onClick={() => void loadScripts()} disabled={seeding || full}>
           <Package width={14} height={14} strokeWidth={1.8} aria-hidden />
           {seeding ? "Reading package.json…" : "Add from package.json"}
@@ -423,9 +422,9 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
           Add action
         </SmallButton>
       </div>
-      <div className="divide-y divide-line rounded-card border border-line bg-surface">
+      <div className="flex flex-col divide-y divide-line">
         {seed && fresh.length > 0 && (
-          <div className="flex flex-col gap-1.5 bg-field/40 px-3.5 py-3">
+          <div className="my-1 flex flex-col gap-1.5 rounded-xl bg-field/60 px-3.5 py-3">
             <div className="flex items-center gap-2">
               <p className="flex-1 text-xs text-ink-3">
                 Scripts in package.json{seed.manager ? `, run with ${seed.manager}` : ""}
@@ -433,7 +432,7 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
               <SmallButton onClick={() => (add(fresh), setSeed(null))} disabled={disabled || full}>
                 Add all
               </SmallButton>
-              <button type="button" onClick={() => setSeed(null)} aria-label="Close scripts" className="tap relative grid size-7 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-ink">
+              <button type="button" onClick={() => setSeed(null)} aria-label="Close scripts" className="tap relative grid size-7 place-items-center rounded-lg text-ink-3 hover:bg-hover hover:text-ink">
                 <Xmark width={14} height={14} strokeWidth={1.9} />
               </button>
             </div>
@@ -463,9 +462,9 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
           ),
         )}
         {editing?.index === null && editor}
-        {!actions.length && editing === null && !(seed && fresh.length) && <p className="px-3.5 py-3 text-sm text-ink-3">No actions yet. They show in the Run menu of sessions in this folder and open in a terminal.</p>}
+        {!actions.length && editing === null && !(seed && fresh.length) && <p className="py-3 text-sm text-ink-3">No actions yet. They show in the Run menu of sessions in this folder and open in a terminal.</p>}
       </div>
-      {full && <p className="px-1 pt-2 text-xs text-ink-3">That&apos;s the most a project can have ({PROJECT_LIMITS.actions}).</p>}
+      {full && <p className="pt-2 text-xs text-ink-3">That&apos;s the most a project can have ({PROJECT_LIMITS.actions}).</p>}
     </section>
   );
 }
@@ -473,7 +472,7 @@ function ActionsCard({ project, disabled, onChange }: { project: ProjectConfig; 
 function ActionGlyph({ icon }: { icon: ActionIcon }) {
   const I = ACTION_ICON[icon];
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-control bg-field text-ink-2" aria-hidden>
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-field text-ink-2" aria-hidden>
       <I width={15} height={15} strokeWidth={1.8} />
     </span>
   );
@@ -481,7 +480,7 @@ function ActionGlyph({ icon }: { icon: ActionIcon }) {
 
 function ActionRow({ action, disabled, onEdit, onRemove }: { action: ProjectAction; disabled: boolean; onEdit: () => void; onRemove: () => void }): ReactNode {
   return (
-    <div className="flex min-h-12 items-center gap-3 px-3.5 py-2">
+    <div className="flex min-h-14 items-center gap-3 py-2.5">
       <ActionGlyph icon={action.icon} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm text-ink">{action.name}</p>
@@ -489,10 +488,10 @@ function ActionRow({ action, disabled, onEdit, onRemove }: { action: ProjectActi
           {action.command}
         </p>
       </div>
-      <button type="button" onClick={onEdit} disabled={disabled} aria-label={`Edit ${action.name}`} data-tip="Edit" data-tip-pos="bottom" className="tap relative grid size-8 shrink-0 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-ink disabled:opacity-50">
+      <button type="button" onClick={onEdit} disabled={disabled} aria-label={`Edit ${action.name}`} data-tip="Edit" data-tip-pos="bottom" className="tap relative grid size-8 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-hover hover:text-ink disabled:opacity-50">
         <EditPencil width={15} height={15} strokeWidth={1.8} />
       </button>
-      <button type="button" onClick={onRemove} disabled={disabled} aria-label={`Remove ${action.name}`} data-tip="Remove" data-tip-pos="bottom" className="tap relative grid size-8 shrink-0 place-items-center rounded-control text-ink-3 hover:bg-hover hover:text-red-ink disabled:opacity-50">
+      <button type="button" onClick={onRemove} disabled={disabled} aria-label={`Remove ${action.name}`} data-tip="Remove" data-tip-pos="bottom" className="tap relative grid size-8 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-hover hover:text-red-ink disabled:opacity-50">
         <Trash width={15} height={15} strokeWidth={1.8} />
       </button>
     </div>
@@ -516,7 +515,7 @@ function IconPicker({ value, onChange }: { value: ActionIcon; onChange: (v: Acti
             data-tip={ACTION_ICON_LABEL[k]}
             data-tip-pos="bottom"
             onClick={() => onChange(k)}
-            className={`tap relative grid size-8 place-items-center rounded-control transition-colors duration-150 ${on ? "bg-surface text-ink shadow-btn" : "text-ink-3 hover:bg-hover hover:text-ink"}`}
+            className={`tap relative grid size-8 place-items-center rounded-lg transition-colors duration-150 ${on ? "bg-surface text-ink shadow-btn" : "text-ink-3 hover:bg-hover hover:text-ink"}`}
           >
             <I width={15} height={15} strokeWidth={1.8} />
           </button>
