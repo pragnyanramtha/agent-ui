@@ -65,7 +65,8 @@ export function AccountMenu({ onView, activeView }: { onView?: (v: "@settings" |
           <MoreHoriz width={15} height={15} strokeWidth={1.8} className="shrink-0 text-ink-3" aria-hidden />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-60">
+      {/* an item opens another screen: focus stays there instead of jumping back to this row */}
+      <DropdownMenuContent side="top" align="start" sideOffset={6} className="min-w-60" onCloseAutoFocus={(e) => e.preventDefault()}>
         {onView && (
           <>
             <DropdownMenuItem onSelect={() => onView("@settings")}>
